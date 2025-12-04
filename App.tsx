@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -13,6 +12,11 @@ import InventoryList from './pages/InventoryList';
 import { User, UserRole } from './types';
 
 const App: React.FC = () => {
+  // Debug de montagem
+  useEffect(() => {
+    console.log('App Azevedo Iniciado - Versão Sem Login');
+  }, []);
+
   // Usuário Admin Padrão (Hardcoded para acesso direto)
   const DEFAULT_USER: User = {
     id: 'u_admin_auto',
@@ -24,7 +28,6 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     // Como não existe mais tela de login, o logout serve apenas para recarregar a aplicação
-    // ou limpar estados visuais se necessário.
     if (window.confirm('Deseja recarregar o sistema?')) {
         window.location.reload();
     }

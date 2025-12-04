@@ -1,23 +1,22 @@
-
 import { PatientFull, Treatment, Dose, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Protocol, FrequencyDays, Diagnosis, TreatmentStatus, ProtocolCategory, UserRole, DismissedLog, InventoryItem, DispenseLog, PurchaseRequest, MedicationBase } from '../types';
 import { addDays, diffInDays } from '../constants';
 
 // --- MOCK DATABASE WITH LOCAL STORAGE PERSISTENCE ---
 
 const TODAY = new Date();
-// ALTERAÇÃO: Sufixo _v6 para forçar limpeza do cache antigo e carregar novos dados
+// ALTERAÇÃO: Sufixo _v7 para forçar limpeza do cache antigo e carregar novos dados
 const STORAGE_KEYS = {
-  PATIENTS: 'azevedo_patients_v6',
-  TREATMENTS: 'azevedo_treatments_v6',
-  DOSES: 'azevedo_doses_v6',
-  DOCUMENTS: 'azevedo_documents_v6',
-  PROTOCOLS: 'azevedo_protocols_v6',
-  DIAGNOSES: 'azevedo_diagnoses_v6',
-  DISMISSED_LOGS: 'azevedo_dismissed_logs_v6',
-  INVENTORY: 'azevedo_inventory_v6',
-  DISPENSE_LOGS: 'azevedo_dispense_logs_v6',
-  PURCHASE_REQUESTS: 'azevedo_purchase_requests_v6',
-  MEDICATION_BASE: 'azevedo_medication_base_v6'
+  PATIENTS: 'azevedo_patients_v7',
+  TREATMENTS: 'azevedo_treatments_v7',
+  DOSES: 'azevedo_doses_v7',
+  DOCUMENTS: 'azevedo_documents_v7',
+  PROTOCOLS: 'azevedo_protocols_v7',
+  DIAGNOSES: 'azevedo_diagnoses_v7',
+  DISMISSED_LOGS: 'azevedo_dismissed_logs_v7',
+  INVENTORY: 'azevedo_inventory_v7',
+  DISPENSE_LOGS: 'azevedo_dispense_logs_v7',
+  PURCHASE_REQUESTS: 'azevedo_purchase_requests_v7',
+  MEDICATION_BASE: 'azevedo_medication_base_v7'
 };
 
 // Helper to load or use default
