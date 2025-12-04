@@ -176,7 +176,8 @@ const PatientList: React.FC = () => {
         gender: gender as 'M' | 'F' | 'Other',
         mainDiagnosis: newDiagnosis || 'Não informado',
         clinicalNotes: clinicalNotes,
-        active: false,
+        // CORREÇÃO: Paciente novo nasce ATIVO
+        active: true, 
         guardian: {
             id: `g_${newId}`,
             patientId: newId,
