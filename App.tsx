@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -9,6 +10,8 @@ import PatientDetail from './pages/PatientDetail';
 import TreatmentDetail from './pages/TreatmentDetail';
 import DiagnosisList from './pages/DiagnosisList';
 import MedicationList from './pages/MedicationList';
+import HistoryList from './pages/HistoryList';
+import InventoryList from './pages/InventoryList';
 import { User } from './types';
 import { MOCK_USERS } from './services/mockData';
 import { SESSION_KEY } from './constants';
@@ -91,6 +94,8 @@ const App: React.FC = () => {
           <Route path="/tratamento/:id" element={<TreatmentDetail />} />
           <Route path="/diagnosticos" element={<DiagnosisList />} />
           <Route path="/protocolos" element={<MedicationList />} />
+          <Route path="/historico" element={<HistoryList />} />
+          <Route path="/estoque" element={<InventoryList />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

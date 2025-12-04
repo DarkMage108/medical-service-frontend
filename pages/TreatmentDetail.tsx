@@ -1,10 +1,12 @@
 
+
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { MOCK_TREATMENTS, MOCK_DOSES, MOCK_PATIENTS, MOCK_PROTOCOLS, updateMockTreatment, addMockDose, updateMockDose } from '../services/mockData';
+import { MOCK_TREATMENTS, MOCK_DOSES, MOCK_PATIENTS, MOCK_PROTOCOLS, updateMockTreatment, addMockDose, updateMockDose, MOCK_INVENTORY } from '../services/mockData';
 import { formatDate, getStatusColor, addDays, getTreatmentStatusColor } from '../constants';
 import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory } from '../types';
-import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package } from 'lucide-react';
 
 const TreatmentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +37,7 @@ const TreatmentDetail: React.FC = () => {
 
   const [doseDate, setDoseDate] = useState(new Date().toISOString().split('T')[0]);
   const [doseLot, setDoseLot] = useState('');
+  const [selectedInventoryId, setSelectedInventoryId] = useState(''); // New: Inventory Link
   
   // States inicializados vazios para forçar seleção
   const [doseStatus, setDoseStatus] = useState<DoseStatus | ''>('');
@@ -54,12 +57,26 @@ const TreatmentDetail: React.FC = () => {
       MOCK_DOSES.filter(d => d.treatmentId === id).sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())
   );
 
+  // Available Inventory Lots for this Protocol
+  const availableLots = useMemo(() => {
+      if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || !protocol.medicationType) return [];
+      
+      // Filter inventory by name, active, quantity > 0 and not expired
+      return MOCK_INVENTORY.filter(item => 
+          item.medicationName === protocol.medicationType &&
+          item.active &&
+          item.quantity > 0 &&
+          new Date(item.expiryDate) >= new Date()
+      );
+  }, [protocol]);
+
   if (!treatment || !patient || !protocol) return <div>Tratamento ou protocolo não encontrado</div>;
 
   const handleOpenEditDose = (dose: Dose) => {
       setEditingDoseId(dose.id);
       setDoseDate(dose.applicationDate.split('T')[0]);
       setDoseLot(dose.lotNumber);
+      setSelectedInventoryId(dose.inventoryLotId || '');
       setDoseStatus(dose.status);
       setDosePayment(dose.paymentStatus);
       setDoseIsLast(dose.isLastBeforeConsult);
@@ -76,6 +93,17 @@ const TreatmentDetail: React.FC = () => {
       setTimeout(() => {
           document.getElementById('dose-form-container')?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
+  };
+
+  const handleInventorySelection = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const invId = e.target.value;
+      setSelectedInventoryId(invId);
+      
+      // Auto-fill Lot Number from inventory
+      const lot = availableLots.find(l => l.id === invId);
+      if (lot) {
+          setDoseLot(lot.lotNumber);
+      }
   };
 
   // Check for auto-open edit dose from navigation state
@@ -95,6 +123,7 @@ const TreatmentDetail: React.FC = () => {
       setEditingDoseId(null);
       setDoseDate(new Date().toISOString().split('T')[0]);
       setDoseLot('');
+      setSelectedInventoryId('');
       // Resetar para vazio para forçar seleção
       setDoseStatus('');
       setDosePayment('');
@@ -126,8 +155,16 @@ const TreatmentDetail: React.FC = () => {
 
     // Validações Manuais
     if (!doseStatus) { alert("Selecione o Status da Dose"); return; }
-    if (!dosePayment) { alert("Selecione a Situação do Pagamento"); return; }
+    if (doseStatus !== DoseStatus.NOT_ACCEPTED && !dosePayment) { alert("Selecione a Situação do Pagamento"); return; }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
+
+    // Validação de Estoque
+    if (protocol.category === ProtocolCategory.MEDICATION && doseStatus === DoseStatus.APPLIED && !selectedInventoryId && !editingDoseId) {
+        // Se for MEDICAMENTO e APLICADA e for NOVA dose, exigir estoque
+        // Se for edição, permitimos manter sem estoque se já estava assim ou se for correção manual
+        alert("Para registrar aplicação, selecione um lote disponível no estoque.");
+        return;
+    }
 
     setIsSavingDose(true);
     // Simula delay
@@ -149,8 +186,9 @@ const TreatmentDetail: React.FC = () => {
         const updates: Partial<Dose> = {
             applicationDate: new Date(doseDate).toISOString(),
             lotNumber: doseLot,
+            inventoryLotId: selectedInventoryId,
             status: doseStatus,
-            paymentStatus: dosePayment,
+            paymentStatus: doseStatus === DoseStatus.NOT_ACCEPTED ? PaymentStatus.WAITING_PIX : (dosePayment as PaymentStatus), // Fallback seguro
             isLastBeforeConsult: doseIsLast,
             consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
             nurse: isNurse,
@@ -172,9 +210,10 @@ const TreatmentDetail: React.FC = () => {
             cycleNumber: doses.length + 1, // Simples incremento
             applicationDate: new Date(doseDate).toISOString(),
             lotNumber: doseLot,
-            expiryDate: addDays(new Date(), 365).toISOString(), // Mock validade 1 ano
+            inventoryLotId: selectedInventoryId,
+            expiryDate: addDays(new Date(), 365).toISOString(), // Mock validade 1 ano se não vier do estoque
             status: doseStatus,
-            paymentStatus: dosePayment,
+            paymentStatus: doseStatus === DoseStatus.NOT_ACCEPTED ? PaymentStatus.WAITING_PIX : (dosePayment as PaymentStatus),
             paymentUpdatedAt: new Date().toISOString(),
             isLastBeforeConsult: doseIsLast,
             consultationDate: doseIsLast && doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined,
@@ -268,6 +307,7 @@ const TreatmentDetail: React.FC = () => {
 
       {/* Protocol Summary / Edit Form */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
+        {/* ... (Treatment Info Header - Same as before) ... */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50">
             <h3 className="font-bold text-slate-700">Detalhes do Plano Terapêutico</h3>
             <button 
@@ -461,16 +501,47 @@ const TreatmentDetail: React.FC = () => {
                         className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500" 
                     />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Lote / Validade</label>
+                
+                {/* Inventory Selection (Only for Medication Protocols) */}
+                {protocol.category === ProtocolCategory.MEDICATION && (
+                    <div className="lg:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Lote (Estoque)</label>
+                        <div className="flex gap-2">
+                            <select 
+                                value={selectedInventoryId}
+                                onChange={handleInventorySelection}
+                                disabled={!!editingDoseId && !!selectedInventoryId} // Se já tem, não muda para manter integridade
+                                className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
+                            >
+                                <option value="">Selecione um lote do estoque...</option>
+                                {availableLots.map(item => (
+                                    <option key={item.id} value={item.id}>
+                                        {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
+                                    </option>
+                                ))}
+                            </select>
+                            {availableLots.length === 0 && (
+                                <div className="text-red-500 text-xs flex items-center">
+                                    <AlertTriangle size={14} className="mr-1"/> Sem estoque
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <div className={protocol.category === ProtocolCategory.MEDICATION ? "" : "lg:col-span-2"}>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Lote / Validade (Manual)</label>
                     <input 
                         type="text" 
                         placeholder="Ex: AB1234 - 12/2025"
                         value={doseLot}
                         onChange={(e) => setDoseLot(e.target.value)}
-                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500" 
+                        // Se selecionou do estoque, fica readonly
+                        readOnly={!!selectedInventoryId}
+                        className={`w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 ${selectedInventoryId ? 'bg-slate-50' : ''}`} 
                     />
                 </div>
+
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Status da Dose</label>
                     <select 
@@ -486,10 +557,11 @@ const TreatmentDetail: React.FC = () => {
                  <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Situação Pagamento</label>
                     <select 
-                        required
+                        required={doseStatus !== DoseStatus.NOT_ACCEPTED}
+                        disabled={doseStatus === DoseStatus.NOT_ACCEPTED}
                         value={dosePayment}
                         onChange={(e) => setDosePayment(e.target.value as PaymentStatus)}
-                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                        className={`w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 ${doseStatus === DoseStatus.NOT_ACCEPTED ? 'bg-slate-100 opacity-50' : ''}`}
                     >
                          <option value="" disabled>Selecione...</option>
                         {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{s}</option>)}
@@ -632,7 +704,14 @@ const TreatmentDetail: React.FC = () => {
                     {doses.map((dose) => (
                         <tr key={dose.id} className="hover:bg-slate-50 group">
                             <td className="px-6 py-4 font-medium">{formatDate(dose.applicationDate)}</td>
-                            <td className="px-6 py-4 font-mono text-slate-500">{dose.lotNumber}</td>
+                            <td className="px-6 py-4">
+                                <span className="font-mono text-slate-500">{dose.lotNumber}</span>
+                                {dose.inventoryLotId && (
+                                    <span className="ml-2 inline-flex items-center text-[10px] bg-green-50 text-green-700 px-1.5 rounded border border-green-100">
+                                        <Package size={10} className="mr-1"/> Estoque
+                                    </span>
+                                )}
+                            </td>
                             <td className="px-6 py-4">{formatDate(dose.calculatedNextDate)}</td>
                             <td className="px-6 py-4">
                                 <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getStatusColor(dose.status)}`}>

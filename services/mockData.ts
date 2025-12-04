@@ -1,18 +1,23 @@
 
-import { PatientFull, Treatment, Dose, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Protocol, FrequencyDays, Diagnosis, TreatmentStatus, ProtocolCategory, UserRole } from '../types';
-import { addDays } from '../constants';
+import { PatientFull, Treatment, Dose, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Protocol, FrequencyDays, Diagnosis, TreatmentStatus, ProtocolCategory, UserRole, DismissedLog, InventoryItem, DispenseLog, PurchaseRequest, MedicationBase } from '../types';
+import { addDays, diffInDays } from '../constants';
 
 // --- MOCK DATABASE WITH LOCAL STORAGE PERSISTENCE ---
 
 const TODAY = new Date();
+// ALTERAÇÃO: Sufixo _v6 para forçar limpeza do cache antigo e carregar novos dados
 const STORAGE_KEYS = {
-  PATIENTS: 'azevedo_patients',
-  TREATMENTS: 'azevedo_treatments',
-  DOSES: 'azevedo_doses',
-  DOCUMENTS: 'azevedo_documents',
-  PROTOCOLS: 'azevedo_protocols',
-  DIAGNOSES: 'azevedo_diagnoses',
-  DISMISSED_CONTACTS: 'azevedo_dismissed_contacts' // Nova chave para mensagens concluídas
+  PATIENTS: 'azevedo_patients_v6',
+  TREATMENTS: 'azevedo_treatments_v6',
+  DOSES: 'azevedo_doses_v6',
+  DOCUMENTS: 'azevedo_documents_v6',
+  PROTOCOLS: 'azevedo_protocols_v6',
+  DIAGNOSES: 'azevedo_diagnoses_v6',
+  DISMISSED_LOGS: 'azevedo_dismissed_logs_v6',
+  INVENTORY: 'azevedo_inventory_v6',
+  DISPENSE_LOGS: 'azevedo_dispense_logs_v6',
+  PURCHASE_REQUESTS: 'azevedo_purchase_requests_v6',
+  MEDICATION_BASE: 'azevedo_medication_base_v6'
 };
 
 // Helper to load or use default
@@ -43,6 +48,12 @@ export const MOCK_USERS = [
 
 // --- SEED DATA ---
 
+const SEED_MEDICATION_BASE: MedicationBase[] = [
+    { id: 'med_1', activeIngredient: 'Acetato de Leuprorrelina', dosage: '3.75mg', tradeName: 'Neodeca', manufacturer: 'Eurofarma', pharmaceuticalForm: 'Pó Liofilizado' },
+    { id: 'med_2', activeIngredient: 'Acetato de Leuprorrelina', dosage: '11.25mg', tradeName: 'Lectrum', manufacturer: 'Sandoz', pharmaceuticalForm: 'Pó Liofilizado' },
+    { id: 'med_3', activeIngredient: 'Triptorrelina', dosage: '22.5mg', tradeName: 'Neo Decapeptyl', manufacturer: 'Aché', pharmaceuticalForm: 'Seringa Pronta' }
+];
+
 const SEED_PROTOCOLS: Protocol[] = [
   {
     id: 'p1',
@@ -52,7 +63,6 @@ const SEED_PROTOCOLS: Protocol[] = [
     frequencyDays: FrequencyDays.MONTHLY,
     message: 'Monitorar sinais de puberdade.',
     milestones: [
-        // Apenas 1 ponto de contato próximo ao fim do ciclo (ex: dia 25 para ciclo de 28)
         { day: 25, message: 'Lembrete: Próxima dose em 3 dias.' }
     ]
   },
@@ -63,7 +73,6 @@ const SEED_PROTOCOLS: Protocol[] = [
     medicationType: 'Acetato de Leuprorrelina 11.25mg',
     frequencyDays: FrequencyDays.TRIMESTER,
     milestones: [
-        // Apenas 1 ponto de contato próximo ao fim do ciclo (ex: dia 80 para ciclo de 84)
         { day: 80, message: 'Lembrete: Agendar aplicação e renovar receita.' }
     ]
   },
@@ -74,7 +83,6 @@ const SEED_PROTOCOLS: Protocol[] = [
     medicationType: 'Triptorrelina 22.5mg',
     frequencyDays: FrequencyDays.SEMESTER,
     milestones: [
-        // Apenas 1 ponto de contato próximo ao fim do ciclo (ex: dia 160 para ciclo de 168)
         { day: 160, message: 'Lembrete: Próxima dose semestral aproximando.' }
     ]
   },
@@ -157,7 +165,7 @@ const SEED_TREATMENTS: Treatment[] = [
   {
     id: 't_1',
     patientId: 'pat_1',
-    protocolId: 'p1', // Mensal (28 days)
+    protocolId: 'p1',
     status: TreatmentStatus.ONGOING,
     startDate: '2023-01-15',
     plannedDosesBeforeConsult: 3,
@@ -165,23 +173,21 @@ const SEED_TREATMENTS: Treatment[] = [
   {
     id: 't_2',
     patientId: 'pat_2',
-    protocolId: 'p2', // Trimestral (84 days)
+    protocolId: 'p2',
     status: TreatmentStatus.ONGOING,
     startDate: '2023-06-01',
     plannedDosesBeforeConsult: 2,
   },
-  // Tratamento de monitoramento para gerar mensagens na régua
   {
     id: 't_3',
     patientId: 'pat_1',
-    protocolId: 'p4', // Acompanhamento Nutricional
+    protocolId: 'p4',
     status: TreatmentStatus.ONGOING,
-    startDate: new Date(TODAY.getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString(), // Começou há 5 dias
+    startDate: new Date(TODAY.getTime() - (5 * 24 * 60 * 60 * 1000)).toISOString(),
     plannedDosesBeforeConsult: 0,
   }
 ];
 
-// Helper for logic
 const calculateDoseLogic = (date: string, freq: number): { calculatedNextDate: string, daysUntilNext: number } => {
   const appDate = new Date(date);
   const nextDate = addDays(appDate, freq);
@@ -223,12 +229,11 @@ const SEED_DOSES: Dose[] = [
     surveyStatus: SurveyStatus.WAITING,
     ...calculateDoseLogic(new Date(TODAY.getTime() - (90 * 24 * 60 * 60 * 1000)).toISOString(), 84)
   },
-  // Dose para hoje para testar funcionalidades de dashboard
   {
     id: 'd_3',
     treatmentId: 't_1',
     cycleNumber: 2,
-    applicationDate: new Date().toISOString(), // HOJE
+    applicationDate: new Date().toISOString(),
     lotNumber: 'EF789',
     expiryDate: '2025-12-31',
     status: DoseStatus.PENDING,
@@ -243,6 +248,26 @@ const SEED_DOSES: Dose[] = [
 
 const SEED_DOCUMENTS: ConsentDocument[] = [];
 
+// Inventory Seed
+const SEED_INVENTORY: InventoryItem[] = [
+    { id: 'inv_1', medicationName: 'Acetato de Leuprorrelina 3.75mg', lotNumber: 'LT2024-A', expiryDate: '2026-01-01', quantity: 15, unit: 'Ampola', entryDate: '2023-12-01', active: true },
+    { id: 'inv_2', medicationName: 'Acetato de Leuprorrelina 11.25mg', lotNumber: 'LT2024-B', expiryDate: '2025-06-01', quantity: 5, unit: 'Ampola', entryDate: '2023-12-01', active: true },
+    { id: 'inv_3', medicationName: 'Triptorrelina 22.5mg', lotNumber: 'LT2024-C', expiryDate: '2025-12-31', quantity: 2, unit: 'Ampola', entryDate: '2024-01-10', active: true }
+];
+
+// --- SEED DISPENSE LOGS (HISTÓRICO PARA RELATÓRIOS) ---
+const SEED_DISPENSE_LOGS: DispenseLog[] = [
+    { id: 'dl_1', date: new Date(new Date().getFullYear(), 0, 15).toISOString(), patientId: 'pat_1', inventoryItemId: 'inv_1', medicationName: 'Acetato de Leuprorrelina 3.75mg', quantity: 1, doseId: 'd_1' },
+    { id: 'dl_2', date: new Date(new Date().getFullYear(), 1, 10).toISOString(), patientId: 'pat_2', inventoryItemId: 'inv_2', medicationName: 'Acetato de Leuprorrelina 11.25mg', quantity: 1, doseId: 'd_2' },
+    { id: 'dl_3', date: new Date(new Date().getFullYear(), 2, 20).toISOString(), patientId: 'pat_1', inventoryItemId: 'inv_1', medicationName: 'Acetato de Leuprorrelina 3.75mg', quantity: 1, doseId: 'd_3_mock' },
+    { id: 'dl_4', date: new Date(new Date().getFullYear(), 3, 5).toISOString(), patientId: 'pat_2', inventoryItemId: 'inv_3', medicationName: 'Triptorrelina 22.5mg', quantity: 1, doseId: 'd_4_mock' },
+    { id: 'dl_5', date: new Date(new Date().getFullYear(), 3, 25).toISOString(), patientId: 'pat_1', inventoryItemId: 'inv_1', medicationName: 'Acetato de Leuprorrelina 3.75mg', quantity: 1, doseId: 'd_5_mock' },
+    // Adicionando mais dados para ficar bonito
+    { id: 'dl_6', date: new Date(new Date().getFullYear(), 4, 12).toISOString(), patientId: 'pat_1', inventoryItemId: 'inv_1', medicationName: 'Acetato de Leuprorrelina 3.75mg', quantity: 1 },
+    { id: 'dl_7', date: new Date(new Date().getFullYear(), 5, 8).toISOString(), patientId: 'pat_2', inventoryItemId: 'inv_2', medicationName: 'Acetato de Leuprorrelina 11.25mg', quantity: 1 },
+    { id: 'dl_8', date: new Date(new Date().getFullYear(), 6, 15).toISOString(), patientId: 'pat_1', inventoryItemId: 'inv_1', medicationName: 'Acetato de Leuprorrelina 3.75mg', quantity: 1 }
+];
+
 // --- ACTIVE DATA POOLS ---
 
 export let MOCK_PATIENTS: PatientFull[] = loadData(STORAGE_KEYS.PATIENTS, SEED_PATIENTS);
@@ -251,14 +276,16 @@ export let MOCK_DOSES: Dose[] = loadData(STORAGE_KEYS.DOSES, SEED_DOSES);
 export let MOCK_DOCUMENTS: ConsentDocument[] = loadData(STORAGE_KEYS.DOCUMENTS, SEED_DOCUMENTS);
 export let MOCK_PROTOCOLS: Protocol[] = loadData(STORAGE_KEYS.PROTOCOLS, SEED_PROTOCOLS);
 export let MOCK_DIAGNOSES: Diagnosis[] = loadData(STORAGE_KEYS.DIAGNOSES, SEED_DIAGNOSES);
-// Lista de IDs de contatos (régua) que foram dispensados/concluídos
-export let MOCK_DISMISSED_CONTACTS: string[] = loadData(STORAGE_KEYS.DISMISSED_CONTACTS, []);
+export let MOCK_DISMISSED_LOGS: DismissedLog[] = loadData(STORAGE_KEYS.DISMISSED_LOGS, []);
+
+export let MOCK_INVENTORY: InventoryItem[] = loadData(STORAGE_KEYS.INVENTORY, SEED_INVENTORY);
+export let MOCK_DISPENSE_LOGS: DispenseLog[] = loadData(STORAGE_KEYS.DISPENSE_LOGS, SEED_DISPENSE_LOGS);
+export let MOCK_PURCHASE_REQUESTS: PurchaseRequest[] = loadData(STORAGE_KEYS.PURCHASE_REQUESTS, []);
+export let MOCK_MEDICATION_BASE: MedicationBase[] = loadData(STORAGE_KEYS.MEDICATION_BASE, SEED_MEDICATION_BASE);
 
 // Helper function to recalculate patient active status
 const recalculatePatientActiveStatus = (patientId: string) => {
     const patientTreatments = MOCK_TREATMENTS.filter(t => t.patientId === patientId);
-    
-    // Regra: Ativo se tiver pelo menos um tratamento ONGOING ou EXTERNAL
     const isActive = patientTreatments.some(t => 
         t.status === TreatmentStatus.ONGOING || t.status === TreatmentStatus.EXTERNAL
     );
@@ -271,22 +298,177 @@ const recalculatePatientActiveStatus = (patientId: string) => {
     }
 };
 
+// --- MEDICATION BASE LOGIC ---
+export const getMedicationBase = () => {
+    return [...MOCK_MEDICATION_BASE];
+};
+
+export const addMockMedicationBase = (item: MedicationBase) => {
+    MOCK_MEDICATION_BASE = [...MOCK_MEDICATION_BASE, item];
+    saveData(STORAGE_KEYS.MEDICATION_BASE, MOCK_MEDICATION_BASE);
+    return [...MOCK_MEDICATION_BASE];
+};
+
+export const deleteMockMedicationBase = (id: string) => {
+    const newList = MOCK_MEDICATION_BASE.filter(i => i.id !== id);
+    MOCK_MEDICATION_BASE = [...newList];
+    saveData(STORAGE_KEYS.MEDICATION_BASE, MOCK_MEDICATION_BASE);
+    return [...MOCK_MEDICATION_BASE];
+};
+
+// --- INVENTORY LOGIC ---
+
+// 1. Entrada de Estoque
+export const addStockEntry = (item: InventoryItem) => {
+    // Tenta encontrar um lote existente para somar quantidade
+    const existingIndex = MOCK_INVENTORY.findIndex(i => i.medicationName === item.medicationName && i.lotNumber === item.lotNumber);
+    
+    if (existingIndex !== -1) {
+        // Atualiza quantidade
+        const updatedItem = { ...MOCK_INVENTORY[existingIndex], quantity: MOCK_INVENTORY[existingIndex].quantity + item.quantity };
+        MOCK_INVENTORY[existingIndex] = updatedItem;
+    } else {
+        // Cria novo
+        MOCK_INVENTORY = [...MOCK_INVENTORY, item];
+    }
+    
+    saveData(STORAGE_KEYS.INVENTORY, MOCK_INVENTORY);
+    return [...MOCK_INVENTORY];
+};
+
+// 1.1 Atualizar Item de Estoque (Edição)
+export const updateInventoryItem = (id: string, updates: Partial<InventoryItem>) => {
+    const index = MOCK_INVENTORY.findIndex(i => i.id === id);
+    if (index !== -1) {
+        MOCK_INVENTORY[index] = { ...MOCK_INVENTORY[index], ...updates };
+        MOCK_INVENTORY = [...MOCK_INVENTORY];
+        saveData(STORAGE_KEYS.INVENTORY, MOCK_INVENTORY);
+        return [...MOCK_INVENTORY];
+    }
+    return null;
+};
+
+// 2. Dispensação (Baixa)
+export const dispenseMedication = (doseId: string, inventoryItemId: string, patientId: string) => {
+    const inventoryItem = MOCK_INVENTORY.find(i => i.id === inventoryItemId);
+    
+    if (!inventoryItem) return false;
+    if (inventoryItem.quantity <= 0) return false; // Bloqueio estoque zero
+
+    // Debitar
+    inventoryItem.quantity -= 1;
+    MOCK_INVENTORY = [...MOCK_INVENTORY]; // Force update reference
+    saveData(STORAGE_KEYS.INVENTORY, MOCK_INVENTORY);
+
+    // Logar
+    const log: DispenseLog = {
+        id: `disp_${Date.now()}`,
+        date: new Date().toISOString(),
+        patientId,
+        inventoryItemId,
+        medicationName: inventoryItem.medicationName,
+        quantity: 1,
+        doseId
+    };
+    MOCK_DISPENSE_LOGS = [log, ...MOCK_DISPENSE_LOGS];
+    saveData(STORAGE_KEYS.DISPENSE_LOGS, MOCK_DISPENSE_LOGS);
+
+    return true;
+};
+
+// 3. Regra de 10 dias (Purchase Prediction)
+export const checkPurchaseTriggers = () => {
+    // Agrupar demanda futura (próximos 10 dias) por medicamento
+    const futureDemand: Record<string, number> = {};
+    
+    const activeTreatments = MOCK_TREATMENTS.filter(t => t.status === TreatmentStatus.ONGOING);
+    
+    activeTreatments.forEach(t => {
+        const proto = MOCK_PROTOCOLS.find(p => p.id === t.protocolId);
+        if (!proto || proto.category !== ProtocolCategory.MEDICATION || !proto.medicationType) return;
+
+        // Estimar próxima dose
+        // Simplesmente pegamos a última dose e somamos a frequência
+        const doses = MOCK_DOSES.filter(d => d.treatmentId === t.id);
+        const lastDose = doses.sort((a,b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
+        
+        let nextDate: Date;
+        if (lastDose) {
+            nextDate = addDays(new Date(lastDose.applicationDate), proto.frequencyDays);
+        } else {
+            nextDate = new Date(t.startDate); // Se não tem dose, é a data de início
+        }
+
+        const diff = diffInDays(nextDate, new Date());
+        
+        // Se a dose é hoje ou nos próximos 10 dias
+        if (diff >= 0 && diff <= 10) {
+            futureDemand[proto.medicationType] = (futureDemand[proto.medicationType] || 0) + 1;
+        }
+    });
+
+    // Verificar estoque atual vs demanda
+    const requests: PurchaseRequest[] = [];
+    
+    Object.keys(futureDemand).forEach(medName => {
+        const stockItems = MOCK_INVENTORY.filter(i => i.medicationName === medName && i.active);
+        const totalStock = stockItems.reduce((acc, item) => acc + item.quantity, 0);
+        const demand = futureDemand[medName];
+
+        // Regra: Se estoque <= demanda prevista, gerar pedido
+        if (totalStock <= demand) {
+            // Verifica se já não existe pedido pendente para este medicamento
+            const existingReq = MOCK_PURCHASE_REQUESTS.find(r => r.medicationName === medName && r.status === 'PENDING');
+            
+            if (!existingReq) {
+                const req: PurchaseRequest = {
+                    id: `req_${Date.now()}_${Math.random()}`,
+                    medicationName: medName,
+                    createdAt: new Date().toISOString(),
+                    currentStock: totalStock,
+                    predictedConsumption10Days: demand,
+                    status: 'PENDING',
+                    suggestedQuantity: demand * 3 // Sugestão simples: 3x a demanda
+                };
+                requests.push(req);
+            }
+        }
+    });
+
+    // Filtra os NOVOS pedidos criados AGORA para retornar separado (útil para notificações)
+    const newRequests = requests.filter(req => !MOCK_PURCHASE_REQUESTS.some(existing => existing.id === req.id));
+
+    if (requests.length > 0) {
+        MOCK_PURCHASE_REQUESTS = [...requests, ...MOCK_PURCHASE_REQUESTS];
+        saveData(STORAGE_KEYS.PURCHASE_REQUESTS, MOCK_PURCHASE_REQUESTS);
+    }
+    
+    // Retorna todos
+    return MOCK_PURCHASE_REQUESTS;
+};
+
+// Update Purchase Request
+export const updatePurchaseRequest = (id: string, status: 'ORDERED' | 'RECEIVED') => {
+    MOCK_PURCHASE_REQUESTS = MOCK_PURCHASE_REQUESTS.map(req => req.id === id ? { ...req, status } : req);
+    saveData(STORAGE_KEYS.PURCHASE_REQUESTS, MOCK_PURCHASE_REQUESTS);
+    return [...MOCK_PURCHASE_REQUESTS];
+}
+
 // --- MODIFICATION FUNCTIONS ---
 
 // PATIENTS
 export const addMockPatient = (patient: PatientFull) => {
-    MOCK_PATIENTS = [patient, ...MOCK_PATIENTS]; // New ref with new patient first
+    MOCK_PATIENTS = [patient, ...MOCK_PATIENTS];
     saveData(STORAGE_KEYS.PATIENTS, MOCK_PATIENTS);
-    return [...MOCK_PATIENTS]; // Return a fresh copy
+    return [...MOCK_PATIENTS];
 };
 
 export const updateMockPatient = (id: string, updates: Partial<PatientFull>) => {
     const index = MOCK_PATIENTS.findIndex(p => p.id === id);
     if (index !== -1) {
-        // Create new object to update reference
         const updatedPatient = { ...MOCK_PATIENTS[index], ...updates };
         MOCK_PATIENTS[index] = updatedPatient;
-        MOCK_PATIENTS = [...MOCK_PATIENTS]; // update array ref
+        MOCK_PATIENTS = [...MOCK_PATIENTS];
         saveData(STORAGE_KEYS.PATIENTS, MOCK_PATIENTS);
         return updatedPatient;
     }
@@ -295,7 +477,7 @@ export const updateMockPatient = (id: string, updates: Partial<PatientFull>) => 
 
 export const deleteMockPatient = (id: string) => {
     const newList = MOCK_PATIENTS.filter(p => p.id !== id);
-    MOCK_PATIENTS = [...newList]; // Ensure new ref
+    MOCK_PATIENTS = [...newList];
     saveData(STORAGE_KEYS.PATIENTS, MOCK_PATIENTS);
     return [...MOCK_PATIENTS];
 }
@@ -304,7 +486,7 @@ export const deleteMockPatient = (id: string) => {
 export const addMockTreatment = (treatment: Treatment) => {
     MOCK_TREATMENTS = [treatment, ...MOCK_TREATMENTS];
     saveData(STORAGE_KEYS.TREATMENTS, MOCK_TREATMENTS);
-    recalculatePatientActiveStatus(treatment.patientId); // Atualiza status do paciente
+    recalculatePatientActiveStatus(treatment.patientId);
     return [...MOCK_TREATMENTS];
 };
 
@@ -314,14 +496,12 @@ export const updateMockTreatment = (id: string, updates: Partial<Treatment>) => 
         const oldTreatment = MOCK_TREATMENTS[index];
         const newTreatment = { ...oldTreatment, ...updates };
         MOCK_TREATMENTS[index] = newTreatment;
-        MOCK_TREATMENTS = [...MOCK_TREATMENTS]; // Fresh copy
+        MOCK_TREATMENTS = [...MOCK_TREATMENTS];
         saveData(STORAGE_KEYS.TREATMENTS, MOCK_TREATMENTS);
         
-        // Se o status mudou, recalcula o paciente
         if (updates.status && updates.status !== oldTreatment.status) {
             recalculatePatientActiveStatus(newTreatment.patientId);
         }
-        
         return newTreatment;
     }
     return null;
@@ -331,6 +511,15 @@ export const updateMockTreatment = (id: string, updates: Partial<Treatment>) => 
 export const addMockDose = (dose: Dose) => {
     MOCK_DOSES = [dose, ...MOCK_DOSES];
     saveData(STORAGE_KEYS.DOSES, MOCK_DOSES);
+    
+    // Se a dose foi salva como "Aplicada" e tem vínculo com inventário, dar baixa
+    if (dose.status !== DoseStatus.NOT_ACCEPTED && dose.inventoryLotId) {
+        const treatment = MOCK_TREATMENTS.find(t => t.id === dose.treatmentId);
+        if (treatment) {
+            dispenseMedication(dose.id, dose.inventoryLotId, treatment.patientId);
+        }
+    }
+    
     return [...MOCK_DOSES];
 }
 
@@ -339,15 +528,27 @@ export const updateMockDose = (id: string, updates: Partial<Dose>, protocolFrequ
     if (index !== -1) {
         let updatedDose = { ...MOCK_DOSES[index], ...updates };
         
-        // Se a data de aplicação mudou e temos a frequência, recalculamos a próxima data
         if (updates.applicationDate && protocolFrequency) {
             const calc = calculateDoseLogic(updates.applicationDate, protocolFrequency);
             updatedDose = { ...updatedDose, ...calc };
         }
 
         MOCK_DOSES[index] = updatedDose;
-        MOCK_DOSES = [...MOCK_DOSES]; // Trigger update
+        MOCK_DOSES = [...MOCK_DOSES];
         saveData(STORAGE_KEYS.DOSES, MOCK_DOSES);
+        
+        // Check dispense logic on update
+        if (updates.inventoryLotId && updates.status !== DoseStatus.NOT_ACCEPTED) {
+             const treatment = MOCK_TREATMENTS.find(t => t.id === updatedDose.treatmentId);
+             if (treatment) {
+                 // Verifica se já não foi dispensado antes para não duplicar (simplificado)
+                 const alreadyDispensed = MOCK_DISPENSE_LOGS.some(log => log.doseId === id);
+                 if (!alreadyDispensed) {
+                     dispenseMedication(id, updates.inventoryLotId, treatment.patientId);
+                 }
+             }
+        }
+
         return [...MOCK_DOSES];
     }
     return null;
@@ -363,7 +564,7 @@ export const getPatientDocuments = (patientId: string) => {
     return MOCK_DOCUMENTS.filter(d => d.patientId === patientId);
 };
 
-// PROTOCOLS (MEDICAMENTOS)
+// PROTOCOLS
 export const addMockProtocol = (protocol: Protocol) => {
     MOCK_PROTOCOLS = [...MOCK_PROTOCOLS, protocol];
     saveData(STORAGE_KEYS.PROTOCOLS, MOCK_PROTOCOLS);
@@ -384,24 +585,34 @@ export const deleteMockProtocol = (id: string) => {
 }
 
 // DIAGNOSES
+export const getDiagnoses = () => {
+    // Retorna uma cópia fresca para garantir que o React detecte mudanças se a referência anterior for igual
+    return [...MOCK_DIAGNOSES];
+}
+
 export const addMockDiagnosis = (diagnosis: Diagnosis) => {
     MOCK_DIAGNOSES = [...MOCK_DIAGNOSES, diagnosis];
     saveData(STORAGE_KEYS.DIAGNOSES, MOCK_DIAGNOSES);
-    return [...MOCK_DIAGNOSES];
+    return [...MOCK_DIAGNOSES]; // Retorna nova referência
 }
 
 export const deleteMockDiagnosis = (id: string) => {
     const newList = MOCK_DIAGNOSES.filter(d => d.id !== id);
-    MOCK_DIAGNOSES = [...newList]; // Ensure new array reference
+    MOCK_DIAGNOSES = [...newList]; 
     saveData(STORAGE_KEYS.DIAGNOSES, MOCK_DIAGNOSES);
-    return [...MOCK_DIAGNOSES];
+    return [...MOCK_DIAGNOSES]; // Retorna nova referência
 }
 
 // CONTACTS DISMISSAL
 export const dismissMockContact = (id: string) => {
-    if (!MOCK_DISMISSED_CONTACTS.includes(id)) {
-        MOCK_DISMISSED_CONTACTS = [...MOCK_DISMISSED_CONTACTS, id];
-        saveData(STORAGE_KEYS.DISMISSED_CONTACTS, MOCK_DISMISSED_CONTACTS);
+    const exists = MOCK_DISMISSED_LOGS.some(log => log.contactId === id);
+    if (!exists) {
+        const newLog: DismissedLog = {
+            contactId: id,
+            dismissedAt: new Date().toISOString()
+        };
+        MOCK_DISMISSED_LOGS = [...MOCK_DISMISSED_LOGS, newLog];
+        saveData(STORAGE_KEYS.DISMISSED_LOGS, MOCK_DISMISSED_LOGS);
     }
-    return [...MOCK_DISMISSED_CONTACTS];
+    return [...MOCK_DISMISSED_LOGS];
 }

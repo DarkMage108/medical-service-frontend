@@ -1,7 +1,13 @@
 
-import { TreatmentStatus, DoseStatus, PaymentStatus } from './types';
+import { TreatmentStatus, DoseStatus, PaymentStatus, UserRole } from './types';
 
 export const SESSION_KEY = 'azevedo_user_session';
+
+export const ROLE_LABELS = {
+  [UserRole.ADMIN]: 'Administrador',
+  [UserRole.DOCTOR]: 'Médico',
+  [UserRole.SECRETARY]: 'Secretária'
+};
 
 // --- DATE HELPERS ---
 

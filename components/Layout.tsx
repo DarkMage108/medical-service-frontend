@@ -1,7 +1,10 @@
+
+
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle, History, Package } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { ROLE_LABELS } from '../constants';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,47 +12,55 @@ interface LayoutProps {
   onLogout: () => void;
 }
 
+// Configuração do Menu extraída para fora do componente (Melhoria de Performance)
+const NAV_ITEMS = [
+  { 
+      label: 'Dashboard', 
+      path: '/', 
+      icon: LayoutDashboard,
+      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
+  },
+  { 
+      label: 'Pacientes', 
+      path: '/pacientes', 
+      icon: Users,
+      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
+  },
+  { 
+      label: 'Histórico', 
+      path: '/historico', 
+      icon: History,
+      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
+  },
+  { 
+      label: 'Estoque', 
+      path: '/estoque', 
+      icon: Package,
+      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR] // Acesso restrito
+  },
+  { 
+      label: 'Diagnósticos', 
+      path: '/diagnosticos', 
+      icon: Stethoscope,
+      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR]
+  },
+  { 
+      label: 'Protocolos', 
+      path: '/protocolos', 
+      icon: ClipboardList,
+      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR]
+  },
+];
+
 const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   const location = useLocation();
 
-  // Definição do menu com permissões
-  const allNavItems = [
-    { 
-        label: 'Dashboard', 
-        path: '/', 
-        icon: <LayoutDashboard size={20} />,
-        allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
-    },
-    { 
-        label: 'Pacientes', 
-        path: '/pacientes', 
-        icon: <Users size={20} />,
-        allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
-    },
-    { 
-        label: 'Diagnósticos', 
-        path: '/diagnosticos', 
-        icon: <Stethoscope size={20} />,
-        allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR] // Secretária não vê
-    },
-    { 
-        label: 'Protocolos', 
-        path: '/protocolos', 
-        icon: <ClipboardList size={20} />,
-        allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR] // Secretária não vê
-    },
-  ];
-
   // Filtra itens baseados no role do usuário logado
-  const navItems = allNavItems.filter(item => item.allowedRoles.includes(user.role));
+  const navItems = NAV_ITEMS.filter(item => item.allowedRoles.includes(user.role));
 
-  const getRoleLabel = (role: UserRole) => {
-      switch(role) {
-          case UserRole.ADMIN: return 'Administrador';
-          case UserRole.DOCTOR: return 'Médico';
-          case UserRole.SECRETARY: return 'Secretária';
-          default: return 'Usuário';
-      }
+  const isActive = (path: string) => {
+      if (path === '/') return location.pathname === '/';
+      return location.pathname.startsWith(path);
   };
 
   return (
@@ -69,31 +80,35 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
                 </div>
                 <div className="overflow-hidden">
                     <p className="text-sm font-bold text-slate-800 truncate">{user.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{getRoleLabel(user.role)}</p>
+                    <p className="text-xs text-slate-500 truncate">{ROLE_LABELS[user.role] || 'Usuário'}</p>
                 </div>
             </div>
         </div>
         
-        <nav className="flex-1 py-4 px-3 space-y-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                location.pathname === item.path
-                  ? 'bg-pink-50 text-pink-700'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <span className="mr-3">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
+        <nav className="flex-1 py-4 px-3 space-y-1" aria-label="Navegação Principal">
+          {navItems.map((item) => {
+             const Icon = item.icon;
+             return (
+                <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive(item.path)
+                    ? 'bg-pink-50 text-pink-700'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+                >
+                <Icon size={20} className="mr-3" />
+                {item.label}
+                </Link>
+             );
+          })}
         </nav>
 
         <div className="p-4 border-t border-slate-100">
           <button 
              onClick={onLogout}
+             aria-label="Sair do Sistema"
              className="flex items-center w-full px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
           >
             <LogOut size={20} className="mr-3" />
@@ -113,18 +128,21 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
                 <LogOut size={20} />
              </button>
          </div>
-         <div className="flex space-x-2 overflow-x-auto pb-1">
-             {navItems.map(item => (
-                <Link key={item.path} to={item.path} className={`p-2 whitespace-nowrap text-sm flex items-center rounded-md ${location.pathname === item.path ? 'bg-pink-50 text-pink-700' : 'text-slate-600'}`}>
-                    <span className="mr-2">{item.icon}</span>
-                    {item.label}
-                </Link>
-             ))}
+         <div className="flex space-x-2 overflow-x-auto pb-1 scrollbar-hide">
+             {navItems.map(item => {
+                const Icon = item.icon;
+                return (
+                    <Link key={item.path} to={item.path} className={`p-2 whitespace-nowrap text-sm flex items-center rounded-md ${isActive(item.path) ? 'bg-pink-50 text-pink-700' : 'text-slate-600'}`}>
+                        <Icon size={18} className="mr-2" />
+                        {item.label}
+                    </Link>
+                );
+             })}
          </div>
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto h-[calc(100vh-100px)] md:h-screen p-4 md:p-8">
+      <main className="flex-1 overflow-y-auto min-h-[calc(100dvh-80px)] md:min-h-screen p-4 md:p-8">
         <div className="max-w-7xl mx-auto">
           {children}
         </div>

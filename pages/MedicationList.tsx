@@ -1,19 +1,25 @@
 
-import React, { useState } from 'react';
-import { MOCK_PROTOCOLS, addMockProtocol, deleteMockProtocol, updateMockProtocol } from '../services/mockData';
-import { Protocol, ProtocolMilestone, ProtocolCategory } from '../types';
+
+import React, { useState, useEffect } from 'react';
+import { MOCK_PROTOCOLS, addMockProtocol, deleteMockProtocol, updateMockProtocol, getMedicationBase } from '../services/mockData';
+import { Protocol, ProtocolMilestone, ProtocolCategory, MedicationBase } from '../types';
 import { Plus, Trash2, ClipboardList, Clock, Target, MessageCircle, Calendar, AlertCircle, X, Edit2, Pill, MessageSquare, Loader2 } from 'lucide-react';
 
 const MedicationList: React.FC = () => {
   const [protocols, setProtocols] = useState<Protocol[]>(MOCK_PROTOCOLS);
+  const [medications, setMedications] = useState<MedicationBase[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Load Medication Base
+  useEffect(() => {
+      setMedications(getMedicationBase());
+  }, []);
   
   // Form State
   const [category, setCategory] = useState<ProtocolCategory>(ProtocolCategory.MEDICATION);
   const [name, setName] = useState('');
-  const [medication, setMedication] = useState('');
-  const [dosage, setDosage] = useState('');
+  const [medication, setMedication] = useState(''); // Stores Name + Dosage string
   const [frequency, setFrequency] = useState('28');
   const [goal, setGoal] = useState('');
   const [message, setMessage] = useState('');
@@ -45,7 +51,6 @@ const MedicationList: React.FC = () => {
     setCategory(ProtocolCategory.MEDICATION);
     setName('');
     setMedication('');
-    setDosage('');
     setGoal('');
     setMessage('');
     setMilestones([]);
@@ -56,9 +61,7 @@ const MedicationList: React.FC = () => {
       setEditingId(proto.id);
       setCategory(proto.category || ProtocolCategory.MEDICATION);
       setName(proto.name);
-      // Try to parse medication string if possible, otherwise just set it to name
       setMedication(proto.medicationType); 
-      setDosage(''); // Reset dosage UI as it's merged in medicationType in the model
       setFrequency(String(proto.frequencyDays));
       setGoal(proto.goal || '');
       setMessage(proto.message || '');
@@ -79,7 +82,7 @@ const MedicationList: React.FC = () => {
     let fullMedicationName = '';
     
     if (category === ProtocolCategory.MEDICATION) {
-        fullMedicationName = (medication || dosage) ? `${medication} ${dosage}`.trim() : 'Sem medicação definida';
+        fullMedicationName = medication || 'Sem medicação definida';
     } else {
         fullMedicationName = ''; // Non-medication protocols don't have this
     }
@@ -209,25 +212,23 @@ const MedicationList: React.FC = () => {
                   {/* Conditional Fields based on Category */}
                   {category === ProtocolCategory.MEDICATION ? (
                     <>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Dosagem (mg)</label>
-                            <input 
-                                type="text" 
-                                value={dosage} 
-                                onChange={e => setDosage(e.target.value)}
-                                placeholder="Ex: 3.75mg"
-                                className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                            />
-                        </div>
                         <div className="lg:col-span-2">
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Medicamento (Princípio Ativo)</label>
-                            <input 
-                                type="text" 
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Medicamento (Cadastrado em Estoque)</label>
+                            <select 
                                 value={medication} 
                                 onChange={e => setMedication(e.target.value)}
-                                placeholder="Ex: Acetato de Leuprorrelina"
                                 className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                            />
+                            >
+                                <option value="">Selecione o Medicamento...</option>
+                                {medications.map(med => (
+                                    <option key={med.id} value={`${med.activeIngredient} ${med.dosage}`.trim()}>
+                                        {med.activeIngredient} {med.dosage}
+                                    </option>
+                                ))}
+                            </select>
+                            {medications.length === 0 && (
+                                <p className="text-xs text-red-500 mt-1">Cadastre medicamentos na aba "Estoque" primeiro.</p>
+                            )}
                         </div>
                     </>
                   ) : (

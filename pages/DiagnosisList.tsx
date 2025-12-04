@@ -1,18 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
-import { MOCK_DIAGNOSES, addMockDiagnosis, deleteMockDiagnosis } from '../services/mockData';
+import { getDiagnoses, addMockDiagnosis, deleteMockDiagnosis } from '../services/mockData';
 import { Diagnosis } from '../types';
 import { Plus, Trash2, Tag, Stethoscope, Loader2 } from 'lucide-react';
 import { getDiagnosisColor } from '../constants';
 
 const DiagnosisList: React.FC = () => {
-  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>(MOCK_DIAGNOSES);
+  // Inicializa vazio e carrega no useEffect para garantir consistência
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [newDiagnosis, setNewDiagnosis] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // Força atualização ao montar para garantir sincronia
+  // Carrega diagnósticos atualizados ao montar
   useEffect(() => {
-    setDiagnoses(MOCK_DIAGNOSES);
+    setDiagnoses(getDiagnoses());
   }, []);
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -20,7 +21,8 @@ const DiagnosisList: React.FC = () => {
     if (!newDiagnosis.trim()) return;
 
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Pequeno delay para feedback visual
+    await new Promise(resolve => setTimeout(resolve, 300));
 
     const newItem: Diagnosis = {
         id: `diag_${Date.now()}`,
@@ -38,8 +40,12 @@ const DiagnosisList: React.FC = () => {
     setIsSaving(false);
   };
 
-  const handleDelete = (id: string) => {
-      if (confirm('Tem certeza que deseja excluir este diagnóstico?')) {
+  const handleDelete = (id: string, e: React.MouseEvent) => {
+      // Impede propagação se houver cliques aninhados
+      e.stopPropagation();
+      e.preventDefault();
+      
+      if (window.confirm('Tem certeza que deseja excluir este diagnóstico?')) {
           const updated = deleteMockDiagnosis(id);
           setDiagnoses(updated);
       }
@@ -65,11 +71,12 @@ const DiagnosisList: React.FC = () => {
                     onChange={e => setNewDiagnosis(e.target.value)}
                     placeholder="Ex: Puberdade Precoce, Obesidade..."
                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                    disabled={isSaving}
                   />
               </div>
               <button 
                 type="submit" 
-                disabled={!newDiagnosis || isSaving}
+                disabled={!newDiagnosis.trim() || isSaving}
                 className="bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center shadow-sm"
               >
                   {isSaving ? <Loader2 size={18} className="mr-2 animate-spin"/> : <Plus size={18} className="mr-2" />}
@@ -90,8 +97,8 @@ const DiagnosisList: React.FC = () => {
                           </div>
                           <button 
                             type="button"
-                            onClick={() => handleDelete(diag.id)}
-                            className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all"
+                            onClick={(e) => handleDelete(diag.id, e)}
+                            className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all cursor-pointer"
                             title="Excluir Diagnóstico"
                           >
                               <Trash2 size={18} />

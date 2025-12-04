@@ -74,6 +74,16 @@ export interface Diagnosis {
   name: string;
 }
 
+// --- MEDICAMENTOS BASE (Novo) ---
+export interface MedicationBase {
+  id: string;
+  activeIngredient: string; // ex: Acetato de Leuprorrelina
+  dosage: string; // ex: 3.75mg (Apresentação)
+  tradeName?: string; // ex: Neodeca
+  manufacturer?: string; // ex: Eurofarma
+  pharmaceuticalForm?: string; // ex: Pó Liofilizado
+}
+
 export interface ProtocolMilestone {
   day: number;
   message: string;
@@ -150,6 +160,9 @@ export interface Dose {
   surveyStatus: SurveyStatus;
   surveyScore?: number; // 1-10
   surveyComment?: string;
+
+  // Link with Inventory
+  inventoryLotId?: string; // ID do lote usado
 }
 
 export interface Treatment {
@@ -163,4 +176,43 @@ export interface Treatment {
   
   // Specific Logic Fields
   plannedDosesBeforeConsult: number; // 1, 2, or 3
+}
+
+// Histórico de mensagens enviadas/concluídas
+export interface DismissedLog {
+    contactId: string;
+    dismissedAt: string; // ISO Date time
+}
+
+// --- ESTOQUE (INVENTORY) ---
+
+export interface InventoryItem {
+  id: string;
+  medicationName: string; // Nome ex: Neodeca 11.25mg
+  lotNumber: string;
+  expiryDate: string;
+  quantity: number; // Saldo atual
+  unit: string; // ex: Ampola
+  entryDate: string;
+  active: boolean;
+}
+
+export interface DispenseLog {
+  id: string;
+  date: string;
+  patientId: string; // Link paciente
+  inventoryItemId: string; // Link lote
+  medicationName: string; // Snapshot do nome
+  quantity: number;
+  doseId?: string; // Link com a dose
+}
+
+export interface PurchaseRequest {
+  id: string;
+  medicationName: string;
+  createdAt: string;
+  predictedConsumption10Days: number;
+  currentStock: number;
+  status: 'PENDING' | 'ORDERED' | 'RECEIVED';
+  suggestedQuantity?: number;
 }
