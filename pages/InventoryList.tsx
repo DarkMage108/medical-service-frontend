@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { InventoryService, MedicationBaseService } from '../services/mockData';
-import { InventoryItem, MedicationBase, PurchaseRequest, DispenseLog } from '../types';
+import { MOCK_INVENTORY, MOCK_DISPENSE_LOGS, MOCK_PURCHASE_REQUESTS, addStockEntry, checkPurchaseTriggers, updatePurchaseRequest, getMedicationBase, addMockMedicationBase, deleteMockMedicationBase, updateInventoryItem } from '../services/mockData';
+import { InventoryItem, MedicationBase } from '../types';
 import { Package, Plus, Search, AlertTriangle, ShoppingCart, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, Mail, PieChart } from 'lucide-react';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
@@ -12,48 +12,44 @@ const InventoryList: React.FC = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<'list' | 'entry' | 'orders' | 'reports' | 'medications'>('list');
   
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
-  const [logs, setLogs] = useState<DispenseLog[]>([]);
-  const [medications, setMedications] = useState<MedicationBase[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Data States
+  const [inventory, setInventory] = useState(MOCK_INVENTORY);
+  const [requests, setRequests] = useState(MOCK_PURCHASE_REQUESTS);
+  const [logs, setLogs] = useState(MOCK_DISPENSE_LOGS);
+  const [medications, setMedications] = useState<MedicationBase[]>(getMedicationBase());
   
+  // Alert State
   const [emailAlertVisible, setEmailAlertVisible] = useState(false);
   
+  // Edit State
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [editQuantity, setEditQuantity] = useState(0);
   const [editExpiry, setEditExpiry] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
+  // Report Filters
+  // Data de início padrão é 01/Jan do ANO PASSADO para garantir que dados de seed apareçam
   const [reportStartDate, setReportStartDate] = useState(new Date(new Date().getFullYear() - 1, 0, 1).toISOString().split('T')[0]);
-  const [reportEndDate, setReportEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reportEndDate, setReportEndDate] = useState(new Date().toISOString().split('T')[0]); // Hoje
   const [reportViewMode, setReportViewMode] = useState<'monthly' | 'quarterly'>('monthly');
 
+  // Trigger check on mount
   useEffect(() => {
-    const load = async () => {
-        setLoading(true);
-        const [inv, reqs, l, meds] = await Promise.all([
-            InventoryService.getAll(),
-            InventoryService.checkTriggers(), // Logic to check AND return requests
-            InventoryService.getDispenseLogs(),
-            MedicationBaseService.getAll()
-        ]);
-        setInventory(inv);
-        setRequests(reqs);
-        setLogs(l);
-        setMedications(meds);
-        setLoading(false);
-
-        const newPending = reqs.filter(r => r.status === 'PENDING');
-        if (newPending.length > 0) {
-            setEmailAlertVisible(true);
-            setTimeout(() => setEmailAlertVisible(false), 5000);
-        }
-    };
-    load();
+      const updatedReqs = checkPurchaseTriggers();
+      setRequests(updatedReqs);
+      setMedications(getMedicationBase()); // Refresh meds
+      setLogs(MOCK_DISPENSE_LOGS); // Force reload logs
+      
+      // Simulação de Alerta de E-mail se houver novos pedidos pendentes
+      const newPending = updatedReqs.filter(r => r.status === 'PENDING');
+      if (newPending.length > 0) {
+          setEmailAlertVisible(true);
+          setTimeout(() => setEmailAlertVisible(false), 5000);
+      }
   }, [activeTab]);
 
+  // Handle Navigation State to switch tabs automatically
   useEffect(() => {
       if (location.state && (location.state as any).activeTab) {
           setActiveTab((location.state as any).activeTab);
@@ -61,8 +57,10 @@ const InventoryList: React.FC = () => {
       }
   }, [location]);
 
+  // Filter States
   const [searchTerm, setSearchTerm] = useState('');
 
+  // --- ENTRY FORM STATES ---
   const [entryMedication, setEntryMedication] = useState('');
   const [entryLot, setEntryLot] = useState('');
   const [entryExpiry, setEntryExpiry] = useState('');
@@ -70,6 +68,7 @@ const InventoryList: React.FC = () => {
   const [entryUnit, setEntryUnit] = useState('Ampola');
   const [isSavingEntry, setIsSavingEntry] = useState(false);
 
+  // --- MEDICATION REGISTRY STATES ---
   const [newActiveIngredient, setNewActiveIngredient] = useState('');
   const [newDosage, setNewDosage] = useState('');
   const [newTradeName, setNewTradeName] = useState('');
@@ -77,6 +76,9 @@ const InventoryList: React.FC = () => {
   const [newForm, setNewForm] = useState('Ampola');
   const [isSavingMed, setIsSavingMed] = useState(false);
 
+  // --- DERIVED DATA ---
+  
+  // Group Inventory by Medication Name
   const groupedInventory = useMemo(() => {
       const grouped: Record<string, { total: number, lots: InventoryItem[] }> = {};
       
@@ -93,8 +95,11 @@ const InventoryList: React.FC = () => {
         .filter(g => g.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [inventory, searchTerm]);
 
+  // --- REPORT DATA PROCESSING (MATRIX) ---
   const reportMatrix = useMemo(() => {
+      // 1. Filtrar logs pela data
       const filteredLogs = logs.filter(log => {
+          // Robustez para data
           const logDate = new Date(log.date);
           if (isNaN(logDate.getTime())) return false;
           
@@ -102,17 +107,20 @@ const InventoryList: React.FC = () => {
           return d >= reportStartDate && d <= reportEndDate;
       });
 
+      // 2. Identificar colunas (Meses ou Trimestres) e Linhas (Medicamentos)
       const timeKeys = new Set<string>();
       const medicationKeys = new Set<string>();
-      const dataMap: Record<string, Record<string, number>> = {};
+      const dataMap: Record<string, Record<string, number>> = {}; // { medication: { timeKey: count } }
 
       filteredLogs.forEach(log => {
           const date = new Date(log.date);
           let key = '';
 
           if (reportViewMode === 'monthly') {
+              // YYYY-MM
               key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
           } else {
+              // YYYY-Qx
               const q = Math.floor(date.getMonth() / 3) + 1;
               key = `${date.getFullYear()}-Q${q}`;
           }
@@ -124,9 +132,11 @@ const InventoryList: React.FC = () => {
           dataMap[log.medicationName][key] = (dataMap[log.medicationName][key] || 0) + log.quantity;
       });
 
-      const sortedTimeKeys = Array.from(timeKeys).sort();
-      const sortedMedications = Array.from(medicationKeys).sort();
+      // 3. Ordenar chaves
+      const sortedTimeKeys = Array.from(timeKeys).sort(); // Cronológico
+      const sortedMedications = Array.from(medicationKeys).sort(); // Alfabético
 
+      // 4. Calcular totais
       const columnTotals: Record<string, number> = {};
       sortedTimeKeys.forEach(k => columnTotals[k] = 0);
       let grandTotal = 0;
@@ -151,20 +161,24 @@ const InventoryList: React.FC = () => {
       };
   }, [logs, reportStartDate, reportEndDate, reportViewMode]);
 
+  // Helper para formatar o cabeçalho da coluna (Ex: 2024-01 -> Jan/24)
   const formatTimeHeader = (key: string) => {
       const [year, part] = key.split('-');
       if (part.startsWith('Q')) {
-          return `${part}/${year}`; 
+          return `${part}/${year}`; // Q1/2024
       }
       const date = new Date(Number(year), Number(part) - 1, 1);
       return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).toUpperCase();
   };
+
+  // --- HANDLERS ---
 
   const handleSaveEntry = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!entryMedication || !entryLot || !entryExpiry || entryQuantity <= 0) return;
 
       setIsSavingEntry(true);
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       const newItem: InventoryItem = {
           id: `inv_${Date.now()}`,
@@ -177,10 +191,11 @@ const InventoryList: React.FC = () => {
           active: true
       };
 
-      await InventoryService.addEntry(newItem);
-      setInventory(await InventoryService.getAll());
+      const updatedInventory = addStockEntry(newItem);
+      setInventory(updatedInventory);
       
       setIsSavingEntry(false);
+      // Reset Form
       setEntryLot('');
       setEntryQuantity(0);
       setEntryExpiry('');
@@ -188,9 +203,9 @@ const InventoryList: React.FC = () => {
       setActiveTab('list');
   };
 
-  const handleUpdateStatus = async (id: string, status: 'ORDERED' | 'RECEIVED') => {
-      await InventoryService.updateRequest(id, status);
-      setRequests(await InventoryService.getPurchaseRequests());
+  const handleUpdateStatus = (id: string, status: 'ORDERED' | 'RECEIVED') => {
+      const updated = updatePurchaseRequest(id, status);
+      setRequests(updated);
   };
 
   const handleSendEmail = (req: any) => {
@@ -204,7 +219,8 @@ const InventoryList: React.FC = () => {
       if (!newActiveIngredient || !newDosage) return;
 
       setIsSavingMed(true);
-      
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const newMed: MedicationBase = {
           id: `med_${Date.now()}`,
           activeIngredient: newActiveIngredient,
@@ -214,8 +230,8 @@ const InventoryList: React.FC = () => {
           pharmaceuticalForm: newForm
       };
 
-      await MedicationBaseService.create(newMed);
-      setMedications(await MedicationBaseService.getAll());
+      const updatedList = addMockMedicationBase(newMed);
+      setMedications(updatedList);
       setIsSavingMed(false);
       
       setNewActiveIngredient('');
@@ -225,10 +241,10 @@ const InventoryList: React.FC = () => {
       setNewForm('Ampola');
   };
 
-  const handleDeleteMedication = async (id: string) => {
+  const handleDeleteMedication = (id: string) => {
       if (window.confirm('Excluir este medicamento da lista de cadastro?')) {
-          await MedicationBaseService.delete(id);
-          setMedications(await MedicationBaseService.getAll());
+          const updated = deleteMockMedicationBase(id);
+          setMedications(updated);
       }
   };
 
@@ -244,24 +260,24 @@ const InventoryList: React.FC = () => {
       if (!editingItem) return;
 
       setIsSavingEdit(true);
-      
+      await new Promise(resolve => setTimeout(resolve, 600));
+
       const updates: Partial<InventoryItem> = {
           quantity: Number(editQuantity),
           expiryDate: editExpiry
       };
 
-      await InventoryService.update(editingItem.id, updates);
-      setInventory(await InventoryService.getAll());
+      const updatedList = updateInventoryItem(editingItem.id, updates);
+      if (updatedList) setInventory(updatedList);
 
       setIsSavingEdit(false);
       setIsEditModalOpen(false);
       setEditingItem(null);
   };
 
-  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
-
   return (
     <div className="space-y-6">
+      {/* Alerta de Email Enviado */}
       {emailAlertVisible && (
           <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-200 text-green-800 px-6 py-4 rounded-xl shadow-lg flex items-center animate-in slide-in-from-right-10 duration-300">
               <Mail className="mr-3" size={24} />
@@ -281,6 +297,7 @@ const InventoryList: React.FC = () => {
             <p className="text-slate-500 mt-1">Gestão de lotes, dispensação e compras.</p>
         </div>
         
+        {/* TABS */}
         <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm overflow-x-auto">
             <button 
                 onClick={() => setActiveTab('list')}
@@ -321,6 +338,7 @@ const InventoryList: React.FC = () => {
         </div>
       </div>
 
+      {/* --- TAB: LISTA --- */}
       {activeTab === 'list' && (
           <div className="space-y-4">
               <div className="relative">
@@ -391,6 +409,7 @@ const InventoryList: React.FC = () => {
           </div>
       )}
 
+      {/* --- TAB: CADASTRO MEDICAMENTOS (NOVA) --- */}
       {activeTab === 'medications' && (
           <div className="max-w-5xl mx-auto space-y-6">
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -400,6 +419,7 @@ const InventoryList: React.FC = () => {
                   </h3>
                   <form onSubmit={handleSaveMedication} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-slate-50 p-4 rounded-lg border border-slate-200">
                       
+                      {/* Linha 1 */}
                       <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Nome Comercial (Opc)</label>
                           <input 
@@ -421,6 +441,7 @@ const InventoryList: React.FC = () => {
                           />
                       </div>
 
+                      {/* Linha 2 */}
                       <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-slate-700 mb-1">Princípio Ativo</label>
                           <input 
@@ -514,6 +535,7 @@ const InventoryList: React.FC = () => {
           </div>
       )}
 
+      {/* --- TAB: ENTRADA --- */}
       {activeTab === 'entry' && (
           <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
               <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center">
@@ -605,6 +627,7 @@ const InventoryList: React.FC = () => {
           </div>
       )}
 
+      {/* --- TAB: PEDIDOS --- */}
       {activeTab === 'orders' && (
           <SectionCard 
             title="Pedidos de Compra (Automáticos)" 
@@ -672,8 +695,10 @@ const InventoryList: React.FC = () => {
           </SectionCard>
       )}
 
+      {/* --- TAB: RELATÓRIOS (NOVO - Matriz Analítica) --- */}
       {activeTab === 'reports' && (
           <div className="space-y-6">
+              {/* Header de Filtros */}
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col md:flex-row items-end md:items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
                       <BarChart3 size={20} className="text-pink-600" />
@@ -711,6 +736,7 @@ const InventoryList: React.FC = () => {
                   </div>
               </div>
 
+              {/* Tabela Cruzada (Matrix) */}
               <SectionCard title={`Dispensação ${reportViewMode === 'monthly' ? 'Mensal' : 'Trimestral'} (Unidades)`} icon={<BarChart3 size={18} className="text-slate-600"/>} headerBg="bg-slate-50">
                   {reportMatrix.rows.length === 0 ? (
                       <div className="p-12 text-center text-slate-400">
@@ -729,37 +755,39 @@ const InventoryList: React.FC = () => {
                                               {formatTimeHeader(col)}
                                           </th>
                                       ))}
-                                      <th className="px-4 py-3 border-b border-slate-200 text-right">
+                                      <th className="px-4 py-3 border-b border-slate-200 text-right bg-pink-50 text-pink-700 min-w-[80px]">
                                           Total
                                       </th>
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {reportMatrix.rows.map(row => (
-                                      <tr key={row.name} className="hover:bg-slate-50">
-                                          <td className="px-4 py-3 font-medium text-slate-800 border-b border-slate-100 bg-slate-50/50 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                  {reportMatrix.rows.map((row) => (
+                                      <tr key={row.name} className="hover:bg-amber-50/30 transition-colors">
+                                          <td className="px-4 py-3 font-medium text-slate-800 bg-white sticky left-0 z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                                               {row.name}
                                           </td>
                                           {row.cells.map((cell, idx) => (
-                                              <td key={idx} className="px-4 py-3 text-center text-slate-600 border-b border-slate-100">
+                                              <td key={idx} className={`px-4 py-3 text-center ${cell > 0 ? 'font-bold text-slate-700' : 'text-slate-300'}`}>
                                                   {cell > 0 ? cell : '-'}
                                               </td>
                                           ))}
-                                          <td className="px-4 py-3 text-right font-bold text-slate-800 border-b border-slate-100 bg-slate-50">
+                                          <td className="px-4 py-3 text-right font-bold bg-pink-50/30 text-slate-800">
                                               {row.total}
                                           </td>
                                       </tr>
                                   ))}
                               </tbody>
-                              <tfoot className="bg-slate-100 font-bold text-slate-800">
+                              <tfoot className="bg-slate-50 font-bold text-slate-700 border-t border-slate-300">
                                   <tr>
-                                      <td className="px-4 py-3 sticky left-0 bg-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Total Geral</td>
+                                      <td className="px-4 py-3 sticky left-0 z-10 bg-slate-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTAIS</td>
                                       {reportMatrix.columns.map(col => (
                                           <td key={col} className="px-4 py-3 text-center">
                                               {reportMatrix.columnTotals[col]}
                                           </td>
                                       ))}
-                                      <td className="px-4 py-3 text-right">{reportMatrix.grandTotal}</td>
+                                      <td className="px-4 py-3 text-right bg-pink-100 text-pink-800">
+                                          {reportMatrix.grandTotal}
+                                      </td>
                                   </tr>
                               </tfoot>
                           </table>
@@ -768,59 +796,70 @@ const InventoryList: React.FC = () => {
               </SectionCard>
           </div>
       )}
-      
-      <Modal 
-        open={isEditModalOpen} 
-        onClose={() => setIsEditModalOpen(false)} 
-        title="Ajuste de Estoque (Correção)" 
-        icon={<Edit2 size={20} className="text-pink-600"/>}
-      >
-          <form onSubmit={handleSaveEdit}>
-              <div className="space-y-4">
-                  <div className="bg-slate-50 p-3 rounded text-sm text-slate-600 border border-slate-200">
-                      <p className="font-bold">{editingItem?.medicationName}</p>
-                      <p>Lote: {editingItem?.lotNumber}</p>
+
+      {/* --- MODAL DE EDIÇÃO DE ESTOQUE --- */}
+      <Modal open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Editar Lote de Estoque" icon={<Edit2 size={20} className="text-pink-600"/>}>
+          {editingItem && (
+              <form onSubmit={handleSaveEdit} className="space-y-4">
+                  <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Medicação (Fixo)</label>
+                      <input 
+                          type="text" 
+                          disabled 
+                          value={editingItem.medicationName} 
+                          className="w-full border-slate-200 bg-slate-50 rounded-lg text-slate-500"
+                      />
+                  </div>
+                  <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Lote (Fixo)</label>
+                      <input 
+                          type="text" 
+                          disabled 
+                          value={editingItem.lotNumber} 
+                          className="w-full border-slate-200 bg-slate-50 rounded-lg text-slate-500 font-mono"
+                      />
                   </div>
                   <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade Atual</label>
                       <input 
-                          type="number"
-                          min="0" 
+                          type="number" 
+                          min="0"
+                          required
                           value={editQuantity}
                           onChange={e => setEditQuantity(Number(e.target.value))}
-                          className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                          className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                       />
                   </div>
-                   <div>
+                  <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Validade</label>
                       <input 
-                          type="date"
+                          type="date" 
+                          required
                           value={editExpiry}
                           onChange={e => setEditExpiry(e.target.value)}
-                          className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                          className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                       />
                   </div>
-                  <div className="flex justify-end pt-4">
+                  <div className="pt-4 flex justify-end gap-2">
                       <button 
                           type="button" 
                           onClick={() => setIsEditModalOpen(false)}
-                          className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg mr-2"
+                          className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
                       >
                           Cancelar
                       </button>
                       <button 
                           type="submit" 
                           disabled={isSavingEdit}
-                          className="flex items-center bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                          className="flex items-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
                       >
-                          {isSavingEdit ? <Loader2 size={16} className="animate-spin mr-2" /> : <Save size={16} className="mr-2" />}
-                          Salvar Ajuste
+                          {isSavingEdit ? <Loader2 size={18} className="mr-2 animate-spin"/> : <Save size={18} className="mr-2"/>}
+                          Salvar Alterações
                       </button>
                   </div>
-              </div>
-          </form>
+              </form>
+          )}
       </Modal>
-
     </div>
   );
 };

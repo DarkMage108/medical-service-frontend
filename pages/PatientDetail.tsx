@@ -1,38 +1,41 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { PatientService, TreatmentService, DocumentService, ProtocolService, DoseService } from '../services/mockData';
+import { MOCK_PATIENTS, MOCK_TREATMENTS, MOCK_PROTOCOLS, getPatientDocuments, addMockDocument, addMockTreatment, updateMockPatient, MOCK_DOSES } from '../services/mockData';
 import { formatDate, getTreatmentStatusColor } from '../constants';
 import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save } from 'lucide-react';
-import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose } from '../types';
+import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory } from '../types';
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 const PatientDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [loading, setLoading] = useState(true);
-
-  // Data States
-  const [patient, setPatient] = useState<PatientFull | undefined>(undefined);
-  const [treatments, setTreatments] = useState<Treatment[]>([]);
-  const [protocols, setProtocols] = useState<Protocol[]>([]);
-  const [doses, setDoses] = useState<Dose[]>([]);
-  const [documents, setDocuments] = useState<ConsentDocument[]>([]);
-
-  // Modal & Edit States
   const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
+  
+  // Treatment Modal State
   const [isTreatmentModalOpen, setIsTreatmentModalOpen] = useState(false);
   const [newProtocolId, setNewProtocolId] = useState('');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [plannedDoses, setPlannedDoses] = useState(3);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
   
+  // Edit Patient Modal State
   const [isEditPatientOpen, setIsEditPatientOpen] = useState(false);
   const [isSavingPatient, setIsSavingPatient] = useState(false);
   
+  // Document Upload State
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Load data
+  const initialPatient = MOCK_PATIENTS.find(p => p.id === id);
+  const [patient, setPatient] = useState(initialPatient);
+  // We use local state for treatments to allow immediate UI update after creation
+  const [treatments, setTreatments] = useState(MOCK_TREATMENTS.filter(t => t.patientId === id));
+  
+  // Documents State
+  const [documents, setDocuments] = useState<ConsentDocument[]>(id ? getPatientDocuments(id) : []);
 
   // Form states for Patient Edit
   const [editName, setEditName] = useState('');
@@ -40,6 +43,7 @@ const PatientDetail: React.FC = () => {
   const [editPhone, setEditPhone] = useState('');
   const [editClinicalNotes, setEditClinicalNotes] = useState('');
   
+  // Address Edit fields
   const [editStreet, setEditStreet] = useState('');
   const [editNumber, setEditNumber] = useState('');
   const [editCity, setEditCity] = useState('');
@@ -48,43 +52,16 @@ const PatientDetail: React.FC = () => {
   const [editZipCode, setEditZipCode] = useState('');
   const [isLoadingCep, setIsLoadingCep] = useState(false);
 
-  useEffect(() => {
-    const loadData = async () => {
-        if(!id) return;
-        setLoading(true);
-        try {
-            const [p, t, d, docs, protos] = await Promise.all([
-                PatientService.getById(id),
-                TreatmentService.getByPatientId(id),
-                DoseService.getAll(),
-                DocumentService.getByPatient(id),
-                ProtocolService.getAll()
-            ]);
-            setPatient(p);
-            setTreatments(t);
-            setDoses(d);
-            setDocuments(docs);
-            setProtocols(protos);
-        } catch (e) {
-            console.error("Error loading patient data", e);
-        } finally {
-            setLoading(false);
-        }
-    };
-    loadData();
-  }, [id]);
-
-  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-pink-600" size={32} /></div>;
   if (!patient) return <div className="p-8 text-center">Paciente não encontrado.</div>;
 
   const getProtocolName = (pid: string) => {
-    return protocols.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
+    return MOCK_PROTOCOLS.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
   };
 
   const handleOpenEditPatient = () => {
       setEditName(patient.fullName);
-      setEditGuardianName(patient.guardian?.fullName || '');
-      setEditPhone(patient.guardian?.phonePrimary || '');
+      setEditGuardianName(patient.guardian.fullName);
+      setEditPhone(patient.guardian.phonePrimary);
       setEditClinicalNotes(patient.clinicalNotes || '');
       
       setEditStreet(patient.address?.street || '');
@@ -126,6 +103,9 @@ const PatientDetail: React.FC = () => {
       e.preventDefault();
       setIsSavingPatient(true);
       
+      // Simula delay de API
+      await new Promise(resolve => setTimeout(resolve, 800));
+
       const updates = {
           fullName: editName,
           clinicalNotes: editClinicalNotes,
@@ -146,12 +126,10 @@ const PatientDetail: React.FC = () => {
           } : undefined 
       };
       
-      try {
-        const updated = await PatientService.update(patient.id, updates);
-        setPatient(updated);
-        setIsEditPatientOpen(false);
-      } catch(e) {
-          alert('Erro ao atualizar paciente');
+      const updated = updateMockPatient(patient.id, updates);
+      if (updated) {
+          setPatient(updated);
+          setIsEditPatientOpen(false);
       }
       setIsSavingPatient(false);
   };
@@ -161,12 +139,14 @@ const PatientDetail: React.FC = () => {
     setUploadError(null);
 
     if (file && id) {
+        // 1. Validation: File Size
         if (file.size > MAX_FILE_SIZE_BYTES) {
             setUploadError(`O arquivo é muito grande (${(file.size / (1024*1024)).toFixed(2)}MB). O limite máximo é de ${MAX_FILE_SIZE_MB}MB.`);
-            e.target.value = '';
+            e.target.value = ''; // Reset input
             return;
         }
 
+        // 2. Validation: File Type
         const allowedTypes = [
             'application/pdf', 
             'application/msword', 
@@ -175,12 +155,14 @@ const PatientDetail: React.FC = () => {
         
         if (!allowedTypes.includes(file.type)) {
             setUploadError('Formato de arquivo inválido. Por favor, envie apenas arquivos PDF ou Word (.doc, .docx).');
-            e.target.value = '';
+            e.target.value = ''; // Reset input
             return;
         }
 
+        // Simulate Upload Process
         setIsUploading(true);
-        
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
         const newDoc: ConsentDocument = {
             id: `doc_${Date.now()}`,
             patientId: id,
@@ -188,17 +170,14 @@ const PatientDetail: React.FC = () => {
             fileType: file.name.endsWith('.pdf') ? 'pdf' : 'docx',
             uploadDate: new Date().toISOString(),
             uploadedBy: 'Admin (Você)',
-            url: URL.createObjectURL(file) // Mock URL
+            url: URL.createObjectURL(file) // Create a fake local URL
         };
 
-        try {
-            await DocumentService.add(newDoc);
-            setDocuments([newDoc, ...documents]);
-        } catch (e) {
-            setUploadError('Erro ao salvar documento.');
-        }
+        addMockDocument(newDoc);
+        setDocuments([newDoc, ...documents]);
         
         setIsUploading(false);
+        // Clear input
         e.target.value = '';
     }
   };
@@ -207,7 +186,7 @@ const PatientDetail: React.FC = () => {
       const pid = e.target.value;
       setNewProtocolId(pid);
       
-      const proto = protocols.find(p => p.id === pid);
+      const proto = MOCK_PROTOCOLS.find(p => p.id === pid);
       if (proto) {
           if (proto.category === ProtocolCategory.MONITORING) {
               setPlannedDoses(0);
@@ -217,17 +196,20 @@ const PatientDetail: React.FC = () => {
       }
   };
 
+  // Helper to check selected protocol type
   const isMedicationProtocol = useMemo(() => {
-      const proto = protocols.find(p => p.id === newProtocolId);
+      const proto = MOCK_PROTOCOLS.find(p => p.id === newProtocolId);
       return proto?.category === ProtocolCategory.MEDICATION;
-  }, [newProtocolId, protocols]);
+  }, [newProtocolId]);
 
   const handleSaveTreatment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !newProtocolId) return;
     
     setIsSavingTreatment(true);
-    
+    // Simula delay de API
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     const newTreatment: Treatment = {
         id: `t_${Date.now()}`,
         patientId: id,
@@ -237,21 +219,19 @@ const PatientDetail: React.FC = () => {
         plannedDosesBeforeConsult: Number(plannedDoses),
     };
 
-    try {
-        const created = await TreatmentService.create(newTreatment);
-        setTreatments([...treatments, created]);
-        
-        // Refresh patient status
-        const updatedPatient = await PatientService.getById(id);
-        if(updatedPatient) setPatient(updatedPatient);
-        
-    } catch (e) {
-        alert('Erro ao criar tratamento');
-    }
+    const updatedList = addMockTreatment(newTreatment);
+    
+    // Atualiza estado local de tratamentos
+    setTreatments(updatedList.filter(t => t.patientId === id));
+    
+    // Recarrega o paciente para atualizar o status (Ativo/Inativo) que pode ter mudado
+    const updatedPatient = MOCK_PATIENTS.find(p => p.id === id);
+    if(updatedPatient) setPatient(updatedPatient);
 
     setIsSavingTreatment(false);
     setIsTreatmentModalOpen(false);
     
+    // Reset Form
     setNewProtocolId('');
     setNewStartDate(new Date().toISOString().split('T')[0]);
   };
@@ -318,9 +298,9 @@ const PatientDetail: React.FC = () => {
                     </div>
                     <div>
                         <span className="text-slate-500 block">Responsável</span>
-                        <div className="font-medium text-slate-800">{patient.guardian?.fullName || '-'}</div>
-                        <div className="text-slate-600">{patient.guardian?.relationship || '-'}</div>
-                        <div className="text-pink-600 mt-1">{patient.guardian?.phonePrimary || '-'}</div>
+                        <div className="font-medium text-slate-800">{patient.guardian.fullName}</div>
+                        <div className="text-slate-600">{patient.guardian.relationship}</div>
+                        <div className="text-pink-600 mt-1">{patient.guardian.phonePrimary}</div>
                     </div>
                 </div>
             </div>
@@ -362,7 +342,7 @@ const PatientDetail: React.FC = () => {
                 
                 <div className="space-y-4">
                     {treatments.map(treatment => {
-                        const appliedDoses = doses.filter(d => d.treatmentId === treatment.id && d.status === DoseStatus.APPLIED).length;
+                        const appliedDoses = MOCK_DOSES.filter(d => d.treatmentId === treatment.id && d.status === DoseStatus.APPLIED).length;
                         return (
                         <div key={treatment.id} className="border border-slate-100 rounded-lg p-4 hover:border-pink-200 hover:shadow-md transition-all">
                             <div className="flex justify-between items-start">
@@ -538,7 +518,7 @@ const PatientDetail: React.FC = () => {
                             className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                         >
                             <option value="" disabled>Selecione o protocolo...</option>
-                            {protocols.map(p => (
+                            {MOCK_PROTOCOLS.map(p => (
                                 <option key={p.id} value={p.id}>{p.name} ({p.frequencyDays} dias)</option>
                             ))}
                         </select>

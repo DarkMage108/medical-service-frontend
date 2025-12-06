@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { PatientService, DiagnosisService } from '../services/mockData';
-import { PatientFull, Diagnosis } from '../types';
+import { MOCK_PATIENTS, MOCK_DIAGNOSES, addMockPatient, deleteMockPatient } from '../services/mockData';
+import { PatientFull } from '../types';
 import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity } from 'lucide-react';
 import { getDiagnosisColor } from '../constants';
 
@@ -11,34 +10,13 @@ const PatientList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [diagnosisFilter, setDiagnosisFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'inactive'
-  
-  // Data States
-  const [patients, setPatients] = useState<PatientFull[]>([]);
-  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // UI States
+  const [patients, setPatients] = useState<PatientFull[]>(MOCK_PATIENTS);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Carregar dados via Service (Async)
+  // Força a atualização dos dados ao montar o componente
   useEffect(() => {
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const [pats, diags] = await Promise.all([
-                PatientService.getAll(),
-                DiagnosisService.getAll()
-            ]);
-            setPatients(pats);
-            setDiagnoses(diags);
-        } catch (error) {
-            console.error("Erro ao carregar pacientes", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-    fetchData();
+    setPatients(MOCK_PATIENTS);
   }, []);
 
   // Verifica se veio algum filtro do Dashboard via navegação
@@ -85,36 +63,41 @@ const PatientList: React.FC = () => {
   // --- OTIMIZAÇÃO DE PERFORMANCE ---
   
   // 1. Pré-processamento dos dados pesquisáveis
+  // Esta lista só é recriada se 'patients' mudar (add/edit/delete), e NÃO a cada tecla digitada na busca.
   const processedPatients = useMemo(() => {
     const normalize = (str: string) => 
         str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
     return patients.map(p => ({
         ...p,
+        // Pré-calcula strings de busca para evitar processamento repetitivo no filtro
         _searchName: normalize(p.fullName),
         _searchGuardian: normalize(p.guardian.fullName),
-        _searchPhone: p.guardian.phonePrimary.replace(/\D/g, '')
+        _searchPhone: p.guardian.phonePrimary.replace(/\D/g, '') // Apenas números
     }));
   }, [patients]);
 
-  // 2. Filtragem eficiente
+  // 2. Filtragem eficiente usando os dados pré-processados
   const filteredPatients = useMemo(() => {
     const normalize = (str: string) => 
         str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
     const term = searchTerm.trim();
     const normalizedTerm = normalize(term);
-    const numericTerm = term.replace(/\D/g, '');
+    const numericTerm = term.replace(/\D/g, ''); // Extrai números da busca
     const hasSearch = term.length > 0;
-    const hasNumericSearch = numericTerm.length > 2;
+    const hasNumericSearch = numericTerm.length > 2; // Só busca telefone se tiver pelo menos 3 números
 
     return processedPatients.filter(p => {
-        // 1. Filtro por Texto
+        // 1. Filtro por Texto (Nome ou Telefone)
         let matchesSearch = true;
         if (hasSearch) {
             const nameMatch = p._searchName.includes(normalizedTerm);
             const guardianMatch = p._searchGuardian.includes(normalizedTerm);
+            
+            // Busca inteligente de telefone: só compara se o usuário digitou números suficientes
             const phoneMatch = hasNumericSearch && p._searchPhone.includes(numericTerm);
+            
             matchesSearch = nameMatch || guardianMatch || phoneMatch;
         }
 
@@ -153,13 +136,6 @@ const PatientList: React.FC = () => {
     setClinicalNotes('');
   };
 
-  // Helper para buscar cor (agora busca no array de diagnósticos carregados)
-  const resolveDiagnosisColor = (diagName: string) => {
-      const found = diagnoses.find(d => d.name === diagName);
-      if (found && found.color) return found.color;
-      return getDiagnosisColor(diagName);
-  };
-
   const handleZipCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value.replace(/\D/g, '');
       setZipCode(e.target.value); 
@@ -189,6 +165,9 @@ const PatientList: React.FC = () => {
     e.preventDefault();
     setIsSaving(true);
     
+    // Simula delay de API
+    await new Promise(resolve => setTimeout(resolve, 800));
+
     const newId = `pat_${Date.now()}`;
     const newPatient: PatientFull = {
         id: newId,
@@ -197,6 +176,7 @@ const PatientList: React.FC = () => {
         gender: gender as 'M' | 'F' | 'Other',
         mainDiagnosis: newDiagnosis || 'Não informado',
         clinicalNotes: clinicalNotes,
+        // CORREÇÃO: Paciente novo nasce ATIVO
         active: true, 
         guardian: {
             id: `g_${newId}`,
@@ -218,31 +198,20 @@ const PatientList: React.FC = () => {
         } : undefined
     };
 
-    try {
-        await PatientService.create(newPatient);
-        // Optimistic update
-        setPatients(prev => [newPatient, ...prev]);
-    } catch (error) {
-        alert("Erro ao salvar paciente.");
-    }
+    const updatedList = addMockPatient(newPatient);
+    setPatients(updatedList);
     
     setIsSaving(false);
     setIsModalOpen(false);
     resetForm();
   };
 
-  const handleDeletePatient = async (id: string) => {
+  const handleDeletePatient = (id: string) => {
       if(window.confirm("Tem certeza que deseja excluir este paciente? Todos os dados vinculados serão perdidos.")){
-          try {
-              await PatientService.delete(id);
-              setPatients(prev => prev.filter(p => p.id !== id));
-          } catch (error) {
-              alert("Erro ao excluir paciente.");
-          }
+          const updatedList = deleteMockPatient(id);
+          setPatients(updatedList);
       }
   };
-
-  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
 
   return (
     <div className="space-y-6 relative">
@@ -285,7 +254,7 @@ const PatientList: React.FC = () => {
                 className="block w-full pl-10 pr-8 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 appearance-none bg-white"
             >
                 <option value="">Todos Diagnósticos</option>
-                {diagnoses.map(d => (
+                {MOCK_DIAGNOSES.map(d => (
                     <option key={d.id} value={d.name}>{d.name}</option>
                 ))}
             </select>
@@ -341,7 +310,7 @@ const PatientList: React.FC = () => {
                     <div className="text-xs text-slate-500">{patient.guardian.phonePrimary}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${resolveDiagnosisColor(patient.mainDiagnosis)}`}>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getDiagnosisColor(patient.mainDiagnosis)}`}>
                       {patient.mainDiagnosis}
                     </span>
                   </td>
@@ -457,7 +426,7 @@ const PatientList: React.FC = () => {
                                         className="pl-10 block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                                     >
                                         <option value="" disabled>Selecione...</option>
-                                        {diagnoses.map(d => (
+                                        {MOCK_DIAGNOSES.map(d => (
                                             <option key={d.id} value={d.name}>{d.name}</option>
                                         ))}
                                         <option value="Outro">Outro (Digitar na obs)</option>

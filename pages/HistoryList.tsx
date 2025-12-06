@@ -1,68 +1,48 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
-import { LogService, TreatmentService, ProtocolService, PatientService } from '../services/mockData';
-import { TreatmentStatus, ProtocolCategory, DismissedLog, Treatment, Protocol, PatientFull } from '../types';
-import { History, Search, Calendar, User, MessageCircle, Filter, Loader2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { MOCK_DISMISSED_LOGS, MOCK_TREATMENTS, MOCK_PROTOCOLS, MOCK_PATIENTS } from '../services/mockData';
+import { TreatmentStatus, ProtocolCategory } from '../types';
+import { History, Search, Calendar, User, MessageCircle, Filter } from 'lucide-react';
 import { formatDate } from '../constants';
 import SectionCard from '../components/ui/SectionCard';
 
 const HistoryList: React.FC = () => {
-  const [filterDays, setFilterDays] = useState<number | 'all'>(30); 
-  const [loading, setLoading] = useState(true);
-  
-  const [logs, setLogs] = useState<DismissedLog[]>([]);
-  const [treatments, setTreatments] = useState<Treatment[]>([]);
-  const [protocols, setProtocols] = useState<Protocol[]>([]);
-  const [patients, setPatients] = useState<PatientFull[]>([]);
+  const [filterDays, setFilterDays] = useState<number | 'all'>(30); // Default 30 dias
 
-  useEffect(() => {
-    const fetch = async () => {
-        setLoading(true);
-        const [l, t, p, pat] = await Promise.all([
-            LogService.getDismissed(),
-            TreatmentService.getAll(),
-            ProtocolService.getAll(),
-            PatientService.getAll()
-        ]);
-        setLogs(l);
-        setTreatments(t);
-        setProtocols(p);
-        setPatients(pat);
-        setLoading(false);
-    }
-    fetch();
-  }, []);
-
+  // Combinar logs com dados reais para exibição
   const historyItems = useMemo(() => {
-    if(loading) return [];
-    
-    const logsMap = new Map(logs.map(log => [log.contactId, log]));
+    // Mapa para acesso rápido
+    const logsMap = new Map(MOCK_DISMISSED_LOGS.map(log => [log.contactId, log]));
     
     const items: any[] = [];
     const today = new Date();
     
+    // Calcular data de corte se houver filtro
     let cutoffDate: Date | null = null;
     if (filterDays !== 'all') {
         cutoffDate = new Date();
         cutoffDate.setDate(today.getDate() - filterDays);
     }
     
-    treatments.forEach(t => {
-        const proto = protocols.find(p => p.id === t.protocolId);
+    // Iterar sobre tratamentos para reconstruir as mensagens que já foram dispensadas
+    MOCK_TREATMENTS.forEach(t => {
+        const proto = MOCK_PROTOCOLS.find(p => p.id === t.protocolId);
         if (!proto || !proto.milestones) return;
 
         proto.milestones.forEach(m => {
             const contactId = `${t.id}_m_${m.day}`;
             const log = logsMap.get(contactId);
 
+            // Se existe no log, significa que foi concluído
             if (log) {
                 const dismissedAt = new Date(log.dismissedAt);
                 
+                // Aplicar filtro de data
                 if (cutoffDate && dismissedAt < cutoffDate) {
                     return;
                 }
 
-                const patient = patients.find(p => p.id === t.patientId);
+                const patient = MOCK_PATIENTS.find(p => p.id === t.patientId);
                 if (patient) {
                     items.push({
                         id: contactId,
@@ -77,10 +57,9 @@ const HistoryList: React.FC = () => {
         });
     });
 
+    // Ordenar do mais recente para o mais antigo
     return items.sort((a, b) => b.dismissedAt.getTime() - a.dismissedAt.getTime());
-  }, [filterDays, logs, treatments, protocols, patients, loading]);
-
-  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
+  }, [filterDays]); // Recalcular quando o filtro mudar
 
   return (
     <div className="space-y-6">

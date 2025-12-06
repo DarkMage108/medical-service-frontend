@@ -70,29 +70,38 @@ export const getTreatmentStatusColor = (status: TreatmentStatus) => {
     }
 };
 
-// --- DIAGNOSIS COLORS & PALETTE ---
+// --- DIAGNOSIS COLORS ---
 
-// Paleta definida de 6 cores
-export const DIAGNOSIS_PALETTE = [
-    { id: 'pink', label: 'Rosa', class: 'bg-pink-100 text-pink-800 border-pink-200', dot: 'bg-pink-500' },
-    { id: 'blue', label: 'Azul', class: 'bg-blue-100 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
-    { id: 'emerald', label: 'Verde', class: 'bg-emerald-100 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
-    { id: 'purple', label: 'Roxo', class: 'bg-purple-100 text-purple-800 border-purple-200', dot: 'bg-purple-500' },
-    { id: 'amber', label: 'Laranja', class: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
-    { id: 'slate', label: 'Cinza', class: 'bg-slate-100 text-slate-800 border-slate-200', dot: 'bg-slate-500' },
+export const DIAGNOSIS_COLORS = [
+    'bg-rose-100 text-rose-800 border-rose-200',
+    'bg-blue-100 text-blue-800 border-blue-200',
+    'bg-emerald-100 text-emerald-800 border-emerald-200',
+    'bg-purple-100 text-purple-800 border-purple-200',
+    'bg-amber-100 text-amber-800 border-amber-200',
+    'bg-indigo-100 text-indigo-800 border-indigo-200',
+    'bg-cyan-100 text-cyan-800 border-cyan-200',
+    'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
+    'bg-lime-100 text-lime-800 border-lime-200',
+    'bg-orange-100 text-orange-800 border-orange-200',
+    'bg-teal-100 text-teal-800 border-teal-200',
+    'bg-violet-100 text-violet-800 border-violet-200',
+    'bg-sky-100 text-sky-800 border-sky-200',
+    'bg-pink-100 text-pink-800 border-pink-200',
+    'bg-yellow-100 text-yellow-800 border-yellow-200',
+    'bg-slate-100 text-slate-800 border-slate-200',
+    'bg-red-50 text-red-800 border-red-200',
+    'bg-green-50 text-green-800 border-green-200',
 ];
 
-export const DIAGNOSIS_COLORS_HASH = DIAGNOSIS_PALETTE.map(p => p.class);
-
-// Fallback legacy (mantido para compatibilidade, mas o ideal é usar a cor do objeto Diagnosis)
+// Gera uma cor determinística baseada no nome do diagnóstico
 export const getDiagnosisColor = (name: string) => {
-  if (!name) return DIAGNOSIS_PALETTE[0].class;
+  if (!name) return DIAGNOSIS_COLORS[0];
 
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
   
-  const index = Math.abs(hash) % DIAGNOSIS_PALETTE.length;
-  return DIAGNOSIS_PALETTE[index].class;
+  const index = Math.abs(hash) % DIAGNOSIS_COLORS.length;
+  return DIAGNOSIS_COLORS[index];
 };
