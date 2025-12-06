@@ -1,5 +1,4 @@
 
-
 export enum UserRole {
   ADMIN = 'admin',
   DOCTOR = 'doctor',
@@ -72,6 +71,7 @@ export enum FrequencyDays {
 export interface Diagnosis {
   id: string;
   name: string;
+  color?: string; // CSS Class string from Palette
 }
 
 // --- MEDICAMENTOS BASE (Novo) ---

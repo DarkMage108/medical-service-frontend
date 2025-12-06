@@ -1,30 +1,31 @@
 
-
 import React, { useState, useEffect } from 'react';
-import { MOCK_PROTOCOLS, addMockProtocol, deleteMockProtocol, updateMockProtocol, getMedicationBase } from '../services/mockData';
+import { ProtocolService, MedicationBaseService } from '../services/mockData';
 import { Protocol, ProtocolMilestone, ProtocolCategory, MedicationBase } from '../types';
 import { Plus, Trash2, ClipboardList, Clock, Target, MessageCircle, Calendar, AlertCircle, X, Edit2, Pill, MessageSquare, Loader2 } from 'lucide-react';
 
 const MedicationList: React.FC = () => {
-  const [protocols, setProtocols] = useState<Protocol[]>(MOCK_PROTOCOLS);
+  const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [medications, setMedications] = useState<MedicationBase[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   
-  // Load Medication Base
   useEffect(() => {
-      setMedications(getMedicationBase());
+    const fetch = async () => {
+        const [p, m] = await Promise.all([ProtocolService.getAll(), MedicationBaseService.getAll()]);
+        setProtocols(p);
+        setMedications(m);
+    };
+    fetch();
   }, []);
   
-  // Form State
   const [category, setCategory] = useState<ProtocolCategory>(ProtocolCategory.MEDICATION);
   const [name, setName] = useState('');
-  const [medication, setMedication] = useState(''); // Stores Name + Dosage string
+  const [medication, setMedication] = useState('');
   const [frequency, setFrequency] = useState('28');
   const [goal, setGoal] = useState('');
   const [message, setMessage] = useState('');
 
-  // Milestones State
   const [milestones, setMilestones] = useState<ProtocolMilestone[]>([]);
   const [newMileDay, setNewMileDay] = useState('');
   const [newMileMsg, setNewMileMsg] = useState('');
@@ -67,7 +68,6 @@ const MedicationList: React.FC = () => {
       setMessage(proto.message || '');
       setMilestones(proto.milestones || []);
       
-      // Scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -76,19 +76,15 @@ const MedicationList: React.FC = () => {
     if (!name) return;
 
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    // Se medicamento e dosagem não forem preenchidos, assumimos vazio ou o que está no campo
-    let fullMedicationName = '';
     
+    let fullMedicationName = '';
     if (category === ProtocolCategory.MEDICATION) {
         fullMedicationName = medication || 'Sem medicação definida';
     } else {
-        fullMedicationName = ''; // Non-medication protocols don't have this
+        fullMedicationName = '';
     }
     
     if (editingId) {
-        // Update
         const updates: Partial<Protocol> = {
             name,
             category,
@@ -98,10 +94,9 @@ const MedicationList: React.FC = () => {
             message,
             milestones
         };
-        const updatedList = updateMockProtocol(editingId, updates);
-        setProtocols(updatedList);
+        const updated = await ProtocolService.update(editingId, updates);
+        setProtocols(updated);
     } else {
-        // Create
         const newItem: Protocol = {
             id: `proto_${Date.now()}`,
             name: name,
@@ -112,17 +107,17 @@ const MedicationList: React.FC = () => {
             message: message,
             milestones: milestones
         };
-        const updatedList = addMockProtocol(newItem);
-        setProtocols(updatedList);
+        await ProtocolService.create(newItem);
+        setProtocols(await ProtocolService.getAll());
     }
     
     setIsSaving(false);
     resetForm();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
       if (window.confirm('Tem certeza que deseja excluir este protocolo?')) {
-          const updated = deleteMockProtocol(id);
+          const updated = await ProtocolService.delete(id);
           setProtocols(updated);
           if (editingId === id) resetForm();
       }
@@ -151,7 +146,6 @@ const MedicationList: React.FC = () => {
                   )}
               </div>
               
-              {/* Category Selector */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`cursor-pointer border rounded-lg p-4 flex items-center transition-all ${category === ProtocolCategory.MEDICATION ? 'border-pink-500 bg-pink-50' : 'border-slate-200 hover:border-pink-300'}`}
                        onClick={() => setCategory(ProtocolCategory.MEDICATION)}
@@ -209,7 +203,6 @@ const MedicationList: React.FC = () => {
                        </div>
                   </div>
                   
-                  {/* Conditional Fields based on Category */}
                   {category === ProtocolCategory.MEDICATION ? (
                     <>
                         <div className="lg:col-span-2">
@@ -232,9 +225,7 @@ const MedicationList: React.FC = () => {
                         </div>
                     </>
                   ) : (
-                      <div className="lg:col-span-1">
-                          {/* Empty spacer for alignment if needed, or extra fields for Monitoring */}
-                      </div>
+                      <div className="lg:col-span-1"></div>
                   )}
 
                   <div className="lg:col-span-2">
@@ -259,7 +250,6 @@ const MedicationList: React.FC = () => {
                   </div>
               </div>
 
-              {/* Seção Régua de Contato (Milestones) */}
               <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                   <h4 className="font-bold text-slate-700 mb-3 flex items-center">
                       <Calendar size={18} className="mr-2 text-pink-600" />
@@ -337,7 +327,6 @@ const MedicationList: React.FC = () => {
               <div className="grid grid-cols-1 gap-4">
                   {protocols.map(proto => (
                       <div key={proto.id} className="border border-slate-100 rounded-xl bg-slate-50 p-4 hover:border-pink-200 transition-colors group relative">
-                          {/* Badge Category */}
                           <div className="absolute top-4 right-14">
                               {proto.category === ProtocolCategory.MONITORING ? (
                                   <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">Régua Contato</span>
@@ -390,7 +379,6 @@ const MedicationList: React.FC = () => {
                                 )}
                           </div>
                           
-                          {/* Exibir Milestones se houver */}
                           {proto.milestones && proto.milestones.length > 0 && (
                               <div className="mt-4 pt-3 border-t border-slate-200/50">
                                   <span className="text-xs font-bold text-slate-400 uppercase mb-2 block">Régua de Contato</span>

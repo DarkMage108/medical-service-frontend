@@ -1,75 +1,115 @@
 
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { MOCK_TREATMENTS, MOCK_DOSES, MOCK_PATIENTS, MOCK_PROTOCOLS, updateMockTreatment, addMockDose, updateMockDose, MOCK_INVENTORY } from '../services/mockData';
+import { TreatmentService, DoseService, PatientService, ProtocolService, InventoryService } from '../services/mockData';
 import { formatDate, getStatusColor, addDays, getTreatmentStatusColor } from '../constants';
-import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory } from '../types';
-import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package } from 'lucide-react';
+import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, InventoryItem, PatientFull, Protocol } from '../types';
+import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, UserCheck, Star, Loader2, AlertTriangle, Package, Edit } from 'lucide-react';
 
 const TreatmentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const [loading, setLoading] = useState(true);
+
+  // Data States
+  const [treatment, setTreatment] = useState<Treatment | undefined>(undefined);
+  const [patient, setPatient] = useState<PatientFull | undefined>(undefined);
+  const [protocol, setProtocol] = useState<Protocol | undefined>(undefined);
+  const [doses, setDoses] = useState<Dose[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [protocols, setProtocols] = useState<Protocol[]>([]); // All protocols for editing list
+
+  // UI States
   const [showDoseForm, setShowDoseForm] = useState(false);
-  
-  // Find Data Initial
-  const initialTreatment = MOCK_TREATMENTS.find(t => t.id === id);
-  const [treatment, setTreatment] = useState<Treatment | undefined>(initialTreatment);
-  
-  const patient = treatment ? MOCK_PATIENTS.find(p => p.id === treatment.patientId) : null;
-  const protocol = treatment ? MOCK_PROTOCOLS.find(p => p.id === treatment.protocolId) : null;
-  
-  // --- Treatment Edit Mode States ---
   const [isEditing, setIsEditing] = useState(false);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
-  
-  const [editProtocolId, setEditProtocolId] = useState(treatment?.protocolId || '');
-  const [editPlannedDoses, setEditPlannedDoses] = useState(treatment?.plannedDosesBeforeConsult || 0);
-  const [editNextConsult, setEditNextConsult] = useState(treatment?.nextConsultationDate || '');
-  const [editStatus, setEditStatus] = useState<TreatmentStatus>(treatment?.status || TreatmentStatus.ONGOING);
-  const [editStartDate, setEditStartDate] = useState(treatment?.startDate || '');
-  const [editObservations, setEditObservations] = useState(treatment?.observations || '');
-
-  // --- Dose Form States ---
-  const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
   const [isSavingDose, setIsSavingDose] = useState(false);
 
+  // Treatment Edit States
+  const [editProtocolId, setEditProtocolId] = useState('');
+  const [editPlannedDoses, setEditPlannedDoses] = useState(0);
+  const [editNextConsult, setEditNextConsult] = useState('');
+  const [editStatus, setEditStatus] = useState<TreatmentStatus>(TreatmentStatus.ONGOING);
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editObservations, setEditObservations] = useState('');
+
+  // Dose Form States
+  const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
   const [doseDate, setDoseDate] = useState(new Date().toISOString().split('T')[0]);
   const [doseLot, setDoseLot] = useState('');
-  const [selectedInventoryId, setSelectedInventoryId] = useState(''); // New: Inventory Link
-  
-  // States inicializados vazios para forçar seleção
+  const [selectedInventoryId, setSelectedInventoryId] = useState('');
   const [doseStatus, setDoseStatus] = useState<DoseStatus | ''>('');
   const [dosePayment, setDosePayment] = useState<PaymentStatus | ''>('');
-  
   const [doseIsLast, setDoseIsLast] = useState(false);
   const [doseConsultDate, setDoseConsultDate] = useState('');
-  
-  // Dose specific: Nurse and Survey
-  const [doseNurseSelection, setDoseNurseSelection] = useState(''); // "yes", "no", ""
+  const [doseNurseSelection, setDoseNurseSelection] = useState('');
   const [doseSurveyStatus, setDoseSurveyStatus] = useState<SurveyStatus | ''>('');
   const [doseSurveyScore, setDoseSurveyScore] = useState(0);
   const [doseSurveyComment, setDoseSurveyComment] = useState('');
 
-  // Get Doses for this treatment
-  const [doses, setDoses] = useState(
-      MOCK_DOSES.filter(d => d.treatmentId === id).sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())
-  );
+  useEffect(() => {
+    const loadData = async () => {
+        if(!id) return;
+        setLoading(true);
+        try {
+            const t = await TreatmentService.getById(id);
+            if (!t) return;
+            setTreatment(t);
 
-  // Available Inventory Lots for this Protocol
+            const [p, proto, allDoses, inv, allProtos] = await Promise.all([
+                PatientService.getById(t.patientId),
+                (await ProtocolService.getAll()).find(pr => pr.id === t.protocolId),
+                DoseService.getByTreatmentId(id),
+                InventoryService.getAll(),
+                ProtocolService.getAll()
+            ]);
+            
+            setPatient(p);
+            setProtocol(proto);
+            setDoses(allDoses.sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime()));
+            setInventory(inv);
+            setProtocols(allProtos);
+
+            // Init Edit Form
+            setEditProtocolId(t.protocolId);
+            setEditPlannedDoses(t.plannedDosesBeforeConsult);
+            setEditNextConsult(t.nextConsultationDate || '');
+            setEditStatus(t.status);
+            setEditStartDate(t.startDate);
+            setEditObservations(t.observations || '');
+
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+    loadData();
+  }, [id]);
+
+  // Check for auto-open edit dose from navigation state
+  useEffect(() => {
+    if (doses.length > 0 && location.state && (location.state as any).editDoseId) {
+        const doseId = (location.state as any).editDoseId;
+        const doseToEdit = doses.find(d => d.id === doseId);
+        if (doseToEdit) {
+            handleOpenEditDose(doseToEdit);
+            window.history.replaceState({}, document.title);
+        }
+    }
+  }, [doses, location]);
+
   const availableLots = useMemo(() => {
       if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || !protocol.medicationType) return [];
-      
-      // Filter inventory by name, active, quantity > 0 and not expired
-      return MOCK_INVENTORY.filter(item => 
+      return inventory.filter(item => 
           item.medicationName === protocol.medicationType &&
           item.active &&
           item.quantity > 0 &&
           new Date(item.expiryDate) >= new Date()
       );
-  }, [protocol]);
+  }, [protocol, inventory]);
 
+  if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-pink-600" size={32} /></div>;
   if (!treatment || !patient || !protocol) return <div>Tratamento ou protocolo não encontrado</div>;
 
   const handleOpenEditDose = (dose: Dose) => {
@@ -81,50 +121,26 @@ const TreatmentDetail: React.FC = () => {
       setDosePayment(dose.paymentStatus);
       setDoseIsLast(dose.isLastBeforeConsult);
       setDoseConsultDate(dose.consultationDate ? dose.consultationDate.split('T')[0] : '');
-      
       setDoseNurseSelection(dose.nurse ? 'yes' : 'no');
       setDoseSurveyStatus(dose.surveyStatus || '');
       setDoseSurveyScore(dose.surveyScore || 0);
       setDoseSurveyComment(dose.surveyComment || '');
-
       setShowDoseForm(true);
-      
-      // Scroll to form
-      setTimeout(() => {
-          document.getElementById('dose-form-container')?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
+      setTimeout(() => document.getElementById('dose-form-container')?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
   const handleInventorySelection = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const invId = e.target.value;
       setSelectedInventoryId(invId);
-      
-      // Auto-fill Lot Number from inventory
       const lot = availableLots.find(l => l.id === invId);
-      if (lot) {
-          setDoseLot(lot.lotNumber);
-      }
+      if (lot) setDoseLot(lot.lotNumber);
   };
-
-  // Check for auto-open edit dose from navigation state
-  useEffect(() => {
-    if (location.state && (location.state as any).editDoseId) {
-        const doseId = (location.state as any).editDoseId;
-        const doseToEdit = doses.find(d => d.id === doseId);
-        if (doseToEdit) {
-            handleOpenEditDose(doseToEdit);
-            // Clear history state to prevent reopening on reload (optional)
-            window.history.replaceState({}, document.title);
-        }
-    }
-  }, [location, doses]);
 
   const resetDoseForm = () => {
       setEditingDoseId(null);
       setDoseDate(new Date().toISOString().split('T')[0]);
       setDoseLot('');
       setSelectedInventoryId('');
-      // Resetar para vazio para forçar seleção
       setDoseStatus('');
       setDosePayment('');
       setDoseIsLast(false);
@@ -137,15 +153,12 @@ const TreatmentDetail: React.FC = () => {
 
   const handleOpenNewDose = () => {
       resetDoseForm();
-      
-      // Automação: Verificar se é a última dose planejada
       if (treatment) {
           const nextCycleNumber = doses.length + 1;
           if (nextCycleNumber === treatment.plannedDosesBeforeConsult) {
               setDoseIsLast(true);
           }
       }
-
       setShowDoseForm(true);
   };
 
@@ -153,80 +166,57 @@ const TreatmentDetail: React.FC = () => {
     e.preventDefault();
     if (!id || !protocol) return;
 
-    // Validações Manuais
     if (!doseStatus) { alert("Selecione o Status da Dose"); return; }
     if (doseStatus !== DoseStatus.NOT_ACCEPTED && !dosePayment) { alert("Selecione a Situação do Pagamento"); return; }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
 
-    // Validação de Estoque
     if (protocol.category === ProtocolCategory.MEDICATION && doseStatus === DoseStatus.APPLIED && !selectedInventoryId && !editingDoseId) {
-        // Se for MEDICAMENTO e APLICADA e for NOVA dose, exigir estoque
-        // Se for edição, permitimos manter sem estoque se já estava assim ou se for correção manual
         alert("Para registrar aplicação, selecione um lote disponível no estoque.");
         return;
     }
 
     setIsSavingDose(true);
-    // Simula delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-
+    
     const isNurse = doseNurseSelection === 'yes';
-
-    // Calcular próxima data (apenas visual aqui, o serviço recalcula oficialmente)
-    const appDateObj = new Date(doseDate);
-    const nextDateObj = addDays(appDateObj, protocol.frequencyDays);
-    const diffTime = nextDateObj.getTime() - new Date().getTime();
-    const daysNext = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    // Validar status da pesquisa se não tiver enfermeira
     const finalSurveyStatus = !isNurse ? SurveyStatus.NOT_SENT : (doseSurveyStatus as SurveyStatus || SurveyStatus.NOT_SENT);
+    
+    const commonData = {
+        applicationDate: new Date(doseDate).toISOString(),
+        lotNumber: doseLot,
+        inventoryLotId: selectedInventoryId,
+        status: doseStatus as DoseStatus,
+        paymentStatus: doseStatus === DoseStatus.NOT_ACCEPTED ? PaymentStatus.WAITING_PIX : (dosePayment as PaymentStatus),
+        isLastBeforeConsult: doseIsLast,
+        consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
+        nurse: isNurse,
+        surveyStatus: finalSurveyStatus,
+        surveyScore: Number(doseSurveyScore),
+        surveyComment: doseSurveyComment
+    };
 
-    if (editingDoseId) {
-        // UPDATE
-        const updates: Partial<Dose> = {
-            applicationDate: new Date(doseDate).toISOString(),
-            lotNumber: doseLot,
-            inventoryLotId: selectedInventoryId,
-            status: doseStatus,
-            paymentStatus: doseStatus === DoseStatus.NOT_ACCEPTED ? PaymentStatus.WAITING_PIX : (dosePayment as PaymentStatus), // Fallback seguro
-            isLastBeforeConsult: doseIsLast,
-            consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
-            nurse: isNurse,
-            surveyStatus: finalSurveyStatus,
-            surveyScore: Number(doseSurveyScore),
-            surveyComment: doseSurveyComment
-        };
-        
-        const updatedList = updateMockDose(editingDoseId, updates, protocol.frequencyDays);
-        if (updatedList) {
-            setDoses(updatedList.filter(d => d.treatmentId === id).sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime()));
+    try {
+        let updatedDose: Dose;
+        if (editingDoseId) {
+             updatedDose = await DoseService.update(editingDoseId, commonData, protocol.frequencyDays);
+             setDoses(doses.map(d => d.id === editingDoseId ? updatedDose : d).sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime()));
+        } else {
+             const newDose: Dose = {
+                 id: `d_${Date.now()}`,
+                 treatmentId: id,
+                 cycleNumber: doses.length + 1,
+                 expiryDate: addDays(new Date(), 365).toISOString(),
+                 paymentUpdatedAt: new Date().toISOString(),
+                 calculatedNextDate: addDays(new Date(doseDate), protocol.frequencyDays).toISOString(),
+                 daysUntilNext: 0, // Recalculated by service if needed, logic here is simplistic
+                 ...commonData
+             } as Dose;
+             // Service recalculates next date usually
+             const created = await DoseService.create(newDose);
+             // Re-fetch doses to ensure consistency or just append
+             setDoses([created, ...doses].sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime()));
         }
-
-    } else {
-        // CREATE
-        const newDose: Dose = {
-            id: `d_${Date.now()}`,
-            treatmentId: id,
-            cycleNumber: doses.length + 1, // Simples incremento
-            applicationDate: new Date(doseDate).toISOString(),
-            lotNumber: doseLot,
-            inventoryLotId: selectedInventoryId,
-            expiryDate: addDays(new Date(), 365).toISOString(), // Mock validade 1 ano se não vier do estoque
-            status: doseStatus,
-            paymentStatus: doseStatus === DoseStatus.NOT_ACCEPTED ? PaymentStatus.WAITING_PIX : (dosePayment as PaymentStatus),
-            paymentUpdatedAt: new Date().toISOString(),
-            isLastBeforeConsult: doseIsLast,
-            consultationDate: doseIsLast && doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined,
-            calculatedNextDate: nextDateObj.toISOString(),
-            daysUntilNext: daysNext,
-            nurse: isNurse,
-            surveyStatus: finalSurveyStatus,
-            surveyScore: Number(doseSurveyScore),
-            surveyComment: doseSurveyComment
-        };
-        
-        const updatedList = addMockDose(newDose);
-        setDoses(updatedList.filter(d => d.treatmentId === id).sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime()));
+    } catch (e) {
+        alert('Erro ao salvar dose');
     }
 
     setIsSavingDose(false);
@@ -236,11 +226,9 @@ const TreatmentDetail: React.FC = () => {
 
   const handleSaveTreatmentDetails = async () => {
     if (!id) return;
-    
     setIsSavingTreatment(true);
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    const updates: Partial<Treatment> = {
+    
+    const updates = {
         protocolId: editProtocolId,
         plannedDosesBeforeConsult: Number(editPlannedDoses),
         nextConsultationDate: editNextConsult || undefined,
@@ -249,43 +237,35 @@ const TreatmentDetail: React.FC = () => {
         observations: editObservations,
     };
 
-    const updated = updateMockTreatment(id, updates);
-    if (updated) {
+    try {
+        const updated = await TreatmentService.update(id, updates);
         setTreatment(updated);
+        // If protocol changed, fetch new protocol details
+        if(updated.protocolId !== protocol?.id) {
+             const newProto = protocols.find(p => p.id === updated.protocolId);
+             if(newProto) setProtocol(newProto);
+        }
         setIsEditing(false);
+    } catch(e) {
+        alert('Erro ao atualizar tratamento');
     }
     setIsSavingTreatment(false);
-  };
-
-  const toggleEditMode = () => {
-    if (!isEditing) {
-        // Init edit values
-        setEditProtocolId(treatment.protocolId);
-        setEditPlannedDoses(treatment.plannedDosesBeforeConsult);
-        setEditNextConsult(treatment.nextConsultationDate || '');
-        setEditStatus(treatment.status);
-        setEditStartDate(treatment.startDate);
-        setEditObservations(treatment.observations || '');
-    }
-    setIsEditing(!isEditing);
   };
 
   const handleEditProtocolChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const pid = e.target.value;
       setEditProtocolId(pid);
-      
-      const proto = MOCK_PROTOCOLS.find(p => p.id === pid);
+      const proto = protocols.find(p => p.id === pid);
       if (proto && proto.category === ProtocolCategory.MONITORING) {
           setEditPlannedDoses(0);
       }
   };
 
   const isEditMedicationProtocol = useMemo(() => {
-      const proto = MOCK_PROTOCOLS.find(p => p.id === editProtocolId);
+      const proto = protocols.find(p => p.id === editProtocolId);
       return proto?.category === ProtocolCategory.MEDICATION;
-  }, [editProtocolId]);
+  }, [editProtocolId, protocols]);
 
-  // Calculate info for the new dose preview
   const previewNextDate = addDays(new Date(doseDate), protocol.frequencyDays);
 
   return (
@@ -305,38 +285,25 @@ const TreatmentDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Protocol Summary / Edit Form */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
-        {/* ... (Treatment Info Header - Same as before) ... */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50">
             <h3 className="font-bold text-slate-700">Detalhes do Plano Terapêutico</h3>
             <button 
-                onClick={toggleEditMode}
+                onClick={() => setIsEditing(!isEditing)}
                 disabled={isSavingTreatment}
                 className={`flex items-center text-sm font-medium px-3 py-1.5 rounded-lg transition-colors ${isEditing ? 'bg-red-50 text-red-600' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}
             >
-                {isEditing ? (
-                    <>
-                       <X size={16} className="mr-2" />
-                       Cancelar Edição
-                    </>
-                ) : (
-                    <>
-                       <Edit2 size={16} className="mr-2" />
-                       Editar Dados
-                    </>
-                )}
+                {isEditing ? <><X size={16} className="mr-2" /> Cancelar Edição</> : <><Edit2 size={16} className="mr-2" /> Editar Dados</>}
             </button>
         </div>
 
         <div className="p-6">
             {!isEditing ? (
-                /* VIEW MODE */
                 <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div>
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Medicamento / Protocolo</label>
-                            <p className="font-semibold text-slate-800 mt-1">{protocol.medicationType}</p>
+                            <p className="font-semibold text-slate-800 mt-1">{protocol.medicationType || '-'}</p>
                             <p className="text-xs text-slate-500">{protocol.name}</p>
                         </div>
                         <div>
@@ -378,7 +345,6 @@ const TreatmentDetail: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                /* EDIT MODE */
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-200">
                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
@@ -388,7 +354,7 @@ const TreatmentDetail: React.FC = () => {
                                 onChange={handleEditProtocolChange}
                                 className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                             >
-                                {MOCK_PROTOCOLS.map(p => (
+                                {protocols.map(p => (
                                     <option key={p.id} value={p.id}>{p.name} - {p.medicationType}</option>
                                 ))}
                             </select>
@@ -426,9 +392,6 @@ const TreatmentDetail: React.FC = () => {
                                 disabled={!isEditMedicationProtocol}
                                 className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
                             />
-                            {!isEditMedicationProtocol && (
-                                <span className="text-xs text-slate-500">Não aplicável a protocolos de monitoramento.</span>
-                            )}
                         </div>
                      </div>
                      
@@ -451,7 +414,6 @@ const TreatmentDetail: React.FC = () => {
                             value={editObservations}
                             onChange={e => setEditObservations(e.target.value)}
                             className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                            placeholder="Anotações gerais..."
                         />
                      </div>
 
@@ -470,7 +432,6 @@ const TreatmentDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex justify-end">
         {!showDoseForm && (
             <button 
@@ -483,7 +444,6 @@ const TreatmentDetail: React.FC = () => {
         )}
       </div>
 
-      {/* Add/Edit Dose Form (Collapsible) */}
       {showDoseForm && (
         <div id="dose-form-container" className="bg-slate-50 border border-slate-200 rounded-xl p-6 animate-in fade-in slide-in-from-top-4 shadow-sm">
             <h3 className="font-bold text-slate-800 mb-4 flex items-center">
@@ -502,7 +462,6 @@ const TreatmentDetail: React.FC = () => {
                     />
                 </div>
                 
-                {/* Inventory Selection (Only for Medication Protocols) */}
                 {protocol.category === ProtocolCategory.MEDICATION && (
                     <div className="lg:col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Lote (Estoque)</label>
@@ -510,7 +469,7 @@ const TreatmentDetail: React.FC = () => {
                             <select 
                                 value={selectedInventoryId}
                                 onChange={handleInventorySelection}
-                                disabled={!!editingDoseId && !!selectedInventoryId} // Se já tem, não muda para manter integridade
+                                disabled={!!editingDoseId && !!selectedInventoryId}
                                 className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
                             >
                                 <option value="">Selecione um lote do estoque...</option>
@@ -536,7 +495,6 @@ const TreatmentDetail: React.FC = () => {
                         placeholder="Ex: AB1234 - 12/2025"
                         value={doseLot}
                         onChange={(e) => setDoseLot(e.target.value)}
-                        // Se selecionou do estoque, fica readonly
                         readOnly={!!selectedInventoryId}
                         className={`w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 ${selectedInventoryId ? 'bg-slate-50' : ''}`} 
                     />
@@ -583,7 +541,6 @@ const TreatmentDetail: React.FC = () => {
                         <div className="flex-1 w-full animate-in fade-in duration-200">
                             <input 
                                 type="date"
-                                // required removed here
                                 value={doseConsultDate}
                                 onChange={e => setDoseConsultDate(e.target.value)}
                                 className="w-full text-sm border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -593,7 +550,6 @@ const TreatmentDetail: React.FC = () => {
                     )}
                 </div>
 
-                {/* Seção Enfermeira e Pesquisa */}
                 <div className="lg:col-span-4 border-t border-slate-100 pt-4">
                     <h4 className="font-bold text-slate-700 mb-3 flex items-center">
                         <UserCheck size={16} className="mr-2 text-pink-600"/>
@@ -615,7 +571,6 @@ const TreatmentDetail: React.FC = () => {
                              </select>
                         </div>
                         
-                        {/* Campos da Pesquisa (Condicionais) */}
                         <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 ${doseNurseSelection !== 'yes' ? 'opacity-50 pointer-events-none' : ''}`}>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">2. Pesquisa</label>
@@ -685,7 +640,6 @@ const TreatmentDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Doses Table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">

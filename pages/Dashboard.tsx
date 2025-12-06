@@ -1,8 +1,7 @@
-
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MOCK_DOSES, MOCK_PATIENTS, MOCK_TREATMENTS, MOCK_DOCUMENTS, MOCK_PROTOCOLS, updateMockDose, MOCK_DISMISSED_LOGS, dismissMockContact, checkPurchaseTriggers, addMockDocument } from '../services/mockData';
-import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument } from '../types';
+import { DoseService, PatientService, TreatmentService, DocumentService, ProtocolService, LogService, InventoryService } from '../services/mockData';
+import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, PatientFull, Treatment, Protocol } from '../types';
 import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays } from '../constants';
 import { UserCheck, MessageSquare, Phone, ExternalLink, Activity, ShoppingCart } from 'lucide-react';
 import KpiCard from '../components/ui/KpiCard';
@@ -20,15 +19,15 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
-  // Estado local para Doses
-  const [doses, setDoses] = useState<Dose[]>(MOCK_DOSES);
-  // Estado local para logs de mensagens (agora DismissedLog[])
-  const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>(MOCK_DISMISSED_LOGS);
-  // Estado para alertas de estoque
+  // Async Data States
+  const [loading, setLoading] = useState(true);
+  const [doses, setDoses] = useState<Dose[]>([]);
+  const [patients, setPatients] = useState<PatientFull[]>([]);
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
+  const [allDocuments, setAllDocuments] = useState<ConsentDocument[]>([]);
   const [pendingPurchases, setPendingPurchases] = useState(0);
-  
-  // Estado local para Documentos (para atualizar a lista de pendências em tempo real)
-  const [allDocuments, setAllDocuments] = useState<ConsentDocument[]>(MOCK_DOCUMENTS);
 
   // Estados Modais
   const [addressModalOpen, setAddressModalOpen] = useState(false);
@@ -63,38 +62,84 @@ const Dashboard: React.FC = () => {
   const [editScore, setEditScore] = useState(0);
   const [editComment, setEditComment] = useState('');
 
-  // Sincronizar dados iniciais
+  // LOAD DATA FROM DB
   useEffect(() => {
-      setDoses(MOCK_DOSES);
-      setDismissedLogs(MOCK_DISMISSED_LOGS);
-      setAllDocuments(MOCK_DOCUMENTS); // Sync docs
-      
-      // Verificar triggers de compra (Ruptura de Estoque em 10 dias)
-      const reqs = checkPurchaseTriggers();
-      setPendingPurchases(reqs.filter(r => r.status === 'PENDING').length);
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const [pats, treats, ds, docs, protos, logs, reqs] = await Promise.all([
+                PatientService.getAll(),
+                TreatmentService.getAll(),
+                DoseService.getAll(),
+                DocumentService.getAll(),
+                ProtocolService.getAll(),
+                LogService.getDismissed(),
+                InventoryService.getPurchaseRequests() // Simplified
+            ]);
+            
+            setPatients(pats);
+            setTreatments(treats);
+            setDoses(ds);
+            setAllDocuments(docs);
+            setProtocols(protos);
+            setDismissedLogs(logs);
+            setPendingPurchases(reqs.filter(r => r.status === 'PENDING').length);
+        } catch (error) {
+            console.error("Failed to load dashboard data", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    fetchData();
   }, []);
 
-  const handleQuickUpdate = (doseId: string, field: 'status' | 'paymentStatus', value: string) => {
-      const updatedList = updateMockDose(doseId, { [field]: value });
-      if (updatedList) setDoses(updatedList);
+  const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus', value: string) => {
+      // Logic Guard: If setting status to APPLIED, check if we need to select a lot
+      if (field === 'status' && value === DoseStatus.APPLIED) {
+          const dose = doses.find(d => d.id === doseId);
+          if (dose) {
+              const treatment = treatments.find(t => t.id === dose.treatmentId);
+              const proto = treatment ? protocols.find(p => p.id === treatment.protocolId) : null;
+              
+              if (proto && proto.category === ProtocolCategory.MEDICATION && !dose.inventoryLotId) {
+                  alert("Para marcar como APLICADA, você deve selecionar o Lote do Estoque. Use o botão de editar (estetoscópio) para fazer isso.");
+                  return; // Abort update
+              }
+          }
+      }
+
+      // Optimistic Update
+      const updatedDoses = doses.map(d => d.id === doseId ? { ...d, [field]: value } : d);
+      setDoses(updatedDoses);
+      
+      try {
+          // DB Call
+          await DoseService.update(doseId, { [field]: value });
+      } catch (e) {
+          // Revert on error
+          console.error("Error updating dose", e);
+          // Reload data to ensure consistency
+          const freshDoses = await DoseService.getAll();
+          setDoses(freshDoses);
+      }
   };
 
   // --- Helpers ---
   const getPatient = (treatmentId: string) => {
-    const treatment = MOCK_TREATMENTS.find(t => t.id === treatmentId);
+    const treatment = treatments.find(t => t.id === treatmentId);
     if (!treatment) return null;
-    return MOCK_PATIENTS.find(p => p.id === treatment.patientId);
+    return patients.find(p => p.id === treatment.patientId);
   };
 
   const getPatientByTreatmentId = (treatmentId: string) => {
-      const t = MOCK_TREATMENTS.find(tr => tr.id === treatmentId);
-      return t ? MOCK_PATIENTS.find(p => p.id === t.patientId) : null;
+      const t = treatments.find(tr => tr.id === treatmentId);
+      return t ? patients.find(p => p.id === t.patientId) : null;
   }
   
   const getProtocolName = (treatmentId: string) => {
-      const t = MOCK_TREATMENTS.find(tr => tr.id === treatmentId);
+      const t = treatments.find(tr => tr.id === treatmentId);
       if (!t) return '-';
-      const p = MOCK_PROTOCOLS.find(proto => proto.id === t.protocolId);
+      const p = protocols.find(proto => proto.id === t.protocolId);
       return p ? p.name : '-';
   }
 
@@ -137,9 +182,8 @@ const Dashboard: React.FC = () => {
   // --- DIRECT UPLOAD LOGIC ---
   const handleTriggerUpload = (patientId: string) => {
       setUploadTargetPatientId(patientId);
-      // Trigger click on hidden input
       if (fileInputRef.current) {
-          fileInputRef.current.value = ''; // Reset value to allow same file selection
+          fileInputRef.current.value = ''; 
           fileInputRef.current.click();
       }
   };
@@ -148,29 +192,13 @@ const Dashboard: React.FC = () => {
       const file = e.target.files?.[0];
       if (!file || !uploadTargetPatientId) return;
 
-      // 1. Validation: File Size
       if (file.size > MAX_FILE_SIZE_BYTES) {
-          alert(`O arquivo é muito grande. O limite máximo é de ${MAX_FILE_SIZE_MB}MB.`);
-          return;
-      }
-
-      // 2. Validation: File Type
-      const allowedTypes = [
-          'application/pdf', 
-          'application/msword', 
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      ];
-      
-      if (!allowedTypes.includes(file.type)) {
-          alert('Formato inválido. Apenas PDF ou Word.');
+          alert(`Arquivo muito grande. Máx: ${MAX_FILE_SIZE_MB}MB.`);
           return;
       }
 
       setIsUploadingGlobal(true);
       
-      // Simulate Upload Delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
       const newDoc: ConsentDocument = {
           id: `doc_${Date.now()}`,
           patientId: uploadTargetPatientId,
@@ -181,13 +209,15 @@ const Dashboard: React.FC = () => {
           url: URL.createObjectURL(file)
       };
 
-      addMockDocument(newDoc);
-      // Update local state to trigger UI refresh (remove patient from list)
-      setAllDocuments([...allDocuments, newDoc]);
+      try {
+          await DocumentService.add(newDoc);
+          setAllDocuments([...allDocuments, newDoc]);
+      } catch (e) {
+          alert("Erro ao salvar documento.");
+      }
       
       setIsUploadingGlobal(false);
       setUploadTargetPatientId(null);
-      // Success feedback (optional, maybe a toast)
   };
 
   // --- Edit Dose Modal Logic ---
@@ -211,14 +241,13 @@ const Dashboard: React.FC = () => {
       if (!editingDoseId) return;
 
       setIsSavingDose(true);
-      await new Promise(resolve => setTimeout(resolve, 800));
-
+      
       const dose = doses.find(d => d.id === editingDoseId);
       let frequency = 28;
       if (dose) {
-          const treatment = MOCK_TREATMENTS.find(t => t.id === dose.treatmentId);
+          const treatment = treatments.find(t => t.id === dose.treatmentId);
           if (treatment) {
-              const proto = MOCK_PROTOCOLS.find(p => p.id === treatment.protocolId);
+              const proto = protocols.find(p => p.id === treatment.protocolId);
               if (proto) frequency = proto.frequencyDays;
           }
       }
@@ -238,8 +267,12 @@ const Dashboard: React.FC = () => {
           surveyComment: editComment
       };
 
-      const updatedList = updateMockDose(editingDoseId, updates, frequency);
-      if (updatedList) setDoses(updatedList);
+      try {
+          const updatedDose = await DoseService.update(editingDoseId, updates, frequency);
+          setDoses(prev => prev.map(d => d.id === editingDoseId ? updatedDose : d));
+      } catch (e) {
+          console.error("Error saving dose", e);
+      }
 
       setIsSavingDose(false);
       setDoseModalOpen(false);
@@ -260,25 +293,29 @@ const Dashboard: React.FC = () => {
       }
   };
 
-  const handleDismissContact = (e: React.MouseEvent | null, contactId: string) => {
+  const handleDismissContact = async (e: React.MouseEvent | null, contactId: string) => {
       if(e) e.stopPropagation();
-      const updatedList = dismissMockContact(contactId);
-      setDismissedLogs(updatedList); // Update local state to trigger filtering
+      try {
+          const updatedLogs = await LogService.dismiss(contactId);
+          setDismissedLogs(updatedLogs);
+      } catch (error) {
+          console.error("Error dismissing contact", error);
+      }
       if(messageModalOpen) setMessageModalOpen(false);
   };
 
-  // --- Data Logic ---
+  // --- Data Logic (Calculated from State) ---
 
   const TODAY = new Date();
 
   // Stats
   const patientStats = useMemo(() => {
-    const total = MOCK_PATIENTS.length;
-    const active = MOCK_PATIENTS.filter(p => p.active).length;
+    const total = patients.length;
+    const active = patients.filter(p => p.active).length;
     return { active, inactive: total - active };
-  }, []);
+  }, [patients]);
 
-  // Overdue Doses (Latest only)
+  // Overdue Doses
   const overdueDoses = useMemo(() => {
     const latestDosesMap: Record<string, Dose> = {};
     doses.forEach(dose => {
@@ -338,25 +375,24 @@ const Dashboard: React.FC = () => {
   // Patients by Diagnosis
   const patientsByDiagnosis = useMemo(() => {
     const counts: Record<string, number> = {};
-    MOCK_PATIENTS.filter(p => p.active).forEach(p => {
+    patients.filter(p => p.active).forEach(p => {
         const diag = p.mainDiagnosis || 'Não Informado';
         counts[diag] = (counts[diag] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, []);
+  }, [patients]);
 
   // Consent Missing
   const patientsMissingConsent = useMemo(() => {
-    return MOCK_PATIENTS.filter(p => {
+    return patients.filter(p => {
         if (!p.active) return false;
         const diag = (p.mainDiagnosis || '').toLowerCase();
         const isTarget = diag.includes('puberdade precoce') || diag.includes('baixa estatura');
         if (!isTarget) return false;
-        // Usa allDocuments para reagir ao upload local
         const hasDoc = allDocuments.some(doc => doc.patientId === p.id);
         return !hasDoc;
     });
-  }, [allDocuments]); // Dependência atualizada
+  }, [patients, allDocuments]);
 
   // Activity Window
   const highActivityDoses = useMemo(() => {
@@ -365,11 +401,9 @@ const Dashboard: React.FC = () => {
       const endRange = new Date();
       endRange.setDate(endRange.getDate() + 7);
       return doses.filter(d => {
-          // SE TIVER CONCLUÍDO (Aplicada E Pago), REMOVE DA LISTA IMEDIATAMENTE (Comportamento de Lista de Pendências)
           if (d.status === DoseStatus.APPLIED && d.paymentStatus === PaymentStatus.PAID) {
               return false;
           }
-
           const appDate = new Date(d.applicationDate);
           const inRange = appDate >= startRange && appDate <= endRange;
           const isOld = appDate < startRange;
@@ -379,27 +413,25 @@ const Dashboard: React.FC = () => {
       }).sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
   }, [doses]);
 
-  // Upcoming Contacts (Régua)
+  // Upcoming Contacts
   const upcomingContacts = useMemo(() => {
       const contacts: any[] = [];
-      const activeTreatments = MOCK_TREATMENTS.filter(t => t.status === TreatmentStatus.ONGOING);
+      const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
 
       activeTreatments.forEach(t => {
-          const proto = MOCK_PROTOCOLS.find(p => p.id === t.protocolId);
+          const proto = protocols.find(p => p.id === t.protocolId);
           if (!proto || !proto.milestones || proto.milestones.length === 0) return;
           const startDate = new Date(t.startDate);
           
           proto.milestones.forEach(m => {
               const contactId = `${t.id}_m_${m.day}`;
-              
-              // Verifica se já foi dispensado/concluído
               if (dismissedLogs.some(log => log.contactId === contactId)) return;
 
               const contactDate = addDays(startDate, m.day);
               const diff = diffInDays(contactDate, TODAY);
 
               if (diff >= -60) {
-                  const patient = MOCK_PATIENTS.find(p => p.id === t.patientId);
+                  const patient = patients.find(p => p.id === t.patientId);
                   if (patient) {
                     contacts.push({
                         id: contactId,
@@ -418,11 +450,15 @@ const Dashboard: React.FC = () => {
           });
       });
       return contacts.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [dismissedLogs]);
+  }, [dismissedLogs, treatments, protocols, patients]);
 
   const scrollToSection = (id: string) => {
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+
+  if (loading) {
+      return <div className="min-h-screen flex items-center justify-center text-pink-600"><Loader2 size={40} className="animate-spin" /></div>;
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -436,6 +472,7 @@ const Dashboard: React.FC = () => {
           onChange={handleFileChange}
       />
 
+      {/* DASHBOARD JSX REMAINS THE SAME, CONNECTED TO NEW STATE VARIABLES */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800">Painel de Controle</h1>
         <div className="flex gap-2">
@@ -485,7 +522,7 @@ const Dashboard: React.FC = () => {
             onClick={() => scrollToSection('section-surveys')}
         />
         
-        {/* NPS Card Custom */}
+        {/* NPS Card */}
         <div 
             onClick={() => scrollToSection('section-surveys')}
             className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group"
@@ -706,7 +743,7 @@ const Dashboard: React.FC = () => {
                             <span className="font-bold text-slate-900">{item.value}</span>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                            <div className={`h-2.5 rounded-full`} style={{ width: `${(item.value / MOCK_PATIENTS.filter(p=>p.active).length) * 100}%` }}>
+                            <div className={`h-2.5 rounded-full`} style={{ width: `${(item.value / patients.filter(p=>p.active).length) * 100}%` }}>
                                 <div className={`h-full w-full ${getDiagnosisColor(item.name).split(' ')[0]}`}></div>
                             </div>
                         </div>
@@ -898,7 +935,7 @@ const Dashboard: React.FC = () => {
             </table>
       </SectionCard>
 
-      {/* MODALS */}
+      {/* Modal Definitions (Reused from previous code) */}
       <Modal open={addressModalOpen} onClose={() => setAddressModalOpen(false)} title="Endereço de Entrega" icon={<Bike size={18} className="text-amber-600"/>}>
             <div className="mb-4">
                 <p className="text-xs uppercase font-bold text-slate-400 mb-1">Responsável</p>
@@ -924,8 +961,6 @@ const Dashboard: React.FC = () => {
 
       <Modal open={doseModalOpen} onClose={() => setDoseModalOpen(false)} title="Editar Detalhes da Dose" icon={<Edit size={20} className="text-pink-600"/>} size="lg">
           <form onSubmit={handleSaveDoseFull}>
-             {/* Conteúdo do Form de Dose (simplificado para o modal genérico, mas mantendo a lógica) */}
-             {/* ... O conteúdo do form é o mesmo, só envelopado no Modal genérico ... */}
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-slate-100">
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Data da Aplicação</label>
