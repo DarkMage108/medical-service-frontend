@@ -1,5 +1,4 @@
 
-
 export enum UserRole {
   ADMIN = 'admin',
   DOCTOR = 'doctor',
@@ -72,6 +71,7 @@ export enum FrequencyDays {
 export interface Diagnosis {
   id: string;
   name: string;
+  color?: string; // Property to store the selected tag color
 }
 
 // --- MEDICAMENTOS BASE (Novo) ---

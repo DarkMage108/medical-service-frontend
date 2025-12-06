@@ -93,8 +93,9 @@ export const DIAGNOSIS_COLORS = [
     'bg-green-50 text-green-800 border-green-200',
 ];
 
-// Gera uma cor determinística baseada no nome do diagnóstico
-export const getDiagnosisColor = (name: string) => {
+// Gera uma cor determinística baseada no nome do diagnóstico, OU usa a cor específica se fornecida
+export const getDiagnosisColor = (name: string, specificColor?: string) => {
+  if (specificColor) return specificColor;
   if (!name) return DIAGNOSIS_COLORS[0];
 
   let hash = 0;
