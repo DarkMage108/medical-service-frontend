@@ -1,41 +1,37 @@
-
 import React, { useState } from 'react';
-import { HeartPulse, Lock, Mail, Info } from 'lucide-react';
-import { User } from '../types';
-import { MOCK_USERS } from '../services/mockData';
+import { HeartPulse, Lock, Mail, Info, Loader2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
-interface LoginProps {
-  onLogin: (user: User) => void;
-}
+const DEMO_USERS = [
+  { email: 'admin@azevedo.com', password: 'admin123', name: 'Administrador', role: 'ADMIN' },
+  { email: 'medico@azevedo.com', password: 'doctor123', name: 'Dr. Silva', role: 'DOCTOR' },
+  { email: 'secretaria@azevedo.com', password: 'secretary123', name: 'Maria Secretária', role: 'SECRETARY' },
+];
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const { login, error: authError, clearError } = useAuth();
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setLocalError('');
+    clearError();
+    setIsSubmitting(true);
 
-    // Verifica se o email e senha existem na lista de usuários permitidos
-    const validUser = MOCK_USERS.find(
-      u => u.email.toLowerCase() === email.toLowerCase() && u.pass === password
-    );
-
-    if (validUser) {
-      // Cria objeto de sessão seguro (sem senha)
-      const sessionUser: User = {
-          id: validUser.id,
-          name: validUser.name,
-          email: validUser.email,
-          role: validUser.role,
-          active: true
-      };
-      onLogin(sessionUser);
-    } else {
-      setError('Credenciais inválidas. Verifique seu email e senha.');
+    try {
+      await login(email, password);
+    } catch (err: any) {
+      setLocalError(err.message || 'Credenciais inválidas. Verifique seu email e senha.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const error = localError || authError;
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -63,6 +59,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-colors"
                   placeholder="seu.nome@azevedo.com"
                   required
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
@@ -80,43 +77,59 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-colors"
                   placeholder="••••••••"
                   required
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm font-medium border border-red-100 animate-in fade-in slide-in-from-top-1">
+              <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm font-medium border border-red-100">
                 {error}
               </div>
             )}
 
             <button
               type="submit"
-              className="w-full bg-slate-900 text-white py-3 rounded-lg font-semibold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/10"
+              disabled={isSubmitting}
+              className="w-full bg-slate-900 text-white py-3 rounded-lg font-semibold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/10 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Entrar no Sistema
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  Entrando...
+                </>
+              ) : (
+                'Entrar no Sistema'
+              )}
             </button>
           </form>
 
-          {/* Dica para o MVP - Remover em produção */}
           <div className="mt-8 pt-6 border-t border-slate-100">
-             <div className="flex items-start p-3 bg-blue-50 rounded-lg text-xs text-blue-800">
-                <Info size={16} className="mr-2 flex-shrink-0 mt-0.5" />
-                <div>
-                   <span className="font-bold block mb-1">Acessos de Teste (MVP):</span>
-                   <div className="grid grid-cols-1 gap-2 mt-2">
-                       {MOCK_USERS.map(u => (
-                           <button 
-                                key={u.id}
-                                onClick={() => { setEmail(u.email); setPassword(u.pass); }}
-                                className="text-left bg-white border border-blue-200 hover:bg-blue-100 p-2 rounded shadow-sm transition-colors"
-                           >
-                               <span className="font-bold">{u.name}</span> <span className="text-blue-500">({u.role})</span>
-                           </button>
-                       ))}
-                   </div>
+            <div className="flex items-start p-3 bg-blue-50 rounded-lg text-xs text-blue-800">
+              <Info size={16} className="mr-2 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block mb-1">Acessos de Teste:</span>
+                <div className="grid grid-cols-1 gap-2 mt-2">
+                  {DEMO_USERS.map((u) => (
+                    <button
+                      key={u.email}
+                      type="button"
+                      onClick={() => {
+                        setEmail(u.email);
+                        setPassword(u.password);
+                        setLocalError('');
+                        clearError();
+                      }}
+                      disabled={isSubmitting}
+                      className="text-left bg-white border border-blue-200 hover:bg-blue-100 p-2 rounded shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      <span className="font-bold">{u.name}</span>{' '}
+                      <span className="text-blue-500">({u.role})</span>
+                    </button>
+                  ))}
                 </div>
-             </div>
+              </div>
+            </div>
           </div>
 
           <div className="mt-6 text-center text-xs text-slate-400">

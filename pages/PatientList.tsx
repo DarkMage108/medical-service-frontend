@@ -1,25 +1,46 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MOCK_PATIENTS, MOCK_DIAGNOSES, addMockPatient, deleteMockPatient } from '../services/mockData';
-import { PatientFull } from '../types';
-import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity } from 'lucide-react';
+import { fetchPatients, fetchDiagnoses, createPatient, deletePatient as deletePatientApi } from '../services/dataService';
+import { PatientFull, Diagnosis } from '../types';
+import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity, AlertCircle } from 'lucide-react';
 import { getDiagnosisColor } from '../constants';
 
 const PatientList: React.FC = () => {
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
   const [diagnosisFilter, setDiagnosisFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'inactive'
-  const [patients, setPatients] = useState<PatientFull[]>(MOCK_PATIENTS);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [patients, setPatients] = useState<PatientFull[]>([]);
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Força a atualização dos dados ao montar o componente
+  // Load patients and diagnoses from API on mount
   useEffect(() => {
-    setPatients(MOCK_PATIENTS);
+    loadData();
   }, []);
 
-  // Verifica se veio algum filtro do Dashboard via navegação
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const [patientsData, diagnosesData] = await Promise.all([
+        fetchPatients(),
+        fetchDiagnoses()
+      ]);
+      setPatients(patientsData);
+      setDiagnoses(diagnosesData);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar dados');
+      console.error('Failed to load data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Check for filters from Dashboard navigation
   useEffect(() => {
       const state = location.state as any;
       if (state) {
@@ -29,25 +50,18 @@ const PatientList: React.FC = () => {
           if (state.statusFilter) {
               setStatusFilter(state.statusFilter);
           }
-          // Limpa o state do history para não ficar preso no filtro ao dar refresh
           window.history.replaceState({}, document.title);
       }
   }, [location]);
 
   // --- Form States ---
-  
-  // Dados Pessoais
   const [newName, setNewName] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState('');
   const [newDiagnosis, setNewDiagnosis] = useState('');
-
-  // Responsável
   const [newGuardian, setNewGuardian] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [relationship, setRelationship] = useState('');
-
-  // Endereço
   const [street, setStreet] = useState('');
   const [number, setNumber] = useState('');
   const [complement, setComplement] = useState('');
@@ -56,59 +70,46 @@ const PatientList: React.FC = () => {
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [isLoadingCep, setIsLoadingCep] = useState(false);
-
-  // Observações
   const [clinicalNotes, setClinicalNotes] = useState('');
 
-  // --- OTIMIZAÇÃO DE PERFORMANCE ---
-  
-  // 1. Pré-processamento dos dados pesquisáveis
-  // Esta lista só é recriada se 'patients' mudar (add/edit/delete), e NÃO a cada tecla digitada na busca.
+  // --- Performance optimization ---
   const processedPatients = useMemo(() => {
-    const normalize = (str: string) => 
+    const normalize = (str: string) =>
         str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
     return patients.map(p => ({
         ...p,
-        // Pré-calcula strings de busca para evitar processamento repetitivo no filtro
         _searchName: normalize(p.fullName),
         _searchGuardian: normalize(p.guardian.fullName),
-        _searchPhone: p.guardian.phonePrimary.replace(/\D/g, '') // Apenas números
+        _searchPhone: p.guardian.phonePrimary.replace(/\D/g, '')
     }));
   }, [patients]);
 
-  // 2. Filtragem eficiente usando os dados pré-processados
   const filteredPatients = useMemo(() => {
-    const normalize = (str: string) => 
+    const normalize = (str: string) =>
         str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
+
     const term = searchTerm.trim();
     const normalizedTerm = normalize(term);
-    const numericTerm = term.replace(/\D/g, ''); // Extrai números da busca
+    const numericTerm = term.replace(/\D/g, '');
     const hasSearch = term.length > 0;
-    const hasNumericSearch = numericTerm.length > 2; // Só busca telefone se tiver pelo menos 3 números
+    const hasNumericSearch = numericTerm.length > 2;
 
     return processedPatients.filter(p => {
-        // 1. Filtro por Texto (Nome ou Telefone)
         let matchesSearch = true;
         if (hasSearch) {
             const nameMatch = p._searchName.includes(normalizedTerm);
             const guardianMatch = p._searchGuardian.includes(normalizedTerm);
-            
-            // Busca inteligente de telefone: só compara se o usuário digitou números suficientes
             const phoneMatch = hasNumericSearch && p._searchPhone.includes(numericTerm);
-            
             matchesSearch = nameMatch || guardianMatch || phoneMatch;
         }
 
         if (!matchesSearch) return false;
 
-        // 2. Filtro por Diagnóstico
         if (diagnosisFilter && p.mainDiagnosis !== diagnosisFilter) {
             return false;
         }
 
-        // 3. Filtro por Status
         if (statusFilter !== 'all') {
             const isActive = statusFilter === 'active';
             if (p.active !== isActive) return false;
@@ -138,14 +139,14 @@ const PatientList: React.FC = () => {
 
   const handleZipCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value.replace(/\D/g, '');
-      setZipCode(e.target.value); 
+      setZipCode(e.target.value);
 
       if (value.length === 8) {
           setIsLoadingCep(true);
           try {
               const response = await fetch(`https://viacep.com.br/ws/${value}/json/`);
               const data = await response.json();
-              
+
               if (!data.erro) {
                   setStreet(data.logradouro);
                   setNeighborhood(data.bairro);
@@ -164,54 +165,64 @@ const PatientList: React.FC = () => {
   const handleSavePatient = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    
-    // Simula delay de API
-    await new Promise(resolve => setTimeout(resolve, 800));
+    setError(null);
 
-    const newId = `pat_${Date.now()}`;
-    const newPatient: PatientFull = {
-        id: newId,
+    try {
+      const newPatient = await createPatient({
         fullName: newName,
         birthDate: birthDate || undefined,
         gender: gender as 'M' | 'F' | 'Other',
         mainDiagnosis: newDiagnosis || 'Não informado',
         clinicalNotes: clinicalNotes,
-        // CORREÇÃO: Paciente novo nasce ATIVO
-        active: true, 
+        active: true,
         guardian: {
-            id: `g_${newId}`,
-            patientId: newId,
-            fullName: newGuardian,
-            phonePrimary: newPhone,
-            relationship: relationship
+          fullName: newGuardian,
+          phonePrimary: newPhone,
+          relationship: relationship
         },
         address: street ? {
-            id: `addr_${newId}`,
-            patientId: newId,
-            street,
-            number,
-            complement,
-            neighborhood,
-            city,
-            state,
-            zipCode
+          street,
+          number,
+          complement,
+          neighborhood,
+          city,
+          state,
+          zipCode
         } : undefined
-    };
+      });
 
-    const updatedList = addMockPatient(newPatient);
-    setPatients(updatedList);
-    
-    setIsSaving(false);
-    setIsModalOpen(false);
-    resetForm();
+      setPatients(prev => [...prev, newPatient]);
+      setIsModalOpen(false);
+      resetForm();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao salvar paciente');
+      console.error('Failed to save patient:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeletePatient = (id: string) => {
-      if(window.confirm("Tem certeza que deseja excluir este paciente? Todos os dados vinculados serão perdidos.")){
-          const updatedList = deleteMockPatient(id);
-          setPatients(updatedList);
+  const handleDeletePatient = async (id: string) => {
+    if(window.confirm("Tem certeza que deseja excluir este paciente? Todos os dados vinculados serão perdidos.")){
+      try {
+        setError(null);
+        await deletePatientApi(id);
+        setPatients(prev => prev.filter(p => p.id !== id));
+      } catch (err: any) {
+        setError(err.message || 'Erro ao excluir paciente');
+        console.error('Failed to delete patient:', err);
       }
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={32} className="animate-spin text-pink-600" />
+        <span className="ml-3 text-slate-600">Carregando pacientes...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 relative">
@@ -220,7 +231,7 @@ const PatientList: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>
           <p className="text-slate-500">Gerenciamento de base de pacientes</p>
         </div>
-        <button 
+        <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 transition-colors shadow-sm"
         >
@@ -228,6 +239,19 @@ const PatientList: React.FC = () => {
           Novo Paciente
         </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
+          <AlertCircle size={20} className="text-red-600 mr-3" />
+          <span className="text-red-700">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto text-red-600 hover:text-red-800"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -243,7 +267,7 @@ const PatientList: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             />
         </div>
-        
+
         <div className="relative w-full md:w-56">
              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Filter size={18} className="text-slate-400" />
@@ -254,7 +278,7 @@ const PatientList: React.FC = () => {
                 className="block w-full pl-10 pr-8 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 appearance-none bg-white"
             >
                 <option value="">Todos Diagnósticos</option>
-                {MOCK_DIAGNOSES.map(d => (
+                {diagnoses.map(d => (
                     <option key={d.id} value={d.name}>{d.name}</option>
                 ))}
             </select>
@@ -274,9 +298,9 @@ const PatientList: React.FC = () => {
                 <option value="inactive">Apenas Inativos</option>
             </select>
         </div>
-        
+
         {(searchTerm || diagnosisFilter || statusFilter !== 'all') && (
-             <button 
+             <button
                 onClick={() => { setSearchTerm(''); setDiagnosisFilter(''); setStatusFilter('all'); }}
                 className="px-4 py-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
             >
@@ -321,7 +345,7 @@ const PatientList: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-2">
-                        <Link 
+                        <Link
                         to={`/pacientes/${patient.id}`}
                         className="inline-flex items-center justify-center p-2 rounded-lg text-slate-400 hover:text-pink-600 hover:bg-pink-50 transition-colors"
                         title="Ver Detalhes"
@@ -364,9 +388,9 @@ const PatientList: React.FC = () => {
                         <X size={24} />
                     </button>
                 </div>
-                
+
                 <form onSubmit={handleSavePatient} className="flex-1 overflow-y-auto p-6 space-y-6">
-                    
+
                     {/* Seção 1: Dados Pessoais */}
                     <div>
                         <h4 className="flex items-center text-sm font-semibold text-pink-600 mb-3 border-b border-pink-100 pb-1">
@@ -376,8 +400,8 @@ const PatientList: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Nome Completo</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     required
                                     value={newName}
                                     onChange={e => setNewName(e.target.value)}
@@ -391,7 +415,7 @@ const PatientList: React.FC = () => {
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <Calendar size={18} className="text-slate-400" />
                                     </div>
-                                    <input 
+                                    <input
                                         type="date"
                                         value={birthDate}
                                         onChange={e => setBirthDate(e.target.value)}
@@ -401,7 +425,7 @@ const PatientList: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Sexo</label>
-                                <select 
+                                <select
                                     value={gender}
                                     required
                                     onChange={e => setGender(e.target.value)}
@@ -419,14 +443,14 @@ const PatientList: React.FC = () => {
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <FileText size={18} className="text-slate-400" />
                                     </div>
-                                    <select 
+                                    <select
                                         value={newDiagnosis}
                                         required
                                         onChange={e => setNewDiagnosis(e.target.value)}
                                         className="pl-10 block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                                     >
                                         <option value="" disabled>Selecione...</option>
-                                        {MOCK_DIAGNOSES.map(d => (
+                                        {diagnoses.map(d => (
                                             <option key={d.id} value={d.name}>{d.name}</option>
                                         ))}
                                         <option value="Outro">Outro (Digitar na obs)</option>
@@ -445,8 +469,8 @@ const PatientList: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Nome do Responsável</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     required
                                     value={newGuardian}
                                     onChange={e => setNewGuardian(e.target.value)}
@@ -456,7 +480,7 @@ const PatientList: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Parentesco</label>
-                                <select 
+                                <select
                                     value={relationship}
                                     required
                                     onChange={e => setRelationship(e.target.value)}
@@ -476,8 +500,8 @@ const PatientList: React.FC = () => {
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <Phone size={18} className="text-slate-400" />
                                     </div>
-                                    <input 
-                                        type="tel" 
+                                    <input
+                                        type="tel"
                                         required
                                         value={newPhone}
                                         onChange={e => setNewPhone(e.target.value)}
@@ -499,8 +523,8 @@ const PatientList: React.FC = () => {
                              <div className="md:col-span-2 relative">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">CEP</label>
                                 <div className="relative">
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         value={zipCode}
                                         onChange={handleZipCodeChange}
                                         maxLength={9}
@@ -516,8 +540,8 @@ const PatientList: React.FC = () => {
                             </div>
                             <div className="md:col-span-3">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Rua / Logradouro</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={street}
                                     onChange={e => setStreet(e.target.value)}
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -525,9 +549,9 @@ const PatientList: React.FC = () => {
                             </div>
                             <div className="md:col-span-1">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Número</label>
-                                <input 
+                                <input
                                     id="addr_number"
-                                    type="text" 
+                                    type="text"
                                     value={number}
                                     onChange={e => setNumber(e.target.value)}
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -535,8 +559,8 @@ const PatientList: React.FC = () => {
                             </div>
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Bairro</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={neighborhood}
                                     onChange={e => setNeighborhood(e.target.value)}
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -544,8 +568,8 @@ const PatientList: React.FC = () => {
                             </div>
                              <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Cidade</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={city}
                                     onChange={e => setCity(e.target.value)}
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -553,8 +577,8 @@ const PatientList: React.FC = () => {
                             </div>
                              <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Estado</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={state}
                                     onChange={e => setState(e.target.value)}
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -564,8 +588,8 @@ const PatientList: React.FC = () => {
                             </div>
                              <div className="md:col-span-6">
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Complemento</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     value={complement}
                                     onChange={e => setComplement(e.target.value)}
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -581,7 +605,7 @@ const PatientList: React.FC = () => {
                             <AlignLeft size={16} className="mr-2" />
                             Observações Clínicas
                         </h4>
-                        <textarea 
+                        <textarea
                             rows={3}
                             value={clinicalNotes}
                             onChange={e => setClinicalNotes(e.target.value)}
@@ -593,17 +617,17 @@ const PatientList: React.FC = () => {
                 </form>
 
                 <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-                    <button 
-                        type="button" 
+                    <button
+                        type="button"
                         onClick={() => setIsModalOpen(false)}
                         disabled={isSaving}
                         className="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-white transition-colors disabled:opacity-50"
                     >
                         Cancelar
                     </button>
-                    <button 
+                    <button
                         onClick={handleSavePatient}
-                        type="button" 
+                        type="button"
                         disabled={isSaving}
                         className="flex-1 py-2.5 bg-pink-600 text-white rounded-lg font-medium hover:bg-pink-700 flex justify-center items-center shadow-lg shadow-pink-600/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >

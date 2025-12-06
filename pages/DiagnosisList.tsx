@@ -1,61 +1,90 @@
 
 import React, { useState, useEffect } from 'react';
-import { getDiagnoses, addMockDiagnosis, deleteMockDiagnosis } from '../services/mockData';
+import { fetchDiagnoses, createDiagnosis, deleteDiagnosis as deleteDiagnosisApi } from '../services/dataService';
 import { Diagnosis } from '../types';
-import { Plus, Trash2, Tag, Stethoscope, Loader2, Check } from 'lucide-react';
+import { Plus, Trash2, Tag, Stethoscope, Loader2, Check, AlertCircle } from 'lucide-react';
 import { getDiagnosisColor, DIAGNOSIS_COLORS } from '../constants';
 
 const DiagnosisList: React.FC = () => {
-  // Inicializa vazio e carrega no useEffect para garantir consistência
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [newDiagnosis, setNewDiagnosis] = useState('');
   const [selectedColor, setSelectedColor] = useState(DIAGNOSIS_COLORS[0]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Carrega diagnósticos atualizados ao montar
+  // Load diagnoses from API on mount
   useEffect(() => {
-    setDiagnoses(getDiagnoses());
+    loadDiagnoses();
   }, []);
+
+  const loadDiagnoses = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await fetchDiagnoses();
+      setDiagnoses(data);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar diagnósticos');
+      console.error('Failed to load diagnoses:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDiagnosis.trim()) return;
 
     setIsSaving(true);
-    // Pequeno delay para feedback visual
-    await new Promise(resolve => setTimeout(resolve, 300));
+    setError(null);
 
-    const newItem: Diagnosis = {
-        id: `diag_${Date.now()}`,
+    try {
+      const newItem = await createDiagnosis({
         name: newDiagnosis.trim(),
         color: selectedColor
-    };
+      });
 
-    // Salva no mock e recebe a lista atualizada
-    const updatedList = addMockDiagnosis(newItem);
-    
-    // Atualiza o estado visual com a lista retornada
-    setDiagnoses(updatedList);
-    
-    // Limpa o campo
-    setNewDiagnosis('');
-    // Randomize next color slightly to vary default experience
-    const randomNext = DIAGNOSIS_COLORS[Math.floor(Math.random() * DIAGNOSIS_COLORS.length)];
-    setSelectedColor(randomNext);
-    
-    setIsSaving(false);
+      // Add the new item to the list
+      setDiagnoses(prev => [...prev, newItem]);
+
+      // Clear the field
+      setNewDiagnosis('');
+      // Randomize next color
+      const randomNext = DIAGNOSIS_COLORS[Math.floor(Math.random() * DIAGNOSIS_COLORS.length)];
+      setSelectedColor(randomNext);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao adicionar diagnóstico');
+      console.error('Failed to add diagnosis:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-      // Impede propagação se houver cliques aninhados
-      e.stopPropagation();
-      e.preventDefault();
-      
-      if (window.confirm('Tem certeza que deseja excluir este diagnóstico?')) {
-          const updated = deleteMockDiagnosis(id);
-          setDiagnoses(updated);
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (window.confirm('Tem certeza que deseja excluir este diagnóstico?')) {
+      try {
+        setError(null);
+        await deleteDiagnosisApi(id);
+        setDiagnoses(prev => prev.filter(d => d.id !== id));
+      } catch (err: any) {
+        setError(err.message || 'Erro ao excluir diagnóstico');
+        console.error('Failed to delete diagnosis:', err);
       }
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={32} className="animate-spin text-pink-600" />
+        <span className="ml-3 text-slate-600">Carregando diagnósticos...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -67,14 +96,27 @@ const DiagnosisList: React.FC = () => {
         <p className="text-slate-500 mt-1">Cadastre as condições clínicas atendidas pela clínica.</p>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
+          <AlertCircle size={20} className="text-red-600 mr-3" />
+          <span className="text-red-700">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto text-red-600 hover:text-red-800"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <form onSubmit={handleAdd} className="mb-8">
               <div className="flex flex-col md:flex-row gap-4 items-start">
                   <div className="flex-1 w-full">
                       <label className="block text-sm font-medium text-slate-700 mb-1">Novo Diagnóstico</label>
-                      <input 
-                        type="text" 
-                        value={newDiagnosis} 
+                      <input
+                        type="text"
+                        value={newDiagnosis}
                         onChange={e => setNewDiagnosis(e.target.value)}
                         placeholder="Ex: Puberdade Precoce, Obesidade..."
                         className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -82,8 +124,8 @@ const DiagnosisList: React.FC = () => {
                       />
                   </div>
                   <div className="w-full md:w-auto flex items-end">
-                    <button 
-                        type="submit" 
+                    <button
+                        type="submit"
                         disabled={!newDiagnosis.trim() || isSaving}
                         className="w-full md:w-auto bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center shadow-sm h-[42px] mt-6"
                     >
@@ -92,7 +134,7 @@ const DiagnosisList: React.FC = () => {
                     </button>
                   </div>
               </div>
-              
+
               {/* Color Selector */}
               <div className="mt-4">
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cor da Etiqueta</label>
@@ -103,8 +145,8 @@ const DiagnosisList: React.FC = () => {
                               type="button"
                               onClick={() => setSelectedColor(color)}
                               className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${color.split(' ')[0]} ${
-                                  selectedColor === color 
-                                  ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' 
+                                  selectedColor === color
+                                  ? 'ring-2 ring-offset-2 ring-slate-400 scale-110'
                                   : 'hover:scale-105 border border-transparent hover:border-slate-300'
                               }`}
                               title="Selecionar cor"
@@ -135,7 +177,7 @@ const DiagnosisList: React.FC = () => {
                                 {diag.name}
                               </span>
                           </div>
-                          <button 
+                          <button
                             type="button"
                             onClick={(e) => handleDelete(diag.id, e)}
                             className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all cursor-pointer"
