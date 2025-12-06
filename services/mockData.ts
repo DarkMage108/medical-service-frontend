@@ -21,12 +21,16 @@ const STORAGE_KEYS = {
 // Simulate Network Latency
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Low-level Data Access Layer (Safe for SSR)
+// Low-level Data Access Layer (Safe for SSR and Corrupt Data)
 const loadData = <T>(key: string, defaults: T): T => {
   if (typeof window === 'undefined') return defaults;
   try {
     const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : defaults;
+    if (!stored) return defaults;
+    
+    const parsed = JSON.parse(stored);
+    // Proteção crucial: se o JSON.parse retornar null (ex: "null" salvo no storage), retorna defaults
+    return parsed === null ? defaults : parsed;
   } catch (e) {
     console.error('DB Load Error', e);
     return defaults;
@@ -61,18 +65,19 @@ export const MOCK_USERS = [
 
 // --- IN-MEMORY DATABASE CACHE (Single Source of Truth) ---
 // This acts as the "Server State" loaded from persistence
+// Usamos a proteção || [] para garantir que nunca seja undefined, mesmo que o loadData falhe silenciosamente
 let _db = {
-  patients: loadData<PatientFull[]>(STORAGE_KEYS.PATIENTS, []),
-  treatments: loadData<Treatment[]>(STORAGE_KEYS.TREATMENTS, []),
-  doses: loadData<Dose[]>(STORAGE_KEYS.DOSES, []),
-  documents: loadData<ConsentDocument[]>(STORAGE_KEYS.DOCUMENTS, []),
-  protocols: loadData<Protocol[]>(STORAGE_KEYS.PROTOCOLS, SEED_PROTOCOLS),
-  diagnoses: loadData<Diagnosis[]>(STORAGE_KEYS.DIAGNOSES, SEED_DIAGNOSES),
-  inventory: loadData<InventoryItem[]>(STORAGE_KEYS.INVENTORY, []),
-  medications: loadData<MedicationBase[]>(STORAGE_KEYS.MEDICATION_BASE, []),
-  logs: loadData<DismissedLog[]>(STORAGE_KEYS.DISMISSED_LOGS, []),
-  dispenseLogs: loadData<DispenseLog[]>(STORAGE_KEYS.DISPENSE_LOGS, []),
-  purchaseRequests: loadData<PurchaseRequest[]>(STORAGE_KEYS.PURCHASE_REQUESTS, [])
+  patients: loadData<PatientFull[]>(STORAGE_KEYS.PATIENTS, []) || [],
+  treatments: loadData<Treatment[]>(STORAGE_KEYS.TREATMENTS, []) || [],
+  doses: loadData<Dose[]>(STORAGE_KEYS.DOSES, []) || [],
+  documents: loadData<ConsentDocument[]>(STORAGE_KEYS.DOCUMENTS, []) || [],
+  protocols: loadData<Protocol[]>(STORAGE_KEYS.PROTOCOLS, SEED_PROTOCOLS) || SEED_PROTOCOLS,
+  diagnoses: loadData<Diagnosis[]>(STORAGE_KEYS.DIAGNOSES, SEED_DIAGNOSES) || SEED_DIAGNOSES,
+  inventory: loadData<InventoryItem[]>(STORAGE_KEYS.INVENTORY, []) || [],
+  medications: loadData<MedicationBase[]>(STORAGE_KEYS.MEDICATION_BASE, []) || [],
+  logs: loadData<DismissedLog[]>(STORAGE_KEYS.DISMISSED_LOGS, []) || [],
+  dispenseLogs: loadData<DispenseLog[]>(STORAGE_KEYS.DISPENSE_LOGS, []) || [],
+  purchaseRequests: loadData<PurchaseRequest[]>(STORAGE_KEYS.PURCHASE_REQUESTS, []) || []
 };
 
 // --- BUSINESS LOGIC HELPERS ---
@@ -103,7 +108,7 @@ const calculateDoseLogic = (date: string, freq: number) => {
 export const PatientService = {
   getAll: async (): Promise<PatientFull[]> => {
     await delay(300);
-    return [..._db.patients];
+    return [...(_db.patients || [])];
   },
   getById: async (id: string): Promise<PatientFull | undefined> => {
     await delay(200);
@@ -134,11 +139,11 @@ export const PatientService = {
 export const TreatmentService = {
   getByPatientId: async (patientId: string): Promise<Treatment[]> => {
     await delay(300);
-    return _db.treatments.filter(t => t.patientId === patientId);
+    return (_db.treatments || []).filter(t => t.patientId === patientId);
   },
   getAll: async (): Promise<Treatment[]> => {
     await delay(300);
-    return [..._db.treatments];
+    return [...(_db.treatments || [])];
   },
   getById: async (id: string): Promise<Treatment | undefined> => {
       await delay(200);
@@ -171,11 +176,11 @@ export const TreatmentService = {
 export const DoseService = {
   getAll: async (): Promise<Dose[]> => {
     await delay(300);
-    return [..._db.doses];
+    return [...(_db.doses || [])];
   },
   getByTreatmentId: async (treatmentId: string): Promise<Dose[]> => {
     await delay(300);
-    return _db.doses.filter(d => d.treatmentId === treatmentId);
+    return (_db.doses || []).filter(d => d.treatmentId === treatmentId);
   },
   create: async (dose: Dose): Promise<Dose> => {
     await delay(400);
@@ -207,8 +212,6 @@ export const DoseService = {
     saveData(STORAGE_KEYS.DOSES, _db.doses);
 
     // Check dispense logic
-    // FIXED: Check based on the *updated* object, not just the changes. 
-    // This allows dashboard quick-update to trigger dispense if lot was already set.
     if (updatedDose.inventoryLotId && updatedDose.status === DoseStatus.APPLIED) {
          const treatment = _db.treatments.find(t => t.id === updatedDose.treatmentId);
          if (treatment) {
@@ -226,21 +229,18 @@ export const DoseService = {
 export const InventoryService = {
   getAll: async (): Promise<InventoryItem[]> => {
     await delay(300);
-    return [..._db.inventory];
+    return [...(_db.inventory || [])];
   },
   addEntry: async (item: InventoryItem): Promise<InventoryItem> => {
     await delay(500);
-    // Find item with same medication and lot
     const existingIndex = _db.inventory.findIndex(i => i.medicationName === item.medicationName && i.lotNumber === item.lotNumber);
     if (existingIndex !== -1) {
-        // Add to existing
         _db.inventory[existingIndex] = { 
             ..._db.inventory[existingIndex], 
             quantity: _db.inventory[existingIndex].quantity + item.quantity,
-            active: true // Reactivate if it was 0
+            active: true 
         };
     } else {
-        // Add new
         _db.inventory = [..._db.inventory, item];
     }
     saveData(STORAGE_KEYS.INVENTORY, _db.inventory);
@@ -256,18 +256,14 @@ export const InventoryService = {
     return _db.inventory[index];
   },
   dispense: async (doseId: string, inventoryItemId: string, patientId: string): Promise<boolean> => {
-    // Internal method, usually called by DoseService, but can be standalone
     const index = _db.inventory.findIndex(i => i.id === inventoryItemId);
     
-    // Check if item exists and has quantity
     if (index === -1) return false;
     if (_db.inventory[index].quantity <= 0) return false;
 
-    // Decrement
     _db.inventory[index].quantity -= 1;
     saveData(STORAGE_KEYS.INVENTORY, _db.inventory);
 
-    // Log
     const log: DispenseLog = {
         id: `disp_${Date.now()}_${Math.random()}`,
         date: new Date().toISOString(),
@@ -283,17 +279,14 @@ export const InventoryService = {
   },
   getDispenseLogs: async (): Promise<DispenseLog[]> => {
       await delay(300);
-      return [..._db.dispenseLogs];
+      return [...(_db.dispenseLogs || [])];
   },
   getPurchaseRequests: async (): Promise<PurchaseRequest[]> => {
       await delay(300);
-      return [..._db.purchaseRequests];
+      return [...(_db.purchaseRequests || [])];
   },
   checkTriggers: async (): Promise<PurchaseRequest[]> => {
-      // Regra de 10 dias (Purchase Prediction)
-      // Agrupar demanda futura (próximos 10 dias) por medicamento
       const futureDemand: Record<string, number> = {};
-      
       const activeTreatments = _db.treatments.filter(t => t.status === TreatmentStatus.ONGOING);
       
       activeTreatments.forEach(t => {
@@ -311,7 +304,6 @@ export const InventoryService = {
           }
 
           const diff = diffInDays(nextDate, new Date());
-          // FIXED: Consider overdue items (diff < 0) as immediate demand too
           if (diff <= 10) {
               futureDemand[proto.medicationType] = (futureDemand[proto.medicationType] || 0) + 1;
           }
@@ -333,7 +325,7 @@ export const InventoryService = {
                       currentStock: totalStock,
                       predictedConsumption10Days: demand,
                       status: 'PENDING',
-                      suggestedQuantity: Math.max(demand * 3, 5) // Suggest at least 5 or 3x demand
+                      suggestedQuantity: Math.max(demand * 3, 5)
                   };
                   requests.push(req);
               }
@@ -360,7 +352,7 @@ export const InventoryService = {
 export const MedicationBaseService = {
   getAll: async (): Promise<MedicationBase[]> => {
     await delay(300);
-    return [..._db.medications];
+    return [...(_db.medications || [])];
   },
   create: async (med: MedicationBase): Promise<MedicationBase> => {
     await delay(400);
@@ -378,7 +370,7 @@ export const MedicationBaseService = {
 export const ProtocolService = {
     getAll: async (): Promise<Protocol[]> => {
         await delay(300);
-        return [..._db.protocols];
+        return [...(_db.protocols || [])];
     },
     create: async (proto: Protocol) => {
         await delay(300);
@@ -405,7 +397,7 @@ export const ProtocolService = {
 export const DiagnosisService = {
     getAll: async (): Promise<Diagnosis[]> => {
         await delay(200);
-        return [..._db.diagnoses];
+        return [...(_db.diagnoses || [])];
     },
     create: async (item: Diagnosis) => {
         await delay(300);
@@ -433,11 +425,11 @@ export const DiagnosisService = {
 export const DocumentService = {
     getByPatient: async (patientId: string): Promise<ConsentDocument[]> => {
         await delay(300);
-        return _db.documents.filter(d => d.patientId === patientId);
+        return (_db.documents || []).filter(d => d.patientId === patientId);
     },
     getAll: async (): Promise<ConsentDocument[]> => {
         await delay(300);
-        return [..._db.documents];
+        return [...(_db.documents || [])];
     },
     add: async (doc: ConsentDocument) => {
         await delay(500);
@@ -450,7 +442,7 @@ export const DocumentService = {
 export const LogService = {
     getDismissed: async (): Promise<DismissedLog[]> => {
         await delay(200);
-        return [..._db.logs];
+        return [...(_db.logs || [])];
     },
     dismiss: async (id: string) => {
         await delay(200);

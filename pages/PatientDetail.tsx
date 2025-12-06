@@ -56,7 +56,7 @@ const PatientDetail: React.FC = () => {
             const [p, t, d, docs, protos] = await Promise.all([
                 PatientService.getById(id),
                 TreatmentService.getByPatientId(id),
-                DoseService.getAll(), // Ideally fetch by Patient or Treatment ID
+                DoseService.getAll(),
                 DocumentService.getByPatient(id),
                 ProtocolService.getAll()
             ]);
@@ -83,8 +83,8 @@ const PatientDetail: React.FC = () => {
 
   const handleOpenEditPatient = () => {
       setEditName(patient.fullName);
-      setEditGuardianName(patient.guardian.fullName);
-      setEditPhone(patient.guardian.phonePrimary);
+      setEditGuardianName(patient.guardian?.fullName || '');
+      setEditPhone(patient.guardian?.phonePrimary || '');
       setEditClinicalNotes(patient.clinicalNotes || '');
       
       setEditStreet(patient.address?.street || '');
@@ -318,9 +318,9 @@ const PatientDetail: React.FC = () => {
                     </div>
                     <div>
                         <span className="text-slate-500 block">Responsável</span>
-                        <div className="font-medium text-slate-800">{patient.guardian.fullName}</div>
-                        <div className="text-slate-600">{patient.guardian.relationship}</div>
-                        <div className="text-pink-600 mt-1">{patient.guardian.phonePrimary}</div>
+                        <div className="font-medium text-slate-800">{patient.guardian?.fullName || '-'}</div>
+                        <div className="text-slate-600">{patient.guardian?.relationship || '-'}</div>
+                        <div className="text-pink-600 mt-1">{patient.guardian?.phonePrimary || '-'}</div>
                     </div>
                 </div>
             </div>
