@@ -1,6 +1,7 @@
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { PermissionsProvider, usePermissions } from './contexts/PermissionsContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -11,7 +12,9 @@ import DiagnosisList from './pages/DiagnosisList';
 import MedicationList from './pages/MedicationList';
 import HistoryList from './pages/HistoryList';
 import InventoryList from './pages/InventoryList';
+import PermissionsManager from './pages/PermissionsManager';
 import { Loader2 } from 'lucide-react';
+import { UserRole } from './types';
 
 // Loading component
 const LoadingScreen: React.FC = () => (
@@ -33,6 +36,29 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Protected route with permission check
+const ProtectedRouteWithPermission: React.FC<{
+  children: React.ReactNode;
+  menuKey: string;
+}> = ({ children, menuKey }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+  const { hasAccess, isLoading: permissionsLoading } = usePermissions();
+
+  if (isLoading || permissionsLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!hasAccess(menuKey)) {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -71,84 +97,98 @@ const AppContent: React.FC = () => {
         }
       />
 
-      {/* Protected routes */}
+      {/* Protected routes with permission checks */}
       <Route
         path="/"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="dashboard">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <Dashboard />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/pacientes"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="patients">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <PatientList />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/pacientes/:id"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="patients">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <PatientDetail />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/tratamento/:id"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="patients">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <TreatmentDetail />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/diagnosticos"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="diagnoses">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <DiagnosisList />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/protocolos"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="protocols">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <MedicationList />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/historico"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="history">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <HistoryList />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/estoque"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="inventory">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <InventoryList />
             </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+      <Route
+        path="/permissoes"
+        element={
+          <ProtectedRoute>
+            {layoutUser?.role === UserRole.ADMIN ? (
+              <Layout user={layoutUser!} onLogout={handleLogout}>
+                <PermissionsManager />
+              </Layout>
+            ) : (
+              <Navigate to="/" replace />
+            )}
           </ProtectedRoute>
         }
       />
@@ -163,7 +203,9 @@ const App: React.FC = () => {
   return (
     <Router>
       <AuthProvider>
-        <AppContent />
+        <PermissionsProvider>
+          <AppContent />
+        </PermissionsProvider>
       </AuthProvider>
     </Router>
   );

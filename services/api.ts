@@ -528,6 +528,52 @@ export const dashboardApi = {
   },
 };
 
+// ============== PERMISSIONS API ==============
+
+export interface MenuItem {
+  key: string;
+  label: string;
+  path: string;
+  canAccess?: boolean;
+}
+
+export interface PermissionsResponse {
+  data: Record<string, Record<string, boolean>>;
+  menuItems: MenuItem[];
+}
+
+export interface MyPermissionsResponse {
+  data: MenuItem[];
+  permissions: Record<string, boolean>;
+}
+
+export const permissionsApi = {
+  getAll: async () => {
+    return apiFetch<PermissionsResponse>('/permissions');
+  },
+
+  getMyPermissions: async () => {
+    return apiFetch<MyPermissionsResponse>('/permissions/me');
+  },
+
+  getByRole: async (role: string) => {
+    return apiFetch<{ data: Record<string, boolean>; menuItems: MenuItem[] }>(`/permissions/${role}`);
+  },
+
+  updateRolePermissions: async (role: string, permissions: Record<string, boolean>) => {
+    return apiFetch<{ message: string; data: Record<string, boolean> }>(`/permissions/${role}`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
+    });
+  },
+
+  resetRolePermissions: async (role: string) => {
+    return apiFetch<{ message: string; data: Record<string, boolean> }>(`/permissions/${role}/reset`, {
+      method: 'POST',
+    });
+  },
+};
+
 // ============== HEALTH CHECK ==============
 
 export const healthCheck = async () => {
@@ -537,6 +583,7 @@ export const healthCheck = async () => {
 // Export default API object
 export default {
   auth: authApi,
+  permissions: permissionsApi,
   users: usersApi,
   patients: patientsApi,
   diagnoses: diagnosesApi,

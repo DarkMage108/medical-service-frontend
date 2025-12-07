@@ -2,9 +2,10 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle, History, Package } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
+import { usePermissions } from '../contexts/PermissionsContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -12,51 +13,75 @@ interface LayoutProps {
   onLogout: () => void;
 }
 
-// Configuração do Menu extraída para fora do componente (Melhoria de Performance)
-const NAV_ITEMS = [
-  { 
-      label: 'Dashboard', 
-      path: '/', 
-      icon: LayoutDashboard,
-      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
-  },
-  { 
-      label: 'Pacientes', 
-      path: '/pacientes', 
-      icon: Users,
-      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
-  },
-  { 
-      label: 'Histórico', 
-      path: '/historico', 
-      icon: History,
-      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.SECRETARY]
-  },
-  { 
-      label: 'Estoque', 
-      path: '/estoque', 
-      icon: Package,
-      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR] // Acesso restrito
-  },
-  { 
-      label: 'Diagnósticos', 
-      path: '/diagnosticos', 
-      icon: Stethoscope,
-      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR]
-  },
-  { 
-      label: 'Protocolos', 
-      path: '/protocolos', 
-      icon: ClipboardList,
-      allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR]
-  },
-];
+// Menu key to icon mapping
+const MENU_ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  patients: Users,
+  history: History,
+  inventory: Package,
+  diagnoses: Stethoscope,
+  protocols: ClipboardList,
+};
+
+// Menu key to path mapping
+const MENU_PATHS: Record<string, string> = {
+  dashboard: '/',
+  patients: '/pacientes',
+  history: '/historico',
+  inventory: '/estoque',
+  diagnoses: '/diagnosticos',
+  protocols: '/protocolos',
+};
+
+// Menu key to label mapping
+const MENU_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  patients: 'Pacientes',
+  history: 'Histórico',
+  inventory: 'Estoque',
+  diagnoses: 'Diagnósticos',
+  protocols: 'Protocolos',
+};
+
+// Static nav item for permissions (admin only)
+const PERMISSIONS_NAV_ITEM = {
+  key: 'permissions',
+  label: 'Permissões',
+  path: '/permissoes',
+  icon: Shield,
+};
 
 const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   const location = useLocation();
+  const { permissions, isLoading: permissionsLoading } = usePermissions();
 
-  // Filtra itens baseados no role do usuário logado
-  const navItems = NAV_ITEMS.filter(item => item.allowedRoles.includes(user.role));
+  // Build nav items from permissions
+  const navItems = React.useMemo(() => {
+    const items: Array<{ key: string; label: string; path: string; icon: LucideIcon }> = [];
+
+    // Add menu items based on permissions
+    Object.entries(permissions).forEach(([menuKey, canAccess]) => {
+      if (canAccess && MENU_ICONS[menuKey]) {
+        items.push({
+          key: menuKey,
+          label: MENU_LABELS[menuKey] || menuKey,
+          path: MENU_PATHS[menuKey] || `/${menuKey}`,
+          icon: MENU_ICONS[menuKey],
+        });
+      }
+    });
+
+    // Sort items in a logical order
+    const order = ['dashboard', 'patients', 'history', 'inventory', 'diagnoses', 'protocols'];
+    items.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+
+    // Add permissions menu for admins
+    if (user.role === UserRole.ADMIN) {
+      items.push(PERMISSIONS_NAV_ITEM);
+    }
+
+    return items;
+  }, [permissions, user.role]);
 
   const isActive = (path: string) => {
       if (path === '/') return location.pathname === '/';
@@ -90,7 +115,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
              const Icon = item.icon;
              return (
                 <Link
-                key={item.path}
+                key={item.key}
                 to={item.path}
                 className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive(item.path)
@@ -132,7 +157,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
              {navItems.map(item => {
                 const Icon = item.icon;
                 return (
-                    <Link key={item.path} to={item.path} className={`p-2 whitespace-nowrap text-sm flex items-center rounded-md ${isActive(item.path) ? 'bg-pink-50 text-pink-700' : 'text-slate-600'}`}>
+                    <Link key={item.key} to={item.path} className={`p-2 whitespace-nowrap text-sm flex items-center rounded-md ${isActive(item.path) ? 'bg-pink-50 text-pink-700' : 'text-slate-600'}`}>
                         <Icon size={18} className="mr-2" />
                         {item.label}
                     </Link>
