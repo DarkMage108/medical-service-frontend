@@ -45,7 +45,7 @@ const convertPatient = (data: any): PatientFull => ({
   gender: data.gender,
   mainDiagnosis: data.mainDiagnosis,
   clinicalNotes: data.clinicalNotes,
-  active: data.active,
+  active: data.active ?? true,
   guardian: data.guardian ? {
     id: data.guardian.id,
     patientId: data.id,

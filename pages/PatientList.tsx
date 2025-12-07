@@ -79,9 +79,9 @@ const PatientList: React.FC = () => {
 
     return patients.map(p => ({
         ...p,
-        _searchName: normalize(p.fullName),
-        _searchGuardian: normalize(p.guardian.fullName),
-        _searchPhone: p.guardian.phonePrimary.replace(/\D/g, '')
+        _searchName: normalize(p.fullName || ''),
+        _searchGuardian: normalize(p.guardian?.fullName || ''),
+        _searchPhone: (p.guardian?.phonePrimary || '').replace(/\D/g, '')
     }));
   }, [patients]);
 
@@ -164,20 +164,48 @@ const PatientList: React.FC = () => {
 
   const handleSavePatient = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
     setError(null);
+
+    // Frontend validation for required fields
+    const validationErrors: string[] = [];
+
+    if (!newName.trim()) {
+      validationErrors.push('Nome do paciente é obrigatório');
+    }
+    if (!newDiagnosis) {
+      validationErrors.push('Diagnóstico é obrigatório');
+    }
+    if (!newGuardian.trim()) {
+      validationErrors.push('Nome do responsável é obrigatório');
+    }
+    if (!newPhone.trim()) {
+      validationErrors.push('Telefone é obrigatório');
+    }
+    if (!relationship) {
+      validationErrors.push('Parentesco é obrigatório');
+    }
+    if (!gender) {
+      validationErrors.push('Sexo é obrigatório');
+    }
+
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join('. '));
+      return;
+    }
+
+    setIsSaving(true);
 
     try {
       const newPatient = await createPatient({
-        fullName: newName,
+        fullName: newName.trim(),
         birthDate: birthDate || undefined,
         gender: gender as 'M' | 'F' | 'Other',
-        mainDiagnosis: newDiagnosis || 'Não informado',
+        mainDiagnosis: newDiagnosis,
         clinicalNotes: clinicalNotes,
         active: true,
         guardian: {
-          fullName: newGuardian,
-          phonePrimary: newPhone,
+          fullName: newGuardian.trim(),
+          phonePrimary: newPhone.trim(),
           relationship: relationship
         },
         address: street ? {
@@ -232,7 +260,7 @@ const PatientList: React.FC = () => {
           <p className="text-slate-500">Gerenciamento de base de pacientes</p>
         </div>
         <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => { setError(null); setIsModalOpen(true); }}
             className="flex items-center bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 transition-colors shadow-sm"
         >
           <Plus size={18} className="mr-2" />
@@ -330,8 +358,8 @@ const PatientList: React.FC = () => {
                     <div className="text-xs text-slate-500">ID: {patient.id}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-slate-900">{patient.guardian.fullName}</div>
-                    <div className="text-xs text-slate-500">{patient.guardian.phonePrimary}</div>
+                    <div className="text-slate-900">{patient.guardian?.fullName || '-'}</div>
+                    <div className="text-xs text-slate-500">{patient.guardian?.phonePrimary || '-'}</div>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getDiagnosisColor(patient.mainDiagnosis)}`}>
@@ -384,12 +412,20 @@ const PatientList: React.FC = () => {
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-lg text-slate-800">Novo Paciente</h3>
-                    <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                    <button onClick={() => { setError(null); setIsModalOpen(false); }} className="text-slate-400 hover:text-slate-600">
                         <X size={24} />
                     </button>
                 </div>
 
                 <form onSubmit={handleSavePatient} className="flex-1 overflow-y-auto p-6 space-y-6">
+
+                    {/* Error display inside modal */}
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start">
+                            <AlertCircle size={18} className="text-red-600 mr-2 flex-shrink-0 mt-0.5" />
+                            <span className="text-red-700 text-sm">{error}</span>
+                        </div>
+                    )}
 
                     {/* Seção 1: Dados Pessoais */}
                     <div>
@@ -619,7 +655,7 @@ const PatientList: React.FC = () => {
                 <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
                     <button
                         type="button"
-                        onClick={() => setIsModalOpen(false)}
+                        onClick={() => { setError(null); setIsModalOpen(false); }}
                         disabled={isSaving}
                         className="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-white transition-colors disabled:opacity-50"
                     >
