@@ -3,6 +3,21 @@ import { protocolsApi, medicationsApi } from '../services/api';
 import { Protocol, ProtocolMilestone, ProtocolCategory, MedicationBase } from '../types';
 import { Plus, Trash2, ClipboardList, Clock, Target, MessageCircle, Calendar, AlertCircle, X, Edit2, Pill, MessageSquare, Loader2 } from 'lucide-react';
 
+// Helper to convert backend protocol to frontend format
+const convertProtocol = (data: any): Protocol => ({
+  id: data.id,
+  name: data.name,
+  category: data.category === 'MEDICATION' ? ProtocolCategory.MEDICATION : ProtocolCategory.MONITORING,
+  medicationType: data.medicationType || '',
+  frequencyDays: data.frequencyDays,
+  goal: data.goal,
+  message: data.message,
+  milestones: data.milestones?.map((m: any) => ({
+    day: m.day,
+    message: m.message,
+  })),
+});
+
 const MedicationList: React.FC = () => {
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [medications, setMedications] = useState<MedicationBase[]>([]);
@@ -24,7 +39,8 @@ const MedicationList: React.FC = () => {
         protocolsApi.getAll(),
         medicationsApi.getAll()
       ]);
-      setProtocols(protocolsRes.data || []);
+      // Convert backend protocols to frontend format
+      setProtocols((protocolsRes.data || []).map(convertProtocol));
       setMedications(medicationsRes.data || []);
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar dados');
@@ -89,33 +105,60 @@ const MedicationList: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
+    setError(null);
+
+    // Frontend validation
+    const validationErrors: string[] = [];
+
+    if (!name.trim()) {
+      validationErrors.push('Nome do protocolo é obrigatório');
+    }
+
+    if (!category) {
+      validationErrors.push('Categoria é obrigatória');
+    }
+
+    if (!frequency || Number(frequency) < 1) {
+      validationErrors.push('Frequência (dias) é obrigatória e deve ser maior que 0');
+    }
+
+    // For MEDICATION category, medication type is recommended but not strictly required
+    if (category === ProtocolCategory.MEDICATION && !medication) {
+      validationErrors.push('Medicamento é recomendado para protocolos medicamentosos');
+    }
+
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join('. '));
+      return;
+    }
 
     setIsSaving(true);
-    setError(null);
 
     try {
       let fullMedicationName = '';
       if (category === ProtocolCategory.MEDICATION) {
-        fullMedicationName = medication || 'Sem medicação definida';
+        fullMedicationName = medication || '';
       }
 
+      // Convert frontend enum to backend string
+      const backendCategory = category === ProtocolCategory.MEDICATION ? 'MEDICATION' : 'MONITORING';
+
       const protocolData = {
-        name,
-        category,
+        name: name.trim(),
+        category: backendCategory,
         medicationType: fullMedicationName,
         frequencyDays: Number(frequency),
-        goal,
-        message,
+        goal: goal || '',
+        message: message || '',
         milestones
       };
 
       if (editingId) {
         const updated = await protocolsApi.update(editingId, protocolData);
-        setProtocols(prev => prev.map(p => p.id === editingId ? updated : p));
+        setProtocols(prev => prev.map(p => p.id === editingId ? convertProtocol(updated) : p));
       } else {
         const created = await protocolsApi.create(protocolData);
-        setProtocols(prev => [...prev, created]);
+        setProtocols(prev => [...prev, convertProtocol(created)]);
       }
 
       resetForm();
