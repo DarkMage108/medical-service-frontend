@@ -1,40 +1,40 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import {
-  fetchInventory,
-  fetchDispenseLogs,
-  fetchPurchaseRequests,
-  fetchMedicationBase,
-  createInventoryItem,
-  createMedicationBase,
-  deleteMedicationBase as deleteMedicationBaseApi,
-  updateInventoryItem as updateInventoryItemApi,
-  checkPurchaseTriggers,
-  updatePurchaseRequest as updatePurchaseRequestApi,
-} from '../services/dataService';
-import { InventoryItem, MedicationBase, DispenseLog, PurchaseRequest } from '../types';
-import { Package, Plus, Search, AlertTriangle, ShoppingCart, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, Mail, PieChart, AlertCircle } from 'lucide-react';
+import { inventoryApi, medicationsApi, purchaseRequestsApi, dispenseLogsApi } from '../services/api';
+import { InventoryItem, MedicationBase } from '../types';
+import { Package, Plus, Search, AlertTriangle, ShoppingCart, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, PieChart, ArrowRight } from 'lucide-react';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
 import { formatDate } from '../constants';
 
+interface PurchaseRequest {
+  id: string;
+  medicationName: string;
+  currentStock: number;
+  predictedConsumption10Days: number;
+  suggestedQuantity: number;
+  status: 'PENDING' | 'ORDERED' | 'RECEIVED';
+  createdAt: string;
+}
+
+interface DispenseLog {
+  id: string;
+  medicationName: string;
+  quantity: number;
+  date: string;
+}
+
 const InventoryList: React.FC = () => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<'list' | 'entry' | 'orders' | 'reports' | 'medications'>('list');
-
-  // Loading and error states
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Data States
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [requests, setRequests] = useState<PurchaseRequest[]>([]);
   const [logs, setLogs] = useState<DispenseLog[]>([]);
   const [medications, setMedications] = useState<MedicationBase[]>([]);
-
-  // Alert State
-  const [emailAlertVisible, setEmailAlertVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Edit State
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -53,34 +53,12 @@ const InventoryList: React.FC = () => {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const [inventoryData, medsData, requestsData, logsData] = await Promise.all([
-        fetchInventory(),
-        fetchMedicationBase(),
-        fetchPurchaseRequests(),
-        fetchDispenseLogs(),
-      ]);
-      setInventory(inventoryData);
-      setMedications(medsData);
-      setRequests(requestsData);
-      setLogs(logsData);
-
-      // Check for new pending requests
-      const newPending = requestsData.filter((r: PurchaseRequest) => r.status === 'PENDING');
-      if (newPending.length > 0) {
-        setEmailAlertVisible(true);
-        setTimeout(() => setEmailAlertVisible(false), 5000);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Erro ao carregar dados');
-      console.error('Failed to load data:', err);
-    } finally {
-      setIsLoading(false);
+  // Reload data when tab changes
+  useEffect(() => {
+    if (activeTab === 'orders') {
+      checkPurchaseRequests();
     }
-  };
+  }, [activeTab]);
 
   // Handle Navigation State to switch tabs automatically
   useEffect(() => {
@@ -89,6 +67,38 @@ const InventoryList: React.FC = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location]);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const [inventoryRes, medicationsRes, requestsRes, logsRes] = await Promise.all([
+        inventoryApi.getAll(),
+        medicationsApi.getAll(),
+        purchaseRequestsApi.getAll(),
+        dispenseLogsApi.getAll()
+      ]);
+      setInventory(inventoryRes.data || []);
+      setMedications(medicationsRes.data || []);
+      setRequests(requestsRes.data || []);
+      setLogs(logsRes.data || []);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar dados');
+      console.error('Failed to load data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const checkPurchaseRequests = async () => {
+    try {
+      await purchaseRequestsApi.check();
+      const requestsRes = await purchaseRequestsApi.getAll();
+      setRequests(requestsRes.data || []);
+    } catch (err: any) {
+      console.error('Failed to check purchase requests:', err);
+    }
+  };
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -101,6 +111,9 @@ const InventoryList: React.FC = () => {
   const [entryUnit, setEntryUnit] = useState('Ampola');
   const [isSavingEntry, setIsSavingEntry] = useState(false);
 
+  // State to link Order -> Entry
+  const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
+
   // --- MEDICATION REGISTRY STATES ---
   const [newActiveIngredient, setNewActiveIngredient] = useState('');
   const [newDosage, setNewDosage] = useState('');
@@ -110,6 +123,8 @@ const InventoryList: React.FC = () => {
   const [isSavingMed, setIsSavingMed] = useState(false);
 
   // --- DERIVED DATA ---
+
+  // Group Inventory by Medication Name
   const groupedInventory = useMemo(() => {
     const grouped: Record<string, { total: number, lots: InventoryItem[] }> = {};
 
@@ -195,6 +210,23 @@ const InventoryList: React.FC = () => {
 
   // --- HANDLERS ---
 
+  const handleUpdateStatus = async (id: string, status: 'ORDERED' | 'RECEIVED') => {
+    try {
+      await purchaseRequestsApi.update(id, status);
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    } catch (err: any) {
+      setError(err.message || 'Erro ao atualizar status');
+    }
+  };
+
+  const handleReceiveOrder = (req: PurchaseRequest) => {
+    setFulfillingRequestId(req.id);
+    setEntryMedication(req.medicationName);
+    setEntryQuantity(req.suggestedQuantity || 0);
+    setActiveTab('entry');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!entryMedication || !entryLot || !entryExpiry || entryQuantity <= 0) return;
@@ -203,45 +235,34 @@ const InventoryList: React.FC = () => {
     setError(null);
 
     try {
-      const newItem = await createInventoryItem({
+      const newItem = {
         medicationName: entryMedication,
         lotNumber: entryLot,
         expiryDate: entryExpiry,
         quantity: Number(entryQuantity),
         unit: entryUnit,
-        entryDate: new Date().toISOString(),
-        active: true
-      });
+      };
 
-      setInventory(prev => [...prev, newItem]);
+      const created = await inventoryApi.create(newItem);
+      setInventory(prev => [...prev, created]);
+
+      if (fulfillingRequestId) {
+        await handleUpdateStatus(fulfillingRequestId, 'RECEIVED');
+        setFulfillingRequestId(null);
+        alert('Pedido recebido e estoque atualizado com sucesso!');
+      } else {
+        alert('Entrada de estoque realizada com sucesso!');
+      }
+
       setEntryLot('');
       setEntryQuantity(0);
       setEntryExpiry('');
-      alert('Entrada de estoque realizada com sucesso!');
       setActiveTab('list');
     } catch (err: any) {
-      setError(err.message || 'Erro ao adicionar entrada');
-      console.error('Failed to save entry:', err);
+      setError(err.message || 'Erro ao salvar entrada');
     } finally {
       setIsSavingEntry(false);
     }
-  };
-
-  const handleUpdateStatus = async (id: string, status: 'ORDERED' | 'RECEIVED') => {
-    try {
-      setError(null);
-      const updated = await updatePurchaseRequestApi(id, status);
-      setRequests(prev => prev.map(r => r.id === id ? updated : r));
-    } catch (err: any) {
-      setError(err.message || 'Erro ao atualizar status');
-      console.error('Failed to update status:', err);
-    }
-  };
-
-  const handleSendEmail = (req: any) => {
-    const subject = `Pedido de Compra: ${req.medicationName}`;
-    const body = `Solicito a compra do seguinte medicamento:\n\nMedicamento: ${req.medicationName}\nQuantidade Atual: ${req.currentStock}\nDemanda Prevista (10 dias): ${req.predictedConsumption10Days}\nSugestão de Compra: ${req.suggestedQuantity}`;
-    window.location.href = `mailto:guiqazevedo@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const handleSaveMedication = async (e: React.FormEvent) => {
@@ -252,38 +273,37 @@ const InventoryList: React.FC = () => {
     setError(null);
 
     try {
-      const newMed = await createMedicationBase({
+      const newMed = {
         activeIngredient: newActiveIngredient,
         dosage: newDosage,
-        tradeName: newTradeName,
-        manufacturer: newManufacturer,
+        tradeName: newTradeName || undefined,
+        manufacturer: newManufacturer || undefined,
         pharmaceuticalForm: newForm
-      });
+      };
 
-      setMedications(prev => [...prev, newMed]);
+      const created = await medicationsApi.create(newMed);
+      setMedications(prev => [...prev, created]);
+
       setNewActiveIngredient('');
       setNewDosage('');
       setNewTradeName('');
       setNewManufacturer('');
       setNewForm('Ampola');
     } catch (err: any) {
-      setError(err.message || 'Erro ao salvar medicamento');
-      console.error('Failed to save medication:', err);
+      setError(err.message || 'Erro ao cadastrar medicamento');
     } finally {
       setIsSavingMed(false);
     }
   };
 
   const handleDeleteMedication = async (id: string) => {
-    if (window.confirm('Excluir este medicamento da lista de cadastro?')) {
-      try {
-        setError(null);
-        await deleteMedicationBaseApi(id);
-        setMedications(prev => prev.filter(m => m.id !== id));
-      } catch (err: any) {
-        setError(err.message || 'Erro ao excluir medicamento');
-        console.error('Failed to delete medication:', err);
-      }
+    if (!window.confirm('Excluir este medicamento da lista de cadastro?')) return;
+
+    try {
+      await medicationsApi.delete(id);
+      setMedications(prev => prev.filter(m => m.id !== id));
+    } catch (err: any) {
+      setError(err.message || 'Erro ao excluir medicamento');
     }
   };
 
@@ -302,17 +322,18 @@ const InventoryList: React.FC = () => {
     setError(null);
 
     try {
-      const updated = await updateInventoryItemApi(editingItem.id, {
+      const updates = {
         quantity: Number(editQuantity),
         expiryDate: editExpiry
-      });
+      };
 
+      const updated = await inventoryApi.update(editingItem.id, updates);
       setInventory(prev => prev.map(i => i.id === editingItem.id ? updated : i));
+
       setIsEditModalOpen(false);
       setEditingItem(null);
     } catch (err: any) {
       setError(err.message || 'Erro ao atualizar estoque');
-      console.error('Failed to update inventory:', err);
     } finally {
       setIsSavingEdit(false);
     }
@@ -329,25 +350,6 @@ const InventoryList: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Alerta de Email Enviado */}
-      {emailAlertVisible && (
-        <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-200 text-green-800 px-6 py-4 rounded-xl shadow-lg flex items-center animate-in slide-in-from-right-10 duration-300">
-          <Mail className="mr-3" size={24} />
-          <div>
-            <p className="font-bold">Alerta de Ruptura Detectado</p>
-            <p className="text-sm">Notificação enviada para guiqazevedo@gmail.com</p>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
-          <AlertCircle size={20} className="text-red-600 mr-3" />
-          <span className="text-red-700">{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800">✕</button>
-        </div>
-      )}
-
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center">
@@ -397,6 +399,14 @@ const InventoryList: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
+          <AlertTriangle size={20} className="text-red-600 mr-3" />
+          <span className="text-red-700">{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800">&times;</button>
+        </div>
+      )}
 
       {/* --- TAB: LISTA --- */}
       {activeTab === 'list' && (
@@ -597,6 +607,23 @@ const InventoryList: React.FC = () => {
             <Plus size={20} className="mr-2 text-pink-600" />
             Registrar Entrada de Lote
           </h3>
+
+          {fulfillingRequestId && (
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start animate-in slide-in-from-top-2">
+              <ShoppingCart size={18} className="text-blue-600 mt-0.5 mr-2 flex-shrink-0" />
+              <div>
+                <p className="font-bold text-blue-800">Recebendo Pedido</p>
+                <p className="text-sm text-blue-600 mt-1">
+                  Preencha os dados do lote físico para concluir o recebimento deste pedido.
+                  O pedido será marcado como <span className="font-bold">RECEBIDO</span> após salvar.
+                </p>
+                <button onClick={() => { setFulfillingRequestId(null); setEntryMedication(''); setEntryQuantity(0); }} className="text-xs text-blue-500 underline mt-2 hover:text-blue-700">
+                  Cancelar vínculo (Entrada avulsa)
+                </button>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSaveEntry} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Medicação</label>
@@ -624,6 +651,7 @@ const InventoryList: React.FC = () => {
                 <input
                   type="text"
                   required
+                  placeholder="Verifique na caixa"
                   className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                   value={entryLot}
                   onChange={e => setEntryLot(e.target.value)}
@@ -675,7 +703,7 @@ const InventoryList: React.FC = () => {
                 className="flex items-center bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 font-medium disabled:opacity-50"
               >
                 {isSavingEntry ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Check size={18} className="mr-2" />}
-                Salvar e Adicionar ao Estoque
+                {fulfillingRequestId ? 'Confirmar Recebimento e Salvar' : 'Salvar e Adicionar ao Estoque'}
               </button>
             </div>
           </form>
@@ -716,8 +744,8 @@ const InventoryList: React.FC = () => {
                     <td className="px-6 py-4">{req.predictedConsumption10Days}</td>
                     <td className="px-6 py-4">
                       <span className={`text-xs px-2 py-1 rounded-full font-bold ${req.status === 'PENDING' ? 'bg-orange-100 text-orange-700' :
-                        req.status === 'ORDERED' ? 'bg-blue-100 text-blue-700' :
-                          'bg-green-100 text-green-700'
+                          req.status === 'ORDERED' ? 'bg-blue-100 text-blue-700' :
+                            'bg-green-100 text-green-700'
                         }`}>
                         {req.status === 'PENDING' ? 'Pendente' : req.status === 'ORDERED' ? 'Comprado' : 'Recebido'}
                       </span>
@@ -725,19 +753,22 @@ const InventoryList: React.FC = () => {
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         {req.status === 'PENDING' && (
-                          <>
-                            <button onClick={() => handleSendEmail(req)} className="text-slate-500 hover:text-slate-800 p-1 rounded" title="Enviar E-mail">
-                              <Mail size={16} />
-                            </button>
-                            <button onClick={() => handleUpdateStatus(req.id, 'ORDERED')} className="text-blue-600 hover:underline text-xs font-bold">
-                              Marcar Comprado
-                            </button>
-                          </>
+                          <button onClick={() => handleUpdateStatus(req.id, 'ORDERED')} className="text-blue-600 hover:underline text-xs font-bold border border-blue-200 px-2 py-1 rounded hover:bg-blue-50">
+                            Marcar Comprado
+                          </button>
                         )}
                         {req.status === 'ORDERED' && (
-                          <button onClick={() => handleUpdateStatus(req.id, 'RECEIVED')} className="text-green-600 hover:underline text-xs font-bold">
-                            Confirmar Recebimento
+                          <button
+                            onClick={() => handleReceiveOrder(req)}
+                            className="text-white bg-green-600 hover:bg-green-700 text-xs font-bold px-3 py-1.5 rounded flex items-center transition-colors shadow-sm"
+                          >
+                            Receber <ArrowRight size={12} className="ml-1" />
                           </button>
+                        )}
+                        {req.status === 'RECEIVED' && (
+                          <span className="text-slate-400 text-xs italic flex items-center">
+                            <Check size={12} className="mr-1" /> Concluído
+                          </span>
                         )}
                       </div>
                     </td>

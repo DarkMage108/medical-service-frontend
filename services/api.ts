@@ -528,6 +528,44 @@ export const dashboardApi = {
   },
 };
 
+// ============== DOCUMENTS API ==============
+
+export const documentsApi = {
+  getAll: async () => {
+    return apiFetch<{ data: any[] }>('/dashboard/documents');
+  },
+
+  upload: async (patientId: string, file: File) => {
+    // For now, we'll use the patient documents API
+    // In a real implementation, this would upload the file to a storage service
+    // and then save the URL to the database
+    const fileName = file.name;
+    const fileType = file.type;
+    // Mock URL - in production this would be the actual uploaded file URL
+    const fileUrl = `/uploads/${patientId}/${fileName}`;
+
+    return apiFetch<any>(`/patients/${patientId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ fileName, fileType, fileUrl }),
+    });
+  },
+};
+
+// ============== DISMISSED LOGS API ==============
+
+export const dismissedLogsApi = {
+  getAll: async () => {
+    return apiFetch<{ data: any[] }>('/dashboard/dismissed-logs');
+  },
+
+  dismiss: async (contactId: string) => {
+    return apiFetch<any>('/dashboard/dismiss-contact', {
+      method: 'POST',
+      body: JSON.stringify({ contactId }),
+    });
+  },
+};
+
 // ============== PERMISSIONS API ==============
 
 export interface MenuItem {
@@ -595,5 +633,7 @@ export default {
   dispenseLogs: dispenseLogsApi,
   purchaseRequests: purchaseRequestsApi,
   dashboard: dashboardApi,
+  documents: documentsApi,
+  dismissedLogs: dismissedLogsApi,
   healthCheck,
 };

@@ -1,21 +1,7 @@
-
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  fetchPatients,
-  fetchDoses,
-  fetchTreatments,
-  fetchProtocols,
-  fetchDashboardStats,
-  fetchUpcomingContacts,
-  fetchActivityWindow,
-  fetchPurchaseRequests,
-  updateDose,
-  dismissContact as dismissContactApi,
-  uploadDocument,
-  fetchPatientDocuments,
-} from '../services/dataService';
-import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, ConsentDocument, PatientFull, Treatment, Protocol, PurchaseRequest } from '../types';
+import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, purchaseRequestsApi, dismissedLogsApi } from '../services/api';
+import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, Treatment, Protocol } from '../types';
 import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays } from '../constants';
 import { UserCheck, MessageSquare, Phone, ExternalLink, Activity, ShoppingCart } from 'lucide-react';
 import KpiCard from '../components/ui/KpiCard';
@@ -33,27 +19,23 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
-  // Loading and error states
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Data states
-  const [patients, setPatients] = useState<PatientFull[]>([]);
+  // Data States
   const [doses, setDoses] = useState<Dose[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [documents, setDocuments] = useState<ConsentDocument[]>([]);
-  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
-
-  // KPI states
+  const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
   const [pendingPurchases, setPendingPurchases] = useState(0);
-  const [dismissedContactIds, setDismissedContactIds] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Modal states
+  // Modal States
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState('');
   const [selectedPatientName, setSelectedPatientName] = useState('');
   const [selectedGuardianName, setSelectedGuardianName] = useState('');
+  const [selectedPhone, setSelectedPhone] = useState('');
   const [selectedDoseId, setSelectedDoseId] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [isDelivered, setIsDelivered] = useState(false);
@@ -62,16 +44,22 @@ const Dashboard: React.FC = () => {
   const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
   const [isSavingDose, setIsSavingDose] = useState(false);
 
+  // Consultation Modal States
+  const [consultModalOpen, setConsultModalOpen] = useState(false);
+  const [selectedConsultDoseId, setSelectedConsultDoseId] = useState<string | null>(null);
+  const [consultDateInput, setConsultDateInput] = useState('');
+  const [consultPatientName, setConsultPatientName] = useState('');
+
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<any>(null);
   const [isMessageCopied, setIsMessageCopied] = useState(false);
 
-  // Upload state
+  // Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetPatientId, setUploadTargetPatientId] = useState<string | null>(null);
   const [isUploadingGlobal, setIsUploadingGlobal] = useState(false);
 
-  // Dose Form States
+  // Form States
   const [editDoseDate, setEditDoseDate] = useState('');
   const [editDoseLot, setEditDoseLot] = useState('');
   const [editDoseStatus, setEditDoseStatus] = useState<DoseStatus | ''>('');
@@ -82,64 +70,61 @@ const Dashboard: React.FC = () => {
   const [editScore, setEditScore] = useState(0);
   const [editComment, setEditComment] = useState('');
 
-  // Load all data on mount
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+  // Load data from API
+  const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
       const [
-        patientsData,
-        dosesData,
-        treatmentsData,
-        protocolsData,
-        purchaseData
+        dosesRes,
+        patientsRes,
+        treatmentsRes,
+        protocolsRes,
+        documentsRes,
+        purchaseRes,
+        dismissedRes
       ] = await Promise.all([
-        fetchPatients(),
-        fetchDoses(),
-        fetchTreatments(),
-        fetchProtocols(),
-        fetchPurchaseRequests('PENDING'),
+        dosesApi.getAll(),
+        patientsApi.getAll(),
+        treatmentsApi.getAll(),
+        protocolsApi.getAll(),
+        documentsApi.getAll(),
+        purchaseRequestsApi.getAll(),
+        dismissedLogsApi.getAll()
       ]);
 
-      setPatients(patientsData);
-      setDoses(dosesData);
-      setTreatments(treatmentsData);
-      setProtocols(protocolsData);
-      setPurchaseRequests(purchaseData);
-      setPendingPurchases(purchaseData.length);
-
-      // Load documents for consent check
-      const docsPromises = patientsData
-        .filter(p => p.active)
-        .map(p => fetchPatientDocuments(p.id).catch(() => []));
-      const docsResults = await Promise.all(docsPromises);
-      const allDocs = docsResults.flat();
-      setDocuments(allDocs);
-
+      setDoses(dosesRes.data || []);
+      setPatients(patientsRes.data || []);
+      setTreatments(treatmentsRes.data || []);
+      setProtocols(protocolsRes.data || []);
+      setDocuments(documentsRes.data || []);
+      setDismissedLogs(dismissedRes.data || []);
+      setPendingPurchases((purchaseRes.data || []).filter((r: any) => r.status === 'PENDING').length);
     } catch (err: any) {
-      setError(err.message || 'Erro ao carregar dados do dashboard');
+      setError(err.message || 'Erro ao carregar dados');
       console.error('Failed to load dashboard data:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Quick Update Handler
   const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus', value: string) => {
     try {
-      const updatedDose = await updateDose(doseId, { [field]: value });
-      setDoses(prev => prev.map(d => d.id === doseId ? updatedDose : d));
+      const updates = { [field]: value };
+      const updated = await dosesApi.update(doseId, updates);
+      setDoses(prev => prev.map(d => d.id === doseId ? updated : d));
     } catch (err: any) {
-      console.error('Failed to update dose:', err);
       setError(err.message || 'Erro ao atualizar dose');
     }
   };
 
-  // --- Helpers ---
+  // Helpers
   const getPatient = (treatmentId: string) => {
     const treatment = treatments.find(t => t.id === treatmentId);
     if (!treatment) return null;
@@ -158,7 +143,7 @@ const Dashboard: React.FC = () => {
     return p ? p.name : '-';
   };
 
-  // --- Address Logic ---
+  // Address Logic
   const handleViewAddress = (e: React.MouseEvent, treatmentId: string, doseId: string) => {
     e.stopPropagation();
     const patient = getPatientByTreatmentId(treatmentId);
@@ -168,6 +153,7 @@ const Dashboard: React.FC = () => {
       setSelectedAddress(fullText);
       setSelectedPatientName(patient.fullName);
       setSelectedGuardianName(patient.guardian.fullName);
+      setSelectedPhone(patient.guardian.phonePrimary);
       setSelectedDoseId(doseId);
       setAddressModalOpen(true);
       setIsCopied(false);
@@ -183,6 +169,13 @@ const Dashboard: React.FC = () => {
     setTimeout(() => setIsCopied(false), 2000);
   };
 
+  const handleOpenWhatsApp = () => {
+    if (selectedPhone) {
+      const cleanPhone = selectedPhone.replace(/\D/g, '');
+      window.open(`https://wa.me/+55${cleanPhone}`, '_blank');
+    }
+  };
+
   const handleConfirmDelivery = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked && selectedDoseId) {
       setIsDelivered(true);
@@ -194,7 +187,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // --- Upload Logic ---
+  // Upload Logic
   const handleTriggerUpload = (patientId: string) => {
     setUploadTargetPatientId(patientId);
     if (fileInputRef.current) {
@@ -226,22 +219,21 @@ const Dashboard: React.FC = () => {
     setIsUploadingGlobal(true);
 
     try {
-      const newDoc = await uploadDocument(uploadTargetPatientId, {
-        fileName: file.name,
-        fileType: file.name.endsWith('.pdf') ? 'pdf' : 'docx',
-        fileUrl: URL.createObjectURL(file)
-      });
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('patientId', uploadTargetPatientId);
+
+      const newDoc = await documentsApi.upload(uploadTargetPatientId, file);
       setDocuments(prev => [...prev, newDoc]);
     } catch (err: any) {
-      console.error('Failed to upload document:', err);
-      setError(err.message || 'Erro ao enviar documento');
+      setError(err.message || 'Erro ao fazer upload');
     } finally {
       setIsUploadingGlobal(false);
       setUploadTargetPatientId(null);
     }
   };
 
-  // --- Edit Dose Modal Logic ---
+  // Edit Dose Modal Logic
   const handleOpenDoseModal = (e: React.MouseEvent, dose: Dose) => {
     e.stopPropagation();
     setEditingDoseId(dose.id);
@@ -279,18 +271,48 @@ const Dashboard: React.FC = () => {
         surveyComment: editComment
       };
 
-      const updatedDose = await updateDose(editingDoseId, updates);
-      setDoses(prev => prev.map(d => d.id === editingDoseId ? updatedDose : d));
+      const updated = await dosesApi.update(editingDoseId, updates);
+      setDoses(prev => prev.map(d => d.id === editingDoseId ? updated : d));
       setDoseModalOpen(false);
     } catch (err: any) {
-      console.error('Failed to save dose:', err);
       setError(err.message || 'Erro ao salvar dose');
     } finally {
       setIsSavingDose(false);
     }
   };
 
-  // --- Message Modal Logic ---
+  // Consult Modal Logic
+  const handleOpenConsultModal = (e: React.MouseEvent, dose: Dose) => {
+    e.stopPropagation();
+    const patient = getPatientByTreatmentId(dose.treatmentId);
+    setSelectedConsultDoseId(dose.id);
+    setConsultPatientName(patient?.fullName || 'Paciente');
+    setConsultDateInput(dose.consultationDate ? dose.consultationDate.split('T')[0] : '');
+    setConsultModalOpen(true);
+  };
+
+  const handleSaveConsult = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedConsultDoseId || !consultDateInput) return;
+
+    setIsSavingDose(true);
+
+    try {
+      const updates: Partial<Dose> = {
+        consultationDate: new Date(consultDateInput).toISOString()
+      };
+
+      const updated = await dosesApi.update(selectedConsultDoseId, updates);
+      setDoses(prev => prev.map(d => d.id === selectedConsultDoseId ? updated : d));
+      setConsultModalOpen(false);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao salvar consulta');
+    } finally {
+      setIsSavingDose(false);
+    }
+  };
+
+  // Message Modal Logic
   const handleOpenMessageModal = (contact: any) => {
     setSelectedContact(contact);
     setIsMessageCopied(false);
@@ -307,18 +329,24 @@ const Dashboard: React.FC = () => {
 
   const handleDismissContact = async (e: React.MouseEvent | null, contactId: string) => {
     if (e) e.stopPropagation();
-
     try {
-      await dismissContactApi(contactId);
-      setDismissedContactIds(prev => new Set([...prev, contactId]));
+      await dismissedLogsApi.dismiss(contactId);
+      setDismissedLogs(prev => [...prev, { id: `dismissed_${Date.now()}`, contactId, dismissedAt: new Date().toISOString() }]);
       if (messageModalOpen) setMessageModalOpen(false);
     } catch (err: any) {
-      console.error('Failed to dismiss contact:', err);
       setError(err.message || 'Erro ao dispensar contato');
     }
   };
 
-  // --- Data Logic ---
+  const handleWhatsAppFromMessageModal = () => {
+    if (selectedContact && selectedContact.patientPhone) {
+      const cleanPhone = selectedContact.patientPhone.replace(/\D/g, '');
+      const encodedMessage = encodeURIComponent(selectedContact.message);
+      window.open(`https://wa.me/55${cleanPhone}?text=${encodedMessage}`, '_blank');
+    }
+  };
+
+  // Data Logic
   const TODAY = new Date();
 
   // Stats
@@ -439,7 +467,7 @@ const Dashboard: React.FC = () => {
       proto.milestones.forEach(m => {
         const contactId = `${t.id}_m_${m.day}`;
 
-        if (dismissedContactIds.has(contactId)) return;
+        if (dismissedLogs.some(log => log.contactId === contactId)) return;
 
         const contactDate = addDays(startDate, m.day);
         const diff = diffInDays(contactDate, TODAY);
@@ -464,7 +492,7 @@ const Dashboard: React.FC = () => {
       });
     });
     return contacts.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [treatments, protocols, patients, dismissedContactIds]);
+  }, [treatments, protocols, patients, dismissedLogs]);
 
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -482,7 +510,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6 pb-10">
 
-      {/* GLOBAL HIDDEN FILE INPUT */}
+      {/* GLOBAL HIDDEN FILE INPUT FOR DIRECT UPLOAD */}
       <input
         type="file"
         ref={fileInputRef}
@@ -490,14 +518,6 @@ const Dashboard: React.FC = () => {
         accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         onChange={handleFileChange}
       />
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
-          <AlertCircle size={20} className="text-red-600 mr-3" />
-          <span className="text-red-700">{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800">✕</button>
-        </div>
-      )}
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-slate-800">Painel de Controle</h1>
@@ -509,6 +529,14 @@ const Dashboard: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
+          <AlertCircle size={20} className="text-red-600 mr-3" />
+          <span className="text-red-700">{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800">&times;</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <KpiCard
@@ -648,7 +676,7 @@ const Dashboard: React.FC = () => {
                       <button
                         onClick={(e) => handleOpenDoseModal(e, dose)}
                         className={`p-1.5 rounded-full transition-colors ${dose.nurse ? 'bg-pink-100 text-pink-600 hover:bg-pink-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
-                        title="Editar Detalhes"
+                        title="Editar Detalhes (Enfermagem, Dose, Pesquisa)"
                       >
                         <Stethoscope size={18} />
                       </button>
@@ -706,7 +734,9 @@ const Dashboard: React.FC = () => {
                       {contact.diffDays === 0 ? 'Hoje' : (contact.diffDays > 0 ? `Em ${contact.diffDays} dias` : `Há ${Math.abs(contact.diffDays)} dias`)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 font-medium text-slate-800">{contact.patientName}</td>
+                  <td className="px-6 py-4 font-medium text-slate-800">
+                    {contact.patientName}
+                  </td>
                   <td className="px-6 py-4 text-slate-600">
                     <div className="flex items-center gap-1">
                       <Phone size={12} />
@@ -767,7 +797,7 @@ const Dashboard: React.FC = () => {
                   <span className="font-bold text-slate-900">{item.value}</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                  <div className="h-2.5 rounded-full" style={{ width: `${(item.value / patients.filter(p => p.active).length) * 100}%` }}>
+                  <div className={`h-2.5 rounded-full`} style={{ width: `${(item.value / patients.filter(p => p.active).length) * 100}%` }}>
                     <div className={`h-full w-full ${getDiagnosisColor(item.name).split(' ')[0]}`}></div>
                   </div>
                 </div>
@@ -776,7 +806,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Waiting Survey */}
+        {/* Pending Surveys */}
         <div className="lg:col-span-2">
           <SectionCard id="section-surveys" title="Aguardando Resposta da Pesquisa" icon={<MessageCircle size={18} className="text-blue-600" />} countBadge={pendingSurveys.length} badgeColor="bg-blue-100 text-blue-800" headerBg="bg-blue-50/30">
             <table className="w-full text-sm text-left">
@@ -813,7 +843,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Consent Documents */}
+      {/* Consent Pending */}
       <SectionCard id="section-consent" title="Pendência: Termo de Consentimento" icon={<FileWarning size={18} className="text-cyan-600" />} countBadge={patientsMissingConsent.length} badgeColor="bg-cyan-100 text-cyan-800" headerBg="bg-cyan-50/30">
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
@@ -861,7 +891,7 @@ const Dashboard: React.FC = () => {
         </table>
       </SectionCard>
 
-      {/* Consultations */}
+      {/* Consults */}
       <SectionCard id="section-consults" title="Agendar Consulta" icon={<Calendar size={18} className="text-purple-600" />} countBadge={approachingConsults.length} badgeColor="bg-purple-100 text-purple-800" headerBg="bg-purple-50/30">
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
@@ -896,18 +926,32 @@ const Dashboard: React.FC = () => {
                           <Clock size={12} className="mr-1" /> {daysLeft} dias
                         </span>
                       ) : (
-                        <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded">Agendar</span>
+                        <button
+                          onClick={(e) => handleOpenConsultModal(e, dose)}
+                          className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 transition-colors"
+                        >
+                          Agendar
+                        </button>
                       )}
                     </td>
                     <td className="px-6 py-4 font-medium text-slate-800">{patient?.fullName}</td>
                     <td className="px-6 py-4 text-slate-600">{patient?.guardian.fullName}</td>
                     <td className="px-6 py-4 text-right">
-                      <span className="inline-flex items-center text-slate-400 hover:text-pink-600 transition-colors">
-                        Ver <ChevronRight size={16} className="ml-1" />
-                      </span>
+                      {hasDate ? (
+                        <span className="inline-flex items-center text-slate-400 hover:text-pink-600 transition-colors">
+                          Ver <ChevronRight size={16} className="ml-1" />
+                        </span>
+                      ) : (
+                        <button
+                          onClick={(e) => handleOpenConsultModal(e, dose)}
+                          className="inline-flex items-center text-purple-600 hover:text-purple-800 font-bold text-xs"
+                        >
+                          <Calendar size={14} className="mr-1" /> Agendar Agora
+                        </button>
+                      )}
                     </td>
                   </tr>
-                );
+                )
               })
             )}
           </tbody>
@@ -969,11 +1013,18 @@ const Dashboard: React.FC = () => {
           {selectedAddress}
         </div>
         <div className="flex gap-2 flex-col">
+          <button
+            onClick={handleOpenWhatsApp}
+            className="w-full flex items-center justify-center py-2.5 rounded-lg font-medium transition-colors bg-green-500 text-white hover:bg-green-600 shadow-sm"
+          >
+            <MessageCircle size={18} className="mr-2" />
+            WhatsApp Responsável
+          </button>
           <button onClick={handleCopyAddress} className={`w-full flex items-center justify-center py-2.5 rounded-lg font-medium transition-colors ${isCopied ? 'bg-slate-600 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>
             {isCopied ? <Check size={18} className="mr-2" /> : <Copy size={18} className="mr-2" />}
             {isCopied ? 'Endereço Copiado!' : 'Copiar Endereço'}
           </button>
-          <label className={`mt-2 flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${isDelivered ? 'bg-green-100 border-green-300 text-green-800' : 'bg-green-50 border-green-200 hover:bg-green-100'}`}>
+          <label className={`mt-2 flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${isDelivered ? 'bg-green-100 border-green-300 text-green-800' : 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'}`}>
             <div className="flex items-center">
               <input type="checkbox" checked={isDelivered} onChange={handleConfirmDelivery} className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500" />
               <span className="ml-3 font-bold text-sm">Entregue (Confirmar Pagamento)</span>
@@ -1058,6 +1109,43 @@ const Dashboard: React.FC = () => {
         </form>
       </Modal>
 
+      {/* Consultation Modal */}
+      <Modal open={consultModalOpen} onClose={() => setConsultModalOpen(false)} title="Agendar Consulta" icon={<Calendar size={20} className="text-purple-600" />}>
+        <div className="space-y-4">
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+            <p className="text-xs font-bold text-purple-600 uppercase mb-1">Paciente</p>
+            <p className="font-bold text-slate-800">{consultPatientName}</p>
+          </div>
+          <form onSubmit={handleSaveConsult}>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Data para Próxima Consulta Indicada</label>
+            <input
+              type="date"
+              required
+              value={consultDateInput}
+              onChange={(e) => setConsultDateInput(e.target.value)}
+              className="block w-full border-slate-300 rounded-lg focus:ring-purple-500 focus:border-purple-500 mb-6"
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConsultModalOpen(false)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingDose}
+                className="flex items-center px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold shadow-sm shadow-purple-200 disabled:opacity-50"
+              >
+                {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle2 size={18} className="mr-2" />}
+                {isSavingDose ? 'Salvando...' : 'Confirmar Agendamento'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Modal>
+
       <Modal open={messageModalOpen} onClose={() => setMessageModalOpen(false)} title="Detalhes da Mensagem" icon={<MessageSquare size={20} className="text-indigo-600" />}>
         {selectedContact && (
           <div className="space-y-6">
@@ -1091,13 +1179,25 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => { setMessageModalOpen(false); navigate(`/tratamento/${selectedContact.treatmentId}`); }} className="flex-1 flex items-center justify-center py-2.5 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50 hover:text-indigo-600 transition-colors">
-                <ExternalLink size={16} className="mr-2" /> Ir para Tratamento
+
+            {/* Buttons */}
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={handleWhatsAppFromMessageModal}
+                className="w-full flex items-center justify-center py-3 bg-[#25D366] text-white rounded-lg font-bold hover:bg-[#128C7E] transition-colors shadow-sm"
+              >
+                <MessageSquare size={20} className="mr-2" />
+                Contatar via WhatsApp
               </button>
-              <button onClick={() => handleDismissContact(null, selectedContact.id)} className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 shadow-lg shadow-green-200 transition-colors flex justify-center items-center">
-                <CheckCircle2 size={18} className="mr-2" /> Concluir / Enviado
-              </button>
+
+              <div className="flex gap-3">
+                <button onClick={() => { setMessageModalOpen(false); navigate(`/tratamento/${selectedContact.treatmentId}`); }} className="flex-1 flex items-center justify-center py-2.5 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50 hover:text-indigo-600 transition-colors">
+                  <ExternalLink size={16} className="mr-2" /> Ir para Tratamento
+                </button>
+                <button onClick={() => handleDismissContact(null, selectedContact.id)} className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 shadow-lg shadow-green-200 transition-colors flex justify-center items-center">
+                  <CheckCircle2 size={18} className="mr-2" /> Concluir / Enviado
+                </button>
+              </div>
             </div>
           </div>
         )}
