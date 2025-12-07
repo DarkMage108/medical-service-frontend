@@ -5,6 +5,15 @@ import { PatientFull, Diagnosis } from '../types';
 import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity, AlertCircle } from 'lucide-react';
 import { getDiagnosisColor } from '../constants';
 
+// Relationship options with code and display name
+const RELATIONSHIP_OPTIONS = [
+  { code: 'MOTHER', label: 'Mãe' },
+  { code: 'FATHER', label: 'Pai' },
+  { code: 'GRANDPARENT', label: 'Avó/Avô' },
+  { code: 'UNCLE_AUNT', label: 'Tio/Tia' },
+  { code: 'OTHER', label: 'Outro' },
+] as const;
+
 const PatientList: React.FC = () => {
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
@@ -196,6 +205,9 @@ const PatientList: React.FC = () => {
     setIsSaving(true);
 
     try {
+      // Convert relationship code to label for backend
+      const relationshipLabel = RELATIONSHIP_OPTIONS.find(opt => opt.code === relationship)?.label || relationship;
+
       const newPatient = await createPatient({
         fullName: newName.trim(),
         birthDate: birthDate || undefined,
@@ -206,7 +218,7 @@ const PatientList: React.FC = () => {
         guardian: {
           fullName: newGuardian.trim(),
           phonePrimary: newPhone.trim(),
-          relationship: relationship
+          relationship: relationshipLabel
         },
         address: street ? {
           street,
@@ -301,13 +313,17 @@ const PatientList: React.FC = () => {
                 <Filter size={18} className="text-slate-400" />
             </div>
             <select
-                value={diagnosisFilter}
-                onChange={(e) => setDiagnosisFilter(e.target.value)}
+                value={diagnoses.find(d => d.name === diagnosisFilter)?.id || ''}
+                onChange={(e) => {
+                    // Find the diagnosis name by ID for filtering
+                    const selectedDiag = diagnoses.find(d => d.id === e.target.value);
+                    setDiagnosisFilter(selectedDiag?.name || '');
+                }}
                 className="block w-full pl-10 pr-8 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 appearance-none bg-white"
             >
                 <option value="">Todos Diagnósticos</option>
                 {diagnoses.map(d => (
-                    <option key={d.id} value={d.name}>{d.name}</option>
+                    <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
             </select>
         </div>
@@ -480,16 +496,23 @@ const PatientList: React.FC = () => {
                                         <FileText size={18} className="text-slate-400" />
                                     </div>
                                     <select
-                                        value={newDiagnosis}
+                                        value={diagnoses.find(d => d.name === newDiagnosis)?.id || (newDiagnosis === 'Outro' ? 'OTHER' : '')}
                                         required
-                                        onChange={e => setNewDiagnosis(e.target.value)}
+                                        onChange={e => {
+                                            if (e.target.value === 'OTHER') {
+                                                setNewDiagnosis('Outro');
+                                            } else {
+                                                const selectedDiag = diagnoses.find(d => d.id === e.target.value);
+                                                setNewDiagnosis(selectedDiag?.name || '');
+                                            }
+                                        }}
                                         className="pl-10 block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                                     >
                                         <option value="" disabled>Selecione...</option>
                                         {diagnoses.map(d => (
-                                            <option key={d.id} value={d.name}>{d.name}</option>
+                                            <option key={d.id} value={d.id}>{d.name}</option>
                                         ))}
-                                        <option value="Outro">Outro (Digitar na obs)</option>
+                                        <option value="OTHER">Outro (Digitar na obs)</option>
                                     </select>
                                 </div>
                             </div>
@@ -523,11 +546,9 @@ const PatientList: React.FC = () => {
                                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                                 >
                                     <option value="" disabled>Selecione...</option>
-                                    <option value="Mãe">Mãe</option>
-                                    <option value="Pai">Pai</option>
-                                    <option value="Avó/Avô">Avó/Avô</option>
-                                    <option value="Tio/Tia">Tio/Tia</option>
-                                    <option value="Outro">Outro</option>
+                                    {RELATIONSHIP_OPTIONS.map(opt => (
+                                        <option key={opt.code} value={opt.code}>{opt.label}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="md:col-span-2">

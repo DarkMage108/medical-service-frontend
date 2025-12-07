@@ -7,6 +7,23 @@ import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
 import { formatDate } from '../constants';
 
+// Pharmaceutical form options with code and label
+const PHARMACEUTICAL_FORM_OPTIONS = [
+  { code: 'AMPOLA', label: 'Ampola' },
+  { code: 'FRASCO', label: 'Frasco' },
+  { code: 'SERINGA_PRONTA', label: 'Seringa Pronta' },
+  { code: 'PO_LIOFILIZADO', label: 'Pó Liofilizado' },
+  { code: 'COMPRIMIDO', label: 'Comprimido' },
+] as const;
+
+// Unit options with code and label
+const UNIT_OPTIONS = [
+  { code: 'AMPOLA', label: 'Ampola' },
+  { code: 'FRASCO', label: 'Frasco' },
+  { code: 'CAIXA', label: 'Caixa' },
+  { code: 'COMPRIMIDO', label: 'Comprimido' },
+] as const;
+
 interface PurchaseRequest {
   id: string;
   medicationName: string;
@@ -108,7 +125,7 @@ const InventoryList: React.FC = () => {
   const [entryLot, setEntryLot] = useState('');
   const [entryExpiry, setEntryExpiry] = useState('');
   const [entryQuantity, setEntryQuantity] = useState(0);
-  const [entryUnit, setEntryUnit] = useState('Ampola');
+  const [entryUnit, setEntryUnit] = useState('AMPOLA');
   const [isSavingEntry, setIsSavingEntry] = useState(false);
 
   // State to link Order -> Entry
@@ -119,7 +136,7 @@ const InventoryList: React.FC = () => {
   const [newDosage, setNewDosage] = useState('');
   const [newTradeName, setNewTradeName] = useState('');
   const [newManufacturer, setNewManufacturer] = useState('');
-  const [newForm, setNewForm] = useState('Ampola');
+  const [newForm, setNewForm] = useState('AMPOLA');
   const [isSavingMed, setIsSavingMed] = useState(false);
 
   // --- DERIVED DATA ---
@@ -235,12 +252,15 @@ const InventoryList: React.FC = () => {
     setError(null);
 
     try {
+      // Convert unit code to label for backend
+      const unitLabel = UNIT_OPTIONS.find(opt => opt.code === entryUnit)?.label || entryUnit;
+
       const newItem = {
         medicationName: entryMedication,
         lotNumber: entryLot,
         expiryDate: entryExpiry,
         quantity: Number(entryQuantity),
-        unit: entryUnit,
+        unit: unitLabel,
       };
 
       const created = await inventoryApi.create(newItem);
@@ -273,12 +293,15 @@ const InventoryList: React.FC = () => {
     setError(null);
 
     try {
+      // Convert form code to label for backend
+      const formLabel = PHARMACEUTICAL_FORM_OPTIONS.find(opt => opt.code === newForm)?.label || newForm;
+
       const newMed = {
         activeIngredient: newActiveIngredient,
         dosage: newDosage,
         tradeName: newTradeName || undefined,
         manufacturer: newManufacturer || undefined,
-        pharmaceuticalForm: newForm
+        pharmaceuticalForm: formLabel
       };
 
       const created = await medicationsApi.create(newMed);
@@ -288,7 +311,7 @@ const InventoryList: React.FC = () => {
       setNewDosage('');
       setNewTradeName('');
       setNewManufacturer('');
-      setNewForm('Ampola');
+      setNewForm('AMPOLA');
     } catch (err: any) {
       setError(err.message || 'Erro ao cadastrar medicamento');
     } finally {
@@ -537,11 +560,9 @@ const InventoryList: React.FC = () => {
                   value={newForm}
                   onChange={e => setNewForm(e.target.value)}
                 >
-                  <option>Ampola</option>
-                  <option>Frasco</option>
-                  <option>Seringa Pronta</option>
-                  <option>Pó Liofilizado</option>
-                  <option>Comprimido</option>
+                  {PHARMACEUTICAL_FORM_OPTIONS.map(opt => (
+                    <option key={opt.code} value={opt.code}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="md:col-span-4 flex justify-end mt-2">
@@ -630,12 +651,20 @@ const InventoryList: React.FC = () => {
               <select
                 required
                 className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                value={entryMedication}
-                onChange={e => setEntryMedication(e.target.value)}
+                value={medications.find(m => `${m.activeIngredient} ${m.dosage}`.trim() === entryMedication)?.id || ''}
+                onChange={e => {
+                  // Find medication by ID and set the full name for backend
+                  const selectedMed = medications.find(m => m.id === e.target.value);
+                  if (selectedMed) {
+                    setEntryMedication(`${selectedMed.activeIngredient} ${selectedMed.dosage}`.trim());
+                  } else {
+                    setEntryMedication('');
+                  }
+                }}
               >
                 <option value="" disabled>Selecione um medicamento cadastrado...</option>
                 {medications.map(med => (
-                  <option key={med.id} value={`${med.activeIngredient} ${med.dosage}`.trim()}>
+                  <option key={med.id} value={med.id}>
                     {med.tradeName ? `${med.tradeName} - ` : ''}{med.activeIngredient} {med.dosage} {med.manufacturer ? `(${med.manufacturer})` : ''}
                   </option>
                 ))}
@@ -688,10 +717,9 @@ const InventoryList: React.FC = () => {
                   value={entryUnit}
                   onChange={e => setEntryUnit(e.target.value)}
                 >
-                  <option>Ampola</option>
-                  <option>Frasco</option>
-                  <option>Caixa</option>
-                  <option>Comprimido</option>
+                  {UNIT_OPTIONS.map(opt => (
+                    <option key={opt.code} value={opt.code}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
             </div>

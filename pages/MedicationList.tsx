@@ -95,7 +95,15 @@ const MedicationList: React.FC = () => {
     setEditingId(proto.id);
     setCategory(proto.category || ProtocolCategory.MEDICATION);
     setName(proto.name);
-    setMedication(proto.medicationType || '');
+    // Find medication ID by matching the medicationType name
+    if (proto.medicationType) {
+      const matchedMed = medications.find(m =>
+        `${m.activeIngredient} ${m.dosage}`.trim() === proto.medicationType
+      );
+      setMedication(matchedMed?.id || '');
+    } else {
+      setMedication('');
+    }
     setFrequency(String(proto.frequencyDays));
     setGoal(proto.goal || '');
     setMessage(proto.message || '');
@@ -136,8 +144,12 @@ const MedicationList: React.FC = () => {
 
     try {
       let fullMedicationName = '';
-      if (category === ProtocolCategory.MEDICATION) {
-        fullMedicationName = medication || '';
+      if (category === ProtocolCategory.MEDICATION && medication) {
+        // Find the medication by ID and get its full name
+        const selectedMed = medications.find(m => m.id === medication);
+        if (selectedMed) {
+          fullMedicationName = `${selectedMed.activeIngredient} ${selectedMed.dosage}`.trim();
+        }
       }
 
       // Convert frontend enum to backend string
@@ -292,11 +304,14 @@ const MedicationList: React.FC = () => {
                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                   >
                     <option value="">Selecione o Medicamento...</option>
-                    {medications.map(med => (
-                      <option key={med.id} value={`${med.activeIngredient} ${med.dosage}`.trim()}>
-                        {med.activeIngredient} {med.dosage}
-                      </option>
-                    ))}
+                    {medications.map(med => {
+                      const medName = `${med.activeIngredient} ${med.dosage}`.trim();
+                      return (
+                        <option key={med.id} value={med.id}>
+                          {medName}
+                        </option>
+                      );
+                    })}
                   </select>
                   {medications.length === 0 && (
                     <p className="text-xs text-red-500 mt-1">Cadastre medicamentos na aba "Estoque" primeiro.</p>
