@@ -1,4 +1,5 @@
-import { PatientFull, Treatment, Dose, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Protocol, FrequencyDays, Diagnosis, TreatmentStatus, ProtocolCategory, UserRole, DismissedLog, InventoryItem, DispenseLog, PurchaseRequest, MedicationBase } from '../types';
+
+import { PatientFull, Treatment, Dose, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Protocol, FrequencyDays, Diagnosis, TreatmentStatus, ProtocolCategory, UserRole, DismissedLog, InventoryItem, DispenseLog, PurchaseRequest, MedicationBase, PatientFeedback } from '../types';
 import { addDays, diffInDays } from '../constants';
 
 // --- MOCK DATABASE WITH LOCAL STORAGE PERSISTENCE ---
@@ -206,6 +207,8 @@ const SEED_DOSES: Dose[] = [
     status: DoseStatus.APPLIED,
     paymentStatus: PaymentStatus.PAID,
     paymentUpdatedAt: '2023-09-15',
+    purchased: true,
+    deliveryStatus: 'delivered',
     isLastBeforeConsult: false,
     nurse: true,
     surveyStatus: SurveyStatus.ANSWERED,
@@ -223,6 +226,8 @@ const SEED_DOSES: Dose[] = [
     status: DoseStatus.APPLIED,
     paymentStatus: PaymentStatus.WAITING_DELIVERY,
     paymentUpdatedAt: '2023-06-01',
+    purchased: true,
+    deliveryStatus: 'waiting',
     isLastBeforeConsult: false,
     nurse: false,
     surveyStatus: SurveyStatus.WAITING,
@@ -238,6 +243,8 @@ const SEED_DOSES: Dose[] = [
     status: DoseStatus.PENDING,
     paymentStatus: PaymentStatus.WAITING_PIX,
     paymentUpdatedAt: new Date().toISOString(),
+    purchased: true,
+    deliveryStatus: 'waiting',
     isLastBeforeConsult: false,
     nurse: true,
     surveyStatus: SurveyStatus.WAITING,
@@ -285,8 +292,9 @@ export let MOCK_MEDICATION_BASE: MedicationBase[] = loadData(STORAGE_KEYS.MEDICA
 // Helper function to recalculate patient active status
 const recalculatePatientActiveStatus = (patientId: string) => {
     const patientTreatments = MOCK_TREATMENTS.filter(t => t.patientId === patientId);
+    // REMOVIDO: Status EXTERNAL não existe mais
     const isActive = patientTreatments.some(t => 
-        t.status === TreatmentStatus.ONGOING || t.status === TreatmentStatus.EXTERNAL
+        t.status === TreatmentStatus.ONGOING
     );
 
     const index = MOCK_PATIENTS.findIndex(p => p.id === patientId);
@@ -296,6 +304,28 @@ const recalculatePatientActiveStatus = (patientId: string) => {
         saveData(STORAGE_KEYS.PATIENTS, MOCK_PATIENTS);
     }
 };
+
+// Check and Auto-Finish Treatment if doses completed
+const checkAutoFinishTreatment = (treatmentId: string) => {
+    const treatmentIndex = MOCK_TREATMENTS.findIndex(t => t.id === treatmentId);
+    if (treatmentIndex === -1) return;
+    
+    const treatment = MOCK_TREATMENTS[treatmentIndex];
+    if (!treatment || treatment.plannedDosesBeforeConsult <= 0) return;
+
+    // Count applied doses
+    const appliedCount = MOCK_DOSES.filter(d => d.treatmentId === treatmentId && d.status === DoseStatus.APPLIED).length;
+
+    // Se atingiu o planejado e ainda não está finalizado
+    if (appliedCount >= treatment.plannedDosesBeforeConsult && treatment.status !== TreatmentStatus.FINISHED) {
+        const updatedTreatment = { ...treatment, status: TreatmentStatus.FINISHED };
+        MOCK_TREATMENTS[treatmentIndex] = updatedTreatment;
+        MOCK_TREATMENTS = [...MOCK_TREATMENTS];
+        saveData(STORAGE_KEYS.TREATMENTS, MOCK_TREATMENTS);
+        // Recalcular status do paciente pois o tratamento encerrou
+        recalculatePatientActiveStatus(treatment.patientId);
+    }
+}
 
 // --- MEDICATION BASE LOGIC ---
 export const getMedicationBase = () => {
@@ -512,11 +542,17 @@ export const addMockDose = (dose: Dose) => {
     saveData(STORAGE_KEYS.DOSES, MOCK_DOSES);
     
     // Se a dose foi salva como "Aplicada" e tem vínculo com inventário, dar baixa
-    if (dose.status !== DoseStatus.NOT_ACCEPTED && dose.inventoryLotId) {
+    // UPDATED: Check for 'purchased' flag
+    if (dose.status === DoseStatus.APPLIED && dose.inventoryLotId && dose.purchased) {
         const treatment = MOCK_TREATMENTS.find(t => t.id === dose.treatmentId);
         if (treatment) {
             dispenseMedication(dose.id, dose.inventoryLotId, treatment.patientId);
         }
+    }
+
+    // Auto-finish check on new applied dose
+    if (dose.status === DoseStatus.APPLIED) {
+        checkAutoFinishTreatment(dose.treatmentId);
     }
     
     return [...MOCK_DOSES];
@@ -537,15 +573,21 @@ export const updateMockDose = (id: string, updates: Partial<Dose>, protocolFrequ
         saveData(STORAGE_KEYS.DOSES, MOCK_DOSES);
         
         // Check dispense logic on update
-        if (updates.inventoryLotId && updates.status !== DoseStatus.NOT_ACCEPTED) {
+        // UPDATED: Check 'purchased' in the final merged object
+        if (updatedDose.inventoryLotId && updatedDose.status === DoseStatus.APPLIED && updatedDose.purchased) {
              const treatment = MOCK_TREATMENTS.find(t => t.id === updatedDose.treatmentId);
              if (treatment) {
                  // Verifica se já não foi dispensado antes para não duplicar (simplificado)
                  const alreadyDispensed = MOCK_DISPENSE_LOGS.some(log => log.doseId === id);
                  if (!alreadyDispensed) {
-                     dispenseMedication(id, updates.inventoryLotId, treatment.patientId);
+                     dispenseMedication(id, updatedDose.inventoryLotId, treatment.patientId);
                  }
              }
+        }
+
+        // Auto-finish check if status changed to APPLIED
+        if (updates.status === DoseStatus.APPLIED) {
+            checkAutoFinishTreatment(updatedDose.treatmentId);
         }
 
         return [...MOCK_DOSES];
@@ -611,6 +653,32 @@ export const dismissMockContact = (id: string) => {
             dismissedAt: new Date().toISOString()
         };
         MOCK_DISMISSED_LOGS = [...MOCK_DISMISSED_LOGS, newLog];
+        saveData(STORAGE_KEYS.DISMISSED_LOGS, MOCK_DISMISSED_LOGS);
+    }
+    return [...MOCK_DISMISSED_LOGS];
+}
+
+export const saveLogFeedback = (contactId: string, feedback: PatientFeedback) => {
+    const index = MOCK_DISMISSED_LOGS.findIndex(log => log.contactId === contactId);
+    if (index !== -1) {
+        const updatedLog = { ...MOCK_DISMISSED_LOGS[index], feedback };
+        MOCK_DISMISSED_LOGS[index] = updatedLog;
+        MOCK_DISMISSED_LOGS = [...MOCK_DISMISSED_LOGS];
+        saveData(STORAGE_KEYS.DISMISSED_LOGS, MOCK_DISMISSED_LOGS);
+    }
+    return [...MOCK_DISMISSED_LOGS];
+}
+
+// Mark Feedback as Resolved
+export const resolveLogFeedback = (contactId: string) => {
+    const index = MOCK_DISMISSED_LOGS.findIndex(log => log.contactId === contactId);
+    if (index !== -1 && MOCK_DISMISSED_LOGS[index].feedback) {
+        const currentFeedback = MOCK_DISMISSED_LOGS[index].feedback!;
+        const updatedFeedback: PatientFeedback = { ...currentFeedback, status: 'resolved' };
+        
+        const updatedLog = { ...MOCK_DISMISSED_LOGS[index], feedback: updatedFeedback };
+        MOCK_DISMISSED_LOGS[index] = updatedLog;
+        MOCK_DISMISSED_LOGS = [...MOCK_DISMISSED_LOGS];
         saveData(STORAGE_KEYS.DISMISSED_LOGS, MOCK_DISMISSED_LOGS);
     }
     return [...MOCK_DISMISSED_LOGS];

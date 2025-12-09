@@ -116,7 +116,8 @@ export enum PaymentStatus {
   WAITING_CARD = 'Aguardando Cartão',
   WAITING_BOLETO = 'Aguardando Boleto',
   PAID = 'PAGO',
-  WAITING_DELIVERY = 'AGUARDANDO ENTREGA'
+  WAITING_DELIVERY = 'AGUARDANDO ENTREGA',
+  NOT_APPLICABLE = 'Não Aplicável'
 }
 
 export enum SurveyStatus {
@@ -130,7 +131,6 @@ export enum TreatmentStatus {
   ONGOING = 'Em andamento',
   FINISHED = 'Encerrado',
   REFUSED = 'Recusado',
-  EXTERNAL = 'Medicamento Externo',
   SUSPENDED = 'Suspenso'
 }
 
@@ -155,6 +155,10 @@ export interface Dose {
   paymentStatus: PaymentStatus;
   paymentUpdatedAt: string;
 
+  // New Fields requested
+  purchased?: boolean; // Compra de Medicamento (Sim/Não)
+  deliveryStatus?: 'waiting' | 'delivered'; // Entrega
+
   // Nurse & Satisfaction (Moved from Treatment)
   nurse: boolean; 
   surveyStatus: SurveyStatus;
@@ -178,10 +182,21 @@ export interface Treatment {
   plannedDosesBeforeConsult: number; // 1, 2, or 3
 }
 
+// --- FEEDBACK DO PACIENTE (Novo) ---
+export interface PatientFeedback {
+    text: string;
+    classification: 'Geral' | 'Dúvida' | 'Sintomas';
+    needsMedicalResponse: boolean;
+    urgency: 'Sem urgência' | 'Atenção' | 'Urgente';
+    registeredAt: string; // ISO Date
+    status?: 'pending' | 'resolved'; // Status do feedback
+}
+
 // Histórico de mensagens enviadas/concluídas
 export interface DismissedLog {
     contactId: string;
     dismissedAt: string; // ISO Date time
+    feedback?: PatientFeedback; // Novo campo opcional
 }
 
 // --- ESTOQUE (INVENTORY) ---

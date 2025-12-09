@@ -13,6 +13,7 @@ import MedicationList from './pages/MedicationList';
 import HistoryList from './pages/HistoryList';
 import InventoryList from './pages/InventoryList';
 import PermissionsManager from './pages/PermissionsManager';
+import Checklist from './pages/Checklist';
 import { Loader2 } from 'lucide-react';
 import { UserRole } from './types';
 
@@ -174,6 +175,16 @@ const AppContent: React.FC = () => {
           <ProtectedRouteWithPermission menuKey="inventory">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <InventoryList />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+      <Route
+        path="/checklist"
+        element={
+          <ProtectedRouteWithPermission menuKey="patients">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <Checklist />
             </Layout>
           </ProtectedRouteWithPermission>
         }
