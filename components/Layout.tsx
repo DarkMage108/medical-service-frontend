@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
 import { usePermissions } from '../contexts/PermissionsContext';
@@ -17,6 +17,7 @@ interface LayoutProps {
 const MENU_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
   patients: Users,
+  checklist: ListTodo,
   history: History,
   inventory: Package,
   diagnoses: Stethoscope,
@@ -27,6 +28,7 @@ const MENU_ICONS: Record<string, LucideIcon> = {
 const MENU_PATHS: Record<string, string> = {
   dashboard: '/',
   patients: '/pacientes',
+  checklist: '/checklist',
   history: '/historico',
   inventory: '/estoque',
   diagnoses: '/diagnosticos',
@@ -37,9 +39,10 @@ const MENU_PATHS: Record<string, string> = {
 const MENU_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
   patients: 'Pacientes',
-  history: 'Histórico',
+  checklist: 'Checklist',
+  history: 'Historico',
   inventory: 'Estoque',
-  diagnoses: 'Diagnósticos',
+  diagnoses: 'Diagnosticos',
   protocols: 'Protocolos',
 };
 
@@ -72,7 +75,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
     });
 
     // Sort items in a logical order
-    const order = ['dashboard', 'patients', 'history', 'inventory', 'diagnoses', 'protocols'];
+    const order = ['dashboard', 'patients', 'checklist', 'history', 'inventory', 'diagnoses', 'protocols'];
     items.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 
     // Add permissions menu for admins
