@@ -2,10 +2,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  treatmentsApi, patientsApi, protocolsApi, dosesApi, documentsApi
+  treatmentsApi, patientsApi, protocolsApi, dosesApi, documentsApi, diagnosesApi
 } from '../services/api';
 import {
-  ProtocolCategory, TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Treatment, PatientFull, Protocol, Dose
+  ProtocolCategory, TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Treatment, PatientFull, Protocol, Dose, Diagnosis
 } from '../types';
 import {
   ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, User, Pill, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw
@@ -46,6 +46,7 @@ const Checklist: React.FC = () => {
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [doses, setDoses] = useState<Dose[]>([]);
   const [documents, setDocuments] = useState<ConsentDocument[]>([]);
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,12 +62,13 @@ const Checklist: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [treatmentsRes, patientsRes, protocolsRes, dosesRes, documentsRes] = await Promise.all([
+      const [treatmentsRes, patientsRes, protocolsRes, dosesRes, documentsRes, diagnosesRes] = await Promise.all([
         treatmentsApi.getAll({ limit: 100 }),
         patientsApi.getAll({ limit: 100 }),
         protocolsApi.getAll(),
         dosesApi.getAll({ limit: 500 }),
-        documentsApi.getAll()
+        documentsApi.getAll(),
+        diagnosesApi.getAll()
       ]);
 
       setTreatments(treatmentsRes.data || []);
@@ -74,6 +76,7 @@ const Checklist: React.FC = () => {
       setProtocols(protocolsRes.data || []);
       setDoses(dosesRes.data || []);
       setDocuments(documentsRes.data || []);
+      setDiagnoses(diagnosesRes.data || []);
     } catch (err: any) {
       console.error('Error loading checklist data:', err);
       setError(err.message || 'Erro ao carregar dados');
@@ -134,9 +137,9 @@ const Checklist: React.FC = () => {
 
       steps.registration = missingInfo.length === 0 ? 'OK' : 'PENDING';
 
-      // 3. Consent term check
-      const diagLower = (patient.mainDiagnosis || '').toLowerCase();
-      const requiresConsent = diagLower.includes('puberdade') || diagLower.includes('baixa estatura');
+      // 3. Consent term check - uses diagnosis configuration
+      const diagnosisConfig = diagnoses.find(d => d.name === patient.mainDiagnosis);
+      const requiresConsent = diagnosisConfig?.requiresConsent ?? false;
 
       if (requiresConsent) {
         const hasDoc = documents.some(d => d.patientId === patient.id);
@@ -191,7 +194,7 @@ const Checklist: React.FC = () => {
     });
 
     return items;
-  }, [treatments, patients, protocols, doses, documents]);
+  }, [treatments, patients, protocols, doses, documents, diagnoses]);
 
   // --- DRAWER ACTIONS ---
 

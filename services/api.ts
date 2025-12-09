@@ -225,14 +225,14 @@ export const diagnosesApi = {
     return apiFetch<any>(`/diagnoses/${id}`);
   },
 
-  create: async (data: { name: string; color?: string }) => {
+  create: async (data: { name: string; color?: string; requiresConsent?: boolean }) => {
     return apiFetch<any>('/diagnoses', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  update: async (id: string, data: { name?: string; color?: string }) => {
+  update: async (id: string, data: { name?: string; color?: string; requiresConsent?: boolean }) => {
     return apiFetch<any>(`/diagnoses/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

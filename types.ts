@@ -72,6 +72,7 @@ export interface Diagnosis {
   id: string;
   name: string;
   color?: string; // Property to store the selected tag color
+  requiresConsent?: boolean; // Whether this diagnosis requires consent term
 }
 
 // --- MEDICAMENTOS BASE (Novo) ---

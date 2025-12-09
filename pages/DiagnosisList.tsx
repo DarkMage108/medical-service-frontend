@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { diagnosesApi } from '../services/api';
 import { Diagnosis } from '../types';
-import { Plus, Trash2, Tag, Stethoscope, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Tag, Stethoscope, Loader2, Check, AlertCircle, RefreshCw, FileText } from 'lucide-react';
 import { getDiagnosisColor, DIAGNOSIS_COLORS } from '../constants';
 
 const DiagnosisList: React.FC = () => {
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [newDiagnosis, setNewDiagnosis] = useState('');
   const [selectedColor, setSelectedColor] = useState(DIAGNOSIS_COLORS[0]);
+  const [requiresConsent, setRequiresConsent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,14 +42,16 @@ const DiagnosisList: React.FC = () => {
     try {
       const newItem = await diagnosesApi.create({
         name: newDiagnosis.trim(),
-        color: selectedColor
+        color: selectedColor,
+        requiresConsent
       });
 
       // Add the new item to the list
       setDiagnoses(prev => [...prev, newItem]);
 
-      // Clear the field
+      // Clear the form
       setNewDiagnosis('');
+      setRequiresConsent(false);
       // Randomize next color
       const randomNext = DIAGNOSIS_COLORS[Math.floor(Math.random() * DIAGNOSIS_COLORS.length)];
       setSelectedColor(randomNext);
@@ -57,6 +60,19 @@ const DiagnosisList: React.FC = () => {
       console.error('Failed to add diagnosis:', err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleToggleConsent = async (diag: Diagnosis) => {
+    try {
+      setError(null);
+      const updated = await diagnosesApi.update(diag.id, {
+        requiresConsent: !diag.requiresConsent
+      });
+      setDiagnoses(prev => prev.map(d => d.id === diag.id ? { ...d, requiresConsent: updated.requiresConsent } : d));
+    } catch (err: any) {
+      setError(err.message || 'Erro ao atualizar diagnostico');
+      console.error('Failed to update diagnosis:', err);
     }
   };
 
@@ -164,40 +180,84 @@ const DiagnosisList: React.FC = () => {
                 </button>
               ))}
             </div>
-            {/* Preview */}
-            <div className="mt-3 flex items-center">
-              <span className="text-xs text-slate-500 mr-2">Pre-visualizacao:</span>
-              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${selectedColor}`}>
-                <Tag size={14} className="mr-2" />
-                {newDiagnosis || 'Nome do Diagnostico'}
+          </div>
+
+          {/* Requires Consent Checkbox */}
+          <div className="mt-4">
+            <label className="flex items-center cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={requiresConsent}
+                onChange={e => setRequiresConsent(e.target.checked)}
+                className="w-5 h-5 rounded border-slate-300 text-pink-600 focus:ring-pink-500 cursor-pointer"
+                disabled={isSaving}
+              />
+              <span className="ml-3 text-sm text-slate-700 group-hover:text-slate-900">
+                <FileText size={16} className="inline mr-1 text-pink-500" />
+                Exige Termo de Consentimento
               </span>
-            </div>
+            </label>
+            <p className="mt-1 ml-8 text-xs text-slate-400">
+              Marque se este diagnostico exige que o paciente assine um termo de consentimento.
+            </p>
+          </div>
+
+          {/* Preview */}
+          <div className="mt-4 flex items-center">
+            <span className="text-xs text-slate-500 mr-2">Pre-visualizacao:</span>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${selectedColor}`}>
+              <Tag size={14} className="mr-2" />
+              {newDiagnosis || 'Nome do Diagnostico'}
+            </span>
+            {requiresConsent && (
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                <FileText size={12} className="mr-1" />
+                Termo
+              </span>
+            )}
           </div>
         </form>
 
         <div className="border-t border-slate-100 pt-6">
           <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Diagnosticos Cadastrados</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {diagnoses.map(diag => (
               <div key={diag.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-lg bg-slate-50 hover:border-pink-200 transition-colors">
-                <div className="flex items-center">
+                <div className="flex items-center gap-3">
                   <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getDiagnosisColor(diag.name, diag.color)}`}>
                     <Tag size={14} className="mr-2" />
                     {diag.name}
                   </span>
+                  {diag.requiresConsent && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                      <FileText size={12} className="mr-1" />
+                      Exige Termo
+                    </span>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => handleDelete(diag.id, e)}
-                  className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all cursor-pointer"
-                  title="Excluir Diagnostico"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center cursor-pointer" title="Exige Termo de Consentimento">
+                    <input
+                      type="checkbox"
+                      checked={diag.requiresConsent || false}
+                      onChange={() => handleToggleConsent(diag)}
+                      className="w-4 h-4 rounded border-slate-300 text-pink-600 focus:ring-pink-500 cursor-pointer"
+                    />
+                    <span className="ml-1.5 text-xs text-slate-500 hidden sm:inline">Termo</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(diag.id, e)}
+                    className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all cursor-pointer"
+                    title="Excluir Diagnostico"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
               </div>
             ))}
             {diagnoses.length === 0 && (
-              <div className="col-span-2 text-center py-8 text-slate-400 border border-dashed rounded-lg">
+              <div className="text-center py-8 text-slate-400 border border-dashed rounded-lg">
                 Nenhum diagnostico cadastrado.
               </div>
             )}
