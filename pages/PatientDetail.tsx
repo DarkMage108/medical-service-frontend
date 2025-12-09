@@ -68,7 +68,8 @@ const PatientDetail: React.FC = () => {
         patientsApi.getDocuments(id)
       ]);
 
-      setPatient(patientRes.data);
+      // getById returns the patient object directly, not wrapped in { data: ... }
+      setPatient(patientRes);
       setTreatments(treatmentsRes.data || []);
       setProtocols(protocolsRes.data || []);
       setDoses(dosesRes.data || []);
