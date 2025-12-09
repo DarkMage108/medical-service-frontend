@@ -1,8 +1,7 @@
-﻿
 import React, { useState, useEffect } from 'react';
-import { fetchDiagnoses, createDiagnosis, deleteDiagnosis as deleteDiagnosisApi } from '../services/dataService';
+import { diagnosesApi } from '../services/api';
 import { Diagnosis } from '../types';
-import { Plus, Trash2, Tag, Stethoscope, Loader2, Check, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Tag, Stethoscope, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { getDiagnosisColor, DIAGNOSIS_COLORS } from '../constants';
 
 const DiagnosisList: React.FC = () => {
@@ -15,187 +14,197 @@ const DiagnosisList: React.FC = () => {
 
   // Load diagnoses from API on mount
   useEffect(() => {
-  loadDiagnoses();
+    loadDiagnoses();
   }, []);
 
   const loadDiagnoses = async () => {
-  try {
-    setIsLoading(true);
-    setError(null);
-    const data = await fetchDiagnoses();
-    setDiagnoses(data);
-  } catch (err: any) {
-    setError(err.message || 'Erro ao carregar diagnÃ³sticos');
-    console.error('Failed to load diagnoses:', err);
-  } finally {
-    setIsLoading(false);
-  }
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await diagnosesApi.getAll();
+      setDiagnoses(response.data || []);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar diagnosticos');
+      console.error('Failed to load diagnoses:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAdd = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newDiagnosis.trim()) return;
+    e.preventDefault();
+    if (!newDiagnosis.trim()) return;
 
-  setIsSaving(true);
-  setError(null);
+    setIsSaving(true);
+    setError(null);
 
-  try {
-    const newItem = await createDiagnosis({
-    name: newDiagnosis.trim(),
-    color: selectedColor
-    });
+    try {
+      const newItem = await diagnosesApi.create({
+        name: newDiagnosis.trim(),
+        color: selectedColor
+      });
 
-    // Add the new item to the list
-    setDiagnoses(prev => [...prev, newItem]);
+      // Add the new item to the list
+      setDiagnoses(prev => [...prev, newItem]);
 
-    // Clear the field
-    setNewDiagnosis('');
-    // Randomize next color
-    const randomNext = DIAGNOSIS_COLORS[Math.floor(Math.random() * DIAGNOSIS_COLORS.length)];
-    setSelectedColor(randomNext);
-  } catch (err: any) {
-    setError(err.message || 'Erro ao adicionar diagnÃ³stico');
-    console.error('Failed to add diagnosis:', err);
-  } finally {
-    setIsSaving(false);
-  }
+      // Clear the field
+      setNewDiagnosis('');
+      // Randomize next color
+      const randomNext = DIAGNOSIS_COLORS[Math.floor(Math.random() * DIAGNOSIS_COLORS.length)];
+      setSelectedColor(randomNext);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao adicionar diagnostico');
+      console.error('Failed to add diagnosis:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
-  e.stopPropagation();
-  e.preventDefault();
+    e.stopPropagation();
+    e.preventDefault();
 
-  if (window.confirm('Tem certeza que deseja excluir este diagnÃ³stico?')) {
-    try {
-    setError(null);
-    await deleteDiagnosisApi(id);
-    setDiagnoses(prev => prev.filter(d => d.id !== id));
-    } catch (err: any) {
-    setError(err.message || 'Erro ao excluir diagnÃ³stico');
-    console.error('Failed to delete diagnosis:', err);
+    if (window.confirm('Tem certeza que deseja excluir este diagnostico?')) {
+      try {
+        setError(null);
+        await diagnosesApi.delete(id);
+        setDiagnoses(prev => prev.filter(d => d.id !== id));
+      } catch (err: any) {
+        setError(err.message || 'Erro ao excluir diagnostico');
+        console.error('Failed to delete diagnosis:', err);
+      }
     }
-  }
   };
 
   if (isLoading) {
-  return (
-    <div className="flex items-center justify-center h-64">
-    <Loader2 size={32} className="animate-spin text-pink-600" />
-    <span className="ml-3 text-slate-600">Carregando diagnÃ³sticos...</span>
-    </div>
-  );
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={32} className="animate-spin text-pink-600" />
+        <span className="ml-3 text-slate-600">Carregando diagnosticos...</span>
+      </div>
+    );
   }
 
   return (
-  <div className="space-y-6 max-w-4xl mx-auto">
-    <div>
-    <h1 className="text-2xl font-bold text-slate-800 flex items-center">
-      <Stethoscope size={28} className="mr-3 text-pink-600" />
-      GestÃ£o de DiagnÃ³sticos
-    </h1>
-    <p className="text-slate-500 mt-1">Cadastre as condiÃ§Ãµes clÃ­nicas atendidas pela clÃ­nica.</p>
-    </div>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center">
+            <Stethoscope size={28} className="mr-3 text-pink-600" />
+            Gestao de Diagnosticos
+          </h1>
+          <p className="text-slate-500 mt-1">Cadastre as condicoes clinicas atendidas pela clinica.</p>
+        </div>
+        <button
+          onClick={loadDiagnoses}
+          disabled={isLoading}
+          className="flex items-center px-3 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+        >
+          <RefreshCw size={16} className={`mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+          Atualizar
+        </button>
+      </div>
 
-    {error && (
-    <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
-      <AlertCircle size={20} className="text-red-600 mr-3" />
-      <span className="text-red-700">{error}</span>
-      <button
-      onClick={() => setError(null)}
-      className="ml-auto text-red-600 hover:text-red-800"
-      >
-      âœ•
-      </button>
-    </div>
-    )}
-
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <form onSubmit={handleAdd} className="mb-8">
-        <div className="flex flex-col md:flex-row gap-4 items-start">
-          <div className="flex-1 w-full">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Novo DiagnÃ³stico</label>
-            <input
-            type="text"
-            value={newDiagnosis}
-            onChange={e => setNewDiagnosis(e.target.value)}
-            placeholder="Ex: Puberdade Precoce, Obesidade..."
-            className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-            disabled={isSaving}
-            />
-          </div>
-          <div className="w-full md:w-auto flex items-end">
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
+          <AlertCircle size={20} className="text-red-600 mr-3" />
+          <span className="text-red-700">{error}</span>
           <button
-            type="submit"
-            disabled={!newDiagnosis.trim() || isSaving}
-            className="w-full md:w-auto bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center shadow-sm h-[42px] mt-6"
+            onClick={() => setError(null)}
+            className="ml-auto text-red-600 hover:text-red-800"
           >
-            {isSaving ? <Loader2 size={18} className="mr-2 animate-spin"/> : <Plus size={18} className="mr-2" />}
-            {isSaving ? 'Sal...' : 'Adicionar'}
+            X
           </button>
-          </div>
         </div>
+      )}
 
-        {/* Color Selector */}
-        <div className="mt-4">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cor da Etiqueta</label>
-          <div className="flex flex-wrap gap-2">
-            {DIAGNOSIS_COLORS.map((color) => (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <form onSubmit={handleAdd} className="mb-8">
+          <div className="flex flex-col md:flex-row gap-4 items-start">
+            <div className="flex-1 w-full">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Novo Diagnostico</label>
+              <input
+                type="text"
+                value={newDiagnosis}
+                onChange={e => setNewDiagnosis(e.target.value)}
+                placeholder="Ex: Puberdade Precoce, Obesidade..."
+                className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                disabled={isSaving}
+              />
+            </div>
+            <div className="w-full md:w-auto flex items-end">
               <button
-                key={color}
-                type="button"
-                onClick={() => setSelectedColor(color)}
-                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${color.split(' ')[0]} ${
-                  selectedColor === color
-                  ? 'ring-2 ring-offset-2 ring-slate-400 scale-110'
-                  : 'hover:scale-105 border border-transparent hover:border-slate-300'
-                }`}
-                title="Selecionar cor"
+                type="submit"
+                disabled={!newDiagnosis.trim() || isSaving}
+                className="w-full md:w-auto bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center shadow-sm h-[42px] mt-6"
               >
-                {selectedColor === color && <Check size={14} strokeWidth={3} />}
+                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin"/> : <Plus size={18} className="mr-2" />}
+                {isSaving ? 'Salvando...' : 'Adicionar'}
               </button>
-            ))}
+            </div>
           </div>
-          {/* Preview */}
-          <div className="mt-3 flex items-center">
-            <span className="text-xs text-slate-500 mr-2">PrÃ©-visualizaÃ§Ã£o:</span>
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${selectedColor}`}>
-              <Tag size={14} className="mr-2" />
-              {newDiagnosis || 'Nome do DiagnÃ³stico'}
-            </span>
-          </div>
-        </div>
-      </form>
 
-      <div className="border-t border-slate-100 pt-6">
-        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">DiagnÃ³sticos Cadastrados</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {diagnoses.map(diag => (
-            <div key={diag.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-lg bg-slate-50 hover:border-pink-200 transition-colors">
-              <div className="flex items-center">
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getDiagnosisColor(diag.name, diag.color)}`}>
+          {/* Color Selector */}
+          <div className="mt-4">
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Cor da Etiqueta</label>
+            <div className="flex flex-wrap gap-2">
+              {DIAGNOSIS_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setSelectedColor(color)}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${color.split(' ')[0]} ${
+                    selectedColor === color
+                      ? 'ring-2 ring-offset-2 ring-slate-400 scale-110'
+                      : 'hover:scale-105 border border-transparent hover:border-slate-300'
+                  }`}
+                  title="Selecionar cor"
+                >
+                  {selectedColor === color && <Check size={14} strokeWidth={3} />}
+                </button>
+              ))}
+            </div>
+            {/* Preview */}
+            <div className="mt-3 flex items-center">
+              <span className="text-xs text-slate-500 mr-2">Pre-visualizacao:</span>
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${selectedColor}`}>
                 <Tag size={14} className="mr-2" />
-                {diag.name}
-                </span>
+                {newDiagnosis || 'Nome do Diagnostico'}
+              </span>
+            </div>
+          </div>
+        </form>
+
+        <div className="border-t border-slate-100 pt-6">
+          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Diagnosticos Cadastrados</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {diagnoses.map(diag => (
+              <div key={diag.id} className="flex justify-between items-center p-4 border border-slate-100 rounded-lg bg-slate-50 hover:border-pink-200 transition-colors">
+                <div className="flex items-center">
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${getDiagnosisColor(diag.name, diag.color)}`}>
+                    <Tag size={14} className="mr-2" />
+                    {diag.name}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(diag.id, e)}
+                  className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all cursor-pointer"
+                  title="Excluir Diagnostico"
+                >
+                  <Trash2 size={18} />
+                </button>
               </div>
-              <button
-              type="button"
-              onClick={(e) => handleDelete(diag.id, e)}
-              className="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-all cursor-pointer"
-              title="Excluir DiagnÃ³stico"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          ))}
-          {diagnoses.length === 0 && (
-            <div className="col-span-2 text-center py-8 text-slate-400 border border-dashed rounded-lg">
-              Nenhum diagnÃ³stico cadastrado.
-            </div>
-          )}
+            ))}
+            {diagnoses.length === 0 && (
+              <div className="col-span-2 text-center py-8 text-slate-400 border border-dashed rounded-lg">
+                Nenhum diagnostico cadastrado.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
-  </div>
   );
 };
 
