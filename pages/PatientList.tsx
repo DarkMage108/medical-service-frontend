@@ -1,5 +1,5 @@
 ﻿
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { patientsApi, diagnosesApi } from '../services/api';
 import { PatientFull, Diagnosis } from '../types';
@@ -73,6 +73,12 @@ const PatientList: React.FC = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location]);
+
+  // Helper to get diagnosis color from loaded diagnoses
+  const getDiagnosisColorFromData = useCallback((diagnosisName: string) => {
+    const diagnosis = diagnoses.find(d => d.name === diagnosisName);
+    return getDiagnosisColor(diagnosisName, diagnosis?.color);
+  }, [diagnoses]);
 
   // Optimized filtering
   const processedPatients = useMemo(() => {
@@ -351,7 +357,7 @@ const PatientList: React.FC = () => {
                     <div className="text-xs text-slate-500">{patient.guardian?.phonePrimary || '-'}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getDiagnosisColor(patient.mainDiagnosis || '')}`}>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getDiagnosisColorFromData(patient.mainDiagnosis || '')}`}>
                       {patient.mainDiagnosis || '-'}
                     </span>
                   </td>
