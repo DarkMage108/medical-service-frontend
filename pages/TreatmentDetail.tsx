@@ -60,25 +60,24 @@ const TreatmentDetail: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [treatmentRes, protocolsRes, inventoryRes] = await Promise.all([
+      const [treatmentData, protocolsRes, inventoryRes] = await Promise.all([
         treatmentsApi.getById(id),
         protocolsApi.getAll(),
         inventoryApi.getAvailable()
       ]);
 
-      const treatmentData = treatmentRes.data;
       setTreatment(treatmentData);
       setProtocols(protocolsRes.data || []);
       setInventory(inventoryRes.data || []);
 
       // Load patient and protocol details
       if (treatmentData) {
-        const [patientRes, dosesRes] = await Promise.all([
+        const [patientData, dosesRes] = await Promise.all([
           patientsApi.getById(treatmentData.patientId),
           dosesApi.getAll({ treatmentId: id })
         ]);
 
-        setPatient(patientRes.data);
+        setPatient(patientData);
         setDoses((dosesRes.data || []).sort((a: Dose, b: Dose) =>
           new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime()
         ));
