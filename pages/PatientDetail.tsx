@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi } from '../services/api';
 import { formatDate, getTreatmentStatusColor, addDays, diffInDays } from '../constants';
-import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, Calendar as CalendarIcon, ChevronRight, RefreshCw } from 'lucide-react';
+import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2 } from 'lucide-react';
 import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose } from '../types';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -37,6 +37,11 @@ const PatientDetail: React.FC = () => {
   // Document Upload State
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Event Observation State
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [eventObservation, setEventObservation] = useState('');
+  const [isSavingObservation, setIsSavingObservation] = useState(false);
 
   // Form states for Patient Edit
   const [editName, setEditName] = useState('');
@@ -171,8 +176,91 @@ const PatientDetail: React.FC = () => {
     return events.sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [treatments, patient, protocols, doses, dismissedLogs]);
 
+  // Past/Completed Events Logic
+  const completedEvents = useMemo(() => {
+    if (!patient) return [];
+    const events: any[] = [];
+
+    treatments.forEach(t => {
+      const proto = protocols.find(p => p.id === t.protocolId);
+      if (!proto) return;
+
+      // Applied doses
+      const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
+      const appliedDoses = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.NOT_ACCEPTED);
+
+      appliedDoses.forEach(d => {
+        events.push({
+          id: d.id,
+          date: new Date(d.applicationDate),
+          type: 'dose',
+          title: `Dose ${d.cycleNumber}`,
+          subtitle: proto.medicationType || proto.name,
+          status: d.status === DoseStatus.APPLIED ? 'applied' : 'not_accepted',
+          treatmentId: t.id,
+          observation: d.surveyComment || '',
+          doseId: d.id
+        });
+      });
+
+      // Completed milestones/contacts
+      if (proto.milestones) {
+        proto.milestones.forEach((m: any) => {
+          const contactId = `${t.id}_m_${m.day}`;
+          const dismissedLog = dismissedLogs.find(log => log.contactId === contactId);
+
+          if (dismissedLog) {
+            const contactDate = addDays(new Date(t.startDate), m.day);
+            events.push({
+              id: contactId,
+              date: contactDate,
+              type: 'message',
+              title: `Contato dia ${m.day}`,
+              subtitle: m.message,
+              status: 'completed',
+              treatmentId: t.id,
+              observation: dismissedLog.feedback?.text || '',
+              dismissedAt: dismissedLog.dismissedAt
+            });
+          }
+        });
+      }
+    });
+
+    // Sort by date descending (most recent first)
+    return events.sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [treatments, patient, protocols, doses, dismissedLogs]);
+
   const getProtocolName = (pid: string) => {
     return protocols.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
+  };
+
+  const handleSaveEventObservation = async (eventId: string, doseId?: string) => {
+    if (!eventObservation.trim()) {
+      setEditingEventId(null);
+      return;
+    }
+
+    setIsSavingObservation(true);
+    try {
+      if (doseId) {
+        // Update dose surveyComment
+        await dosesApi.update(doseId, { surveyComment: eventObservation });
+      }
+      await loadData();
+      setEditingEventId(null);
+      setEventObservation('');
+    } catch (err: any) {
+      console.error('Error saving observation:', err);
+      alert('Erro ao salvar observacao: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsSavingObservation(false);
+    }
+  };
+
+  const handleOpenEditObservation = (eventId: string, currentObservation: string) => {
+    setEditingEventId(eventId);
+    setEventObservation(currentObservation);
   };
 
   const handleOpenEditPatient = () => {
@@ -475,6 +563,111 @@ const PatientDetail: React.FC = () => {
                         </span>
                       )}
                     </Link>
+                  </div>
+                );
+              })}
+              <div className="min-w-[20px]"></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Completed Events History - Horizontal Timeline */}
+      {completedEvents.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden">
+          <h3 className="font-bold text-slate-700 mb-6 flex items-center">
+            <History size={18} className="mr-2 text-green-500" />
+            Eventos Realizados
+          </h3>
+          <div className="relative">
+            <div className="absolute top-4 left-0 w-full h-0.5 bg-slate-100 z-0"></div>
+
+            <div className="flex gap-8 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent px-2">
+              {completedEvents.map((evt) => {
+                const isDose = evt.type === 'dose';
+                const isEditing = editingEventId === evt.id;
+
+                return (
+                  <div key={evt.id} className="relative z-10 flex flex-col items-center min-w-[160px] text-center flex-shrink-0 group">
+                    <div className="mb-2 text-xs font-bold text-slate-500">
+                      {formatDate(evt.date)}
+                    </div>
+
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 shadow-sm transition-all mb-3 ${
+                      evt.status === 'applied' ? 'bg-green-50 border-green-500 text-green-600' :
+                      evt.status === 'not_accepted' ? 'bg-orange-50 border-orange-500 text-orange-600' :
+                      'bg-blue-50 border-blue-500 text-blue-600'
+                    }`}>
+                      {isDose ? <Syringe size={14} /> : <MessageCircle size={14} />}
+                    </div>
+
+                    <div className="w-full p-3 rounded-lg border bg-slate-50 border-slate-100 text-left transition-all hover:shadow-md hover:border-green-200">
+                      <div className="flex items-center gap-1 mb-1">
+                        <p className="text-xs font-bold text-slate-800 truncate flex-1">
+                          {evt.title}
+                        </p>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap ${
+                          evt.status === 'applied' ? 'bg-green-100 text-green-700' :
+                          evt.status === 'not_accepted' ? 'bg-orange-100 text-orange-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
+                          {evt.status === 'applied' ? 'Aplicada' :
+                           evt.status === 'not_accepted' ? 'Nao Realizada' : 'Concluido'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 line-clamp-2" title={evt.subtitle}>
+                        {evt.subtitle}
+                      </p>
+
+                      {/* Observation Display/Edit */}
+                      {isEditing ? (
+                        <div className="mt-2 space-y-2">
+                          <textarea
+                            value={eventObservation}
+                            onChange={(e) => setEventObservation(e.target.value)}
+                            placeholder="Observacao..."
+                            className="w-full text-[10px] border-slate-300 rounded focus:ring-pink-500 focus:border-pink-500 resize-none p-1.5"
+                            rows={2}
+                            autoFocus
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleSaveEventObservation(evt.id, evt.doseId)}
+                              disabled={isSavingObservation}
+                              className="flex-1 flex items-center justify-center px-2 py-1 text-[10px] font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                            >
+                              {isSavingObservation ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingEventId(null);
+                                setEventObservation('');
+                              }}
+                              className="px-2 py-1 text-[10px] font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {evt.observation && (
+                            <div className="mt-2 p-1.5 bg-white rounded border border-slate-200">
+                              <p className="text-[10px] text-slate-600 line-clamp-2">{evt.observation}</p>
+                            </div>
+                          )}
+                          {isDose && (
+                            <button
+                              onClick={() => handleOpenEditObservation(evt.id, evt.observation || '')}
+                              className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-slate-400 hover:text-pink-600 py-1 rounded hover:bg-pink-50 transition-colors"
+                            >
+                              {evt.observation ? <Edit2 size={10} /> : <Plus size={10} />}
+                              {evt.observation ? 'Editar' : 'Obs.'}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 );
               })}
