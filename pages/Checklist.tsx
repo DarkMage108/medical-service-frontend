@@ -10,7 +10,7 @@ import {
 import {
   ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, User, Pill, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw
 } from 'lucide-react';
-import { getDiagnosisColor, formatDate } from '../constants';
+import { getDiagnosisColor, formatDate, PAYMENT_STATUS_LABELS } from '../constants';
 
 type StepStatus = 'OK' | 'PENDING' | 'NA';
 type StepType = 'registration' | 'medication' | 'consent' | 'payment' | 'delivery' | 'application' | 'survey';
@@ -437,7 +437,7 @@ const Checklist: React.FC = () => {
                       disabled={isProcessing}
                       className="text-left px-4 py-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-pink-300 text-slate-700 font-medium text-sm transition-all shadow-sm"
                     >
-                      {st}
+                      {PAYMENT_STATUS_LABELS[st]}
                     </button>
                   ))}
                 </div>
