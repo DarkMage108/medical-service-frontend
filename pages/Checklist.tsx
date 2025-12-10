@@ -50,10 +50,13 @@ const Checklist: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset score when selecting new item
+  const [manualComment, setManualComment] = useState<string>('');
+
+  // Reset score and comment when selecting new item
   useEffect(() => {
     if (selectedStepInfo) {
       setManualScore(10);
+      setManualComment('');
     }
   }, [selectedStepInfo]);
 
@@ -539,11 +542,23 @@ const Checklist: React.FC = () => {
                 <span>1 (Ruim)</span>
                 <span>10 (Excelente)</span>
               </div>
+
+              {/* Comment field */}
+              <div className="mt-4">
+                <label className="text-xs font-bold text-slate-600 mb-1 block">Comentario (opcional)</label>
+                <textarea
+                  value={manualComment}
+                  onChange={(e) => setManualComment(e.target.value)}
+                  placeholder="Observacao sobre o atendimento..."
+                  className="w-full text-sm border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 resize-none"
+                  rows={2}
+                />
+              </div>
             </div>
 
             <div className="space-y-3">
               <button
-                onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.ANSWERED, surveyScore: manualScore })}
+                onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.ANSWERED, surveyScore: manualScore, surveyComment: manualComment || undefined })}
                 disabled={isProcessing || !item.doseId}
                 className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm disabled:opacity-50"
               >
