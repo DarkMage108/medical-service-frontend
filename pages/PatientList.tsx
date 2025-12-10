@@ -173,33 +173,29 @@ const PatientList: React.FC = () => {
   const handleSavePatient = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!newName.trim() || !newDiagnosis || !newGuardian.trim() || !newPhone.trim()) {
-      alert("Por favor, preencha todos os campos obrigatorios:\n\n- Nome Completo\n- Diagnostico Principal\n- Nome do Responsavel\n- Telefone Principal");
-      return;
-    }
-
+    // HTML5 validation handles required fields automatically
     setIsSaving(true);
 
     try {
       const patientData = {
         fullName: newName,
         birthDate: birthDate || undefined,
-        gender: gender as 'M' | 'F' | 'Other' | undefined,
+        gender: gender || undefined,
         mainDiagnosis: newDiagnosis,
-        clinicalNotes: clinicalNotes,
+        clinicalNotes: clinicalNotes || undefined,
         guardian: {
           fullName: newGuardian,
           phonePrimary: newPhone,
-          relationship: relationship
+          relationship: relationship || undefined
         },
         address: street ? {
           street,
-          number,
-          complement,
-          neighborhood,
-          city,
-          state,
-          zipCode
+          number: number || undefined,
+          complement: complement || undefined,
+          neighborhood: neighborhood || undefined,
+          city: city || undefined,
+          state: state || undefined,
+          zipCode: zipCode || undefined
         } : undefined
       };
 
@@ -643,27 +639,26 @@ const PatientList: React.FC = () => {
                 ></textarea>
               </div>
 
-            </form>
+              <div className="pt-4 border-t border-slate-100 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  disabled={isSaving}
+                  className="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-white transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="flex-1 py-2.5 bg-pink-600 text-white rounded-lg font-medium hover:bg-pink-700 flex justify-center items-center shadow-lg shadow-pink-600/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
+                  {isSaving ? 'Salvando...' : 'Salvar Paciente'}
+                </button>
+              </div>
 
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                disabled={isSaving}
-                className="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-white transition-colors disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSavePatient}
-                type="button"
-                disabled={isSaving}
-                className="flex-1 py-2.5 bg-pink-600 text-white rounded-lg font-medium hover:bg-pink-700 flex justify-center items-center shadow-lg shadow-pink-600/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
-                {isSaving ? 'Salvando...' : 'Salvar Paciente'}
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
