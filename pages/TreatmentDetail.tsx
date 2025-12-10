@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi } from '../services/api';
-import { formatDate, getStatusColor, addDays, getTreatmentStatusColor } from '../constants';
+import { formatDate, getStatusColor, addDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS } from '../constants';
 import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem } from '../types';
 import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw } from 'lucide-react';
 
@@ -135,7 +135,7 @@ const TreatmentDetail: React.FC = () => {
     setDoseLot(dose.lotNumber || '');
     setSelectedInventoryId(dose.inventoryLotId || '');
     setDoseStatus(dose.status);
-    setDosePayment(dose.paymentStatus === PaymentStatus.NOT_APPLICABLE ? '' : dose.paymentStatus);
+    setDosePayment(dose.paymentStatus || '');
     setDoseIsLast(dose.isLastBeforeConsult || false);
     setDoseConsultDate(dose.consultationDate ? dose.consultationDate.split('T')[0] : '');
 
@@ -221,7 +221,7 @@ const TreatmentDetail: React.FC = () => {
         purchased: dosePurchased,
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
-        paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : PaymentStatus.NOT_APPLICABLE,
+        paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : PaymentStatus.WAITING_PIX,
         isLastBeforeConsult: doseIsLast,
         consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
         nurse: isNurse,
@@ -443,7 +443,7 @@ const TreatmentDetail: React.FC = () => {
                     onChange={e => setEditStatus(e.target.value as TreatmentStatus)}
                     className="block w-full border-slate-300 rounded-lg font-medium focus:ring-pink-500 focus:border-pink-500"
                   >
-                    {Object.values(TreatmentStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                    {Object.values(TreatmentStatus).map(s => <option key={s} value={s}>{TREATMENT_STATUS_LABELS[s]}</option>)}
                   </select>
                 </div>
               </div>
@@ -607,8 +607,8 @@ const TreatmentDetail: React.FC = () => {
                 className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
               >
                 <option value="" disabled>Selecione...</option>
-                <option value={DoseStatus.PENDING}>Pendente</option>
-                <option value={DoseStatus.APPLIED}>Aplicada</option>
+                <option value={DoseStatus.PENDING}>{DOSE_STATUS_LABELS[DoseStatus.PENDING]}</option>
+                <option value={DoseStatus.APPLIED}>{DOSE_STATUS_LABELS[DoseStatus.APPLIED]}</option>
               </select>
             </div>
 
@@ -623,10 +623,10 @@ const TreatmentDetail: React.FC = () => {
                     className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                   >
                     <option value="" disabled>Selecione...</option>
-                    <option value={PaymentStatus.WAITING_PIX}>Aguardando PIX</option>
-                    <option value={PaymentStatus.WAITING_BOLETO}>Aguardando Boleto</option>
-                    <option value={PaymentStatus.WAITING_CARD}>Aguardando Cartao</option>
-                    <option value={PaymentStatus.PAID}>PAGO</option>
+                    <option value={PaymentStatus.WAITING_PIX}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_PIX]}</option>
+                    <option value={PaymentStatus.WAITING_BOLETO}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_BOLETO]}</option>
+                    <option value={PaymentStatus.WAITING_CARD}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_CARD]}</option>
+                    <option value={PaymentStatus.PAID}>{PAYMENT_STATUS_LABELS[PaymentStatus.PAID]}</option>
                   </select>
                 </div>
 
@@ -699,7 +699,7 @@ const TreatmentDetail: React.FC = () => {
                       className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                     >
                       <option value="" disabled>Selecione...</option>
-                      {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                      {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{SURVEY_STATUS_LABELS[s]}</option>)}
                     </select>
                   </div>
                   <div className="md:col-span-2 flex items-end gap-2">
@@ -793,17 +793,13 @@ const TreatmentDetail: React.FC = () => {
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getStatusColor(dose.status)}`}>
-                      {dose.status}
+                      {DOSE_STATUS_LABELS[dose.status] || dose.status}
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    {dose.paymentStatus === PaymentStatus.NOT_APPLICABLE ? (
-                      <span className="text-slate-300">-</span>
-                    ) : (
-                      <span className={`inline-block px-2 py-1 rounded-md border ${getStatusColor(dose.paymentStatus)}`}>
-                        {dose.paymentStatus}
-                      </span>
-                    )}
+                    <span className={`inline-block px-2 py-1 rounded-md border ${getStatusColor(dose.paymentStatus)}`}>
+                      {PAYMENT_STATUS_LABELS[dose.paymentStatus] || dose.paymentStatus}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     {dose.deliveryStatus === 'delivered' && (

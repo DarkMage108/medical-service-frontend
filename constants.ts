@@ -1,5 +1,5 @@
 
-import { TreatmentStatus, DoseStatus, PaymentStatus, UserRole } from './types';
+import { TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, UserRole } from './types';
 
 export const SESSION_KEY = 'azevedo_user_session';
 
@@ -7,6 +7,35 @@ export const ROLE_LABELS = {
   [UserRole.ADMIN]: 'Administrador',
   [UserRole.DOCTOR]: 'Médico',
   [UserRole.SECRETARY]: 'Secretária'
+};
+
+// Display labels for enums (Portuguese)
+export const DOSE_STATUS_LABELS: Record<DoseStatus, string> = {
+  [DoseStatus.PENDING]: 'Pendente',
+  [DoseStatus.APPLIED]: 'Aplicada',
+  [DoseStatus.NOT_ACCEPTED]: 'Não Realizada'
+};
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  [PaymentStatus.WAITING_PIX]: 'Aguardando PIX',
+  [PaymentStatus.WAITING_CARD]: 'Aguardando Cartão',
+  [PaymentStatus.WAITING_BOLETO]: 'Aguardando Boleto',
+  [PaymentStatus.PAID]: 'PAGO',
+  [PaymentStatus.WAITING_DELIVERY]: 'AGUARDANDO ENTREGA'
+};
+
+export const SURVEY_STATUS_LABELS: Record<SurveyStatus, string> = {
+  [SurveyStatus.WAITING]: 'Aguardando',
+  [SurveyStatus.SENT]: 'Enviado',
+  [SurveyStatus.ANSWERED]: 'Respondido',
+  [SurveyStatus.NOT_SENT]: 'Não Enviado'
+};
+
+export const TREATMENT_STATUS_LABELS: Record<TreatmentStatus, string> = {
+  [TreatmentStatus.ONGOING]: 'Em andamento',
+  [TreatmentStatus.FINISHED]: 'Encerrado',
+  [TreatmentStatus.REFUSED]: 'Recusado',
+  [TreatmentStatus.SUSPENDED]: 'Suspenso'
 };
 
 // --- DATE HELPERS ---

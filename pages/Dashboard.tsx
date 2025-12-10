@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, purchaseRequestsApi, dismissedLogsApi } from '../services/api';
 import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, Treatment, Protocol } from '../types';
-import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays } from '../constants';
+import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS } from '../constants';
 import { UserCheck, MessageSquare, Phone, ExternalLink, Activity, ShoppingCart } from 'lucide-react';
 import KpiCard from '../components/ui/KpiCard';
 import SectionCard from '../components/ui/SectionCard';
@@ -658,7 +658,7 @@ const Dashboard: React.FC = () => {
             onChange={(e) => handleQuickUpdate(dose.id, 'status', e.target.value)}
             className={`text-xs px-2 py-1 rounded-full border-0 font-semibold cursor-pointer focus:ring-2 focus:ring-amber-500 ${getStatusColor(dose.status)}`}
             >
-            {Object.values(DoseStatus).map(s => <option key={s} value={s}>{s}</option>)}
+            {Object.values(DoseStatus).map(s => <option key={s} value={s}>{DOSE_STATUS_LABELS[s]}</option>)}
             </select>
           </td>
           <td className="px-6 py-4">
@@ -670,7 +670,7 @@ const Dashboard: React.FC = () => {
             className={`text-xs px-2 py-1 rounded-full border-0 font-medium cursor-pointer focus:ring-2 focus:ring-amber-500 ${getStatusColor(dose.paymentStatus)} ${dose.status === DoseStatus.NOT_ACCEPTED ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
             <option value="" disabled>Selecione...</option>
-            {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{s}</option>)}
+            {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
             </select>
           </td>
           <td className="px-6 py-4">
@@ -1050,14 +1050,14 @@ const Dashboard: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-1">Status da Dose</label>
         <select required value={editDoseStatus} onChange={(e) => setEditDoseStatus(e.target.value as DoseStatus)} className="w-full border-slate-300 rounded-lg">
         <option value="" disabled>Selecione...</option>
-        {Object.values(DoseStatus).map(s => <option key={s} value={s}>{s}</option>)}
+        {Object.values(DoseStatus).map(s => <option key={s} value={s}>{DOSE_STATUS_LABELS[s]}</option>)}
         </select>
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">SituaÃ§Ã£o Pagamento</label>
         <select required={editDoseStatus !== DoseStatus.NOT_ACCEPTED} disabled={editDoseStatus === DoseStatus.NOT_ACCEPTED} value={editDosePayment} onChange={(e) => setEditDosePayment(e.target.value as PaymentStatus)} className={`w-full border-slate-300 rounded-lg ${editDoseStatus === DoseStatus.NOT_ACCEPTED ? 'bg-slate-100 opacity-50' : ''}`}>
         <option value="" disabled>Selecione...</option>
-        {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{s}</option>)}
+        {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
         </select>
       </div>
       <div className="lg:col-span-4 flex items-center mt-2">
@@ -1083,7 +1083,7 @@ const Dashboard: React.FC = () => {
           <label className="block text-sm font-medium text-slate-700 mb-1">2. Pesquisa</label>
           <select value={editSurveyStatus} onChange={e => setEditSurveyStatus(e.target.value as SurveyStatus)} className="w-full border-slate-300 rounded-lg">
           <option value="" disabled>Selecione...</option>
-          {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{s}</option>)}
+          {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{SURVEY_STATUS_LABELS[s]}</option>)}
           </select>
         </div>
         <div className="md:col-span-2 flex items-end gap-2">

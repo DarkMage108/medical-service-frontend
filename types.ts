@@ -107,32 +107,31 @@ export interface Protocol {
 }
 
 export enum DoseStatus {
-  PENDING = 'Pendente',
-  APPLIED = 'Aplicada',
-  NOT_ACCEPTED = 'Não Realizada'
+  PENDING = 'PENDING',
+  APPLIED = 'APPLIED',
+  NOT_ACCEPTED = 'NOT_ACCEPTED'
 }
 
 export enum PaymentStatus {
-  WAITING_PIX = 'Aguardando PIX',
-  WAITING_CARD = 'Aguardando Cartão',
-  WAITING_BOLETO = 'Aguardando Boleto',
-  PAID = 'PAGO',
-  WAITING_DELIVERY = 'AGUARDANDO ENTREGA',
-  NOT_APPLICABLE = 'Não Aplicável'
+  WAITING_PIX = 'WAITING_PIX',
+  WAITING_CARD = 'WAITING_CARD',
+  WAITING_BOLETO = 'WAITING_BOLETO',
+  PAID = 'PAID',
+  WAITING_DELIVERY = 'WAITING_DELIVERY'
 }
 
 export enum SurveyStatus {
-  WAITING = 'Aguardando',
-  SENT = 'Enviado',
-  ANSWERED = 'Respondido',
-  NOT_SENT = 'Não Enviado'
+  WAITING = 'WAITING',
+  SENT = 'SENT',
+  ANSWERED = 'ANSWERED',
+  NOT_SENT = 'NOT_SENT'
 }
 
 export enum TreatmentStatus {
-  ONGOING = 'Em andamento',
-  FINISHED = 'Encerrado',
-  REFUSED = 'Recusado',
-  SUSPENDED = 'Suspenso'
+  ONGOING = 'ONGOING',
+  FINISHED = 'FINISHED',
+  REFUSED = 'REFUSED',
+  SUSPENDED = 'SUSPENDED'
 }
 
 export interface Dose {
