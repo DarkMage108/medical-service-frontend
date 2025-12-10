@@ -337,6 +337,7 @@ const PatientList: React.FC = () => {
                 <th className="px-6 py-4">Paciente</th>
                 <th className="px-6 py-4">Responsavel</th>
                 <th className="px-6 py-4">Diagnostico</th>
+                <th className="px-6 py-4">Adesao</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Acoes</th>
               </tr>
@@ -355,6 +356,21 @@ const PatientList: React.FC = () => {
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getDiagnosisColorFromData(patient.mainDiagnosis || '')}`}>
                       {patient.mainDiagnosis || '-'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-full ${
+                      patient.adherenceLevel === 'BOA' ? 'bg-green-100 text-green-700' :
+                      patient.adherenceLevel === 'MODERADA' ? 'bg-yellow-100 text-yellow-700' :
+                      patient.adherenceLevel === 'BAIXA' ? 'bg-orange-100 text-orange-700' :
+                      patient.adherenceLevel === 'ABANDONO' ? 'bg-red-100 text-red-700' :
+                      'bg-slate-100 text-slate-500'
+                    }`}>
+                      {patient.adherenceLevel === 'BOA' ? 'BOA ADESAO' :
+                       patient.adherenceLevel === 'MODERADA' ? 'MODERADA' :
+                       patient.adherenceLevel === 'BAIXA' ? 'BAIXA' :
+                       patient.adherenceLevel === 'ABANDONO' ? 'ABANDONO' :
+                       '-'}
                     </span>
                   </td>
                   <td className="px-6 py-4">

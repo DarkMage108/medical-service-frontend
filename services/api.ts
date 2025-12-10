@@ -346,6 +346,26 @@ export const treatmentsApi = {
   delete: async (id: string) => {
     return apiFetch<void>(`/treatments/${id}`, { method: 'DELETE' });
   },
+
+  getAdherenceReport: async (id: string) => {
+    return apiFetch<{
+      treatmentId: string;
+      patientName: string;
+      adherenceClassification: string;
+      adherenceDescription: string;
+      metrics: {
+        totalDoses: number;
+        appliedDoses: number;
+        missedDoses: number;
+        totalDelayDays: number;
+        significantDelays: number;
+        daysSinceLastApplication: number;
+        pendingOverdueDays: number;
+      };
+      reportText: string;
+      generatedAt: string;
+    }>(`/treatments/${id}/adherence-report`);
+  },
 };
 
 // ============== DOSES API ==============

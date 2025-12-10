@@ -55,10 +55,14 @@ export interface ConsentDocument {
   url: string; // Mock URL
 }
 
+// Adherence level for patients
+export type AdherenceLevel = 'BOA' | 'MODERADA' | 'BAIXA' | 'ABANDONO' | null;
+
 // Composite type for UI lists
 export interface PatientFull extends Patient {
   guardian: Guardian;
   address?: Address;
+  adherenceLevel?: AdherenceLevel;
 }
 
 export enum FrequencyDays {

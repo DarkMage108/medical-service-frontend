@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi } from '../services/api';
 import { formatDate, getTreatmentStatusColor, addDays, diffInDays } from '../constants';
-import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2 } from 'lucide-react';
+import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2, ClipboardList } from 'lucide-react';
+import AdherenceReportModal from '../components/AdherenceReportModal';
 import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose } from '../types';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -42,6 +43,10 @@ const PatientDetail: React.FC = () => {
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventObservation, setEventObservation] = useState('');
   const [isSavingObservation, setIsSavingObservation] = useState(false);
+
+  // Adherence Report Modal State
+  const [isAdherenceReportOpen, setIsAdherenceReportOpen] = useState(false);
+  const [selectedTreatmentForReport, setSelectedTreatmentForReport] = useState<{ id: string; protocolName: string } | null>(null);
 
   // Form states for Patient Edit
   const [editName, setEditName] = useState('');
@@ -230,6 +235,66 @@ const PatientDetail: React.FC = () => {
     // Sort by date descending (most recent first)
     return events.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [treatments, patient, protocols, doses, dismissedLogs]);
+
+  // Calculate patient adherence level
+  const patientAdherenceLevel = useMemo(() => {
+    if (!patient || treatments.length === 0) return null;
+
+    const today = new Date();
+    let totalMissed = 0;
+    let totalSignificantDelays = 0;
+    let maxDaysSinceLast = 0;
+    let hasOngoingTreatment = false;
+
+    treatments.forEach(t => {
+      if (t.status !== TreatmentStatus.ONGOING) return;
+      hasOngoingTreatment = true;
+
+      const proto = protocols.find(p => p.id === t.protocolId);
+      const frequencyDays = proto?.frequencyDays || 28;
+      const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
+
+      let lastApplicationDate: Date | null = null;
+
+      treatmentDoses.forEach((dose, index) => {
+        if (dose.status === DoseStatus.NOT_ACCEPTED) {
+          totalMissed++;
+        }
+
+        if (dose.status === DoseStatus.APPLIED && index > 0) {
+          const prevDose = treatmentDoses[index - 1];
+          if (prevDose.status === DoseStatus.APPLIED) {
+            const prevDate = new Date(prevDose.applicationDate);
+            const expectedDate = new Date(prevDate);
+            expectedDate.setDate(expectedDate.getDate() + frequencyDays);
+            const actualDate = new Date(dose.applicationDate);
+            const delayDays = Math.max(0, Math.floor((actualDate.getTime() - expectedDate.getTime()) / (1000 * 60 * 60 * 24)));
+            if (delayDays > 3) {
+              totalSignificantDelays++;
+            }
+          }
+        }
+
+        if (dose.status === DoseStatus.APPLIED) {
+          lastApplicationDate = new Date(dose.applicationDate);
+        }
+      });
+
+      if (lastApplicationDate) {
+        const daysSinceLast = Math.floor((today.getTime() - lastApplicationDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSinceLast > maxDaysSinceLast) {
+          maxDaysSinceLast = daysSinceLast;
+        }
+      }
+    });
+
+    if (!hasOngoingTreatment) return null;
+
+    if (maxDaysSinceLast > 30) return 'ABANDONO';
+    if (totalMissed > 3 || totalSignificantDelays > 3) return 'BAIXA';
+    if (totalSignificantDelays > 0 || totalMissed > 0) return 'MODERADA';
+    return 'BOA';
+  }, [patient, treatments, protocols, doses]);
 
   const getProtocolName = (pid: string) => {
     return protocols.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
@@ -502,6 +567,22 @@ const PatientDetail: React.FC = () => {
             <RefreshCw size={16} className={`mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
+          {treatments.length > 0 && (
+            <button
+              onClick={() => {
+                const activeTreatment = treatments.find(t => t.status === TreatmentStatus.ONGOING) || treatments[0];
+                setSelectedTreatmentForReport({
+                  id: activeTreatment.id,
+                  protocolName: getProtocolName(activeTreatment.protocolId)
+                });
+                setIsAdherenceReportOpen(true);
+              }}
+              className="flex items-center bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-sm"
+            >
+              <ClipboardList size={18} className="mr-2" />
+              Relatorio de Adesao
+            </button>
+          )}
           <button
             onClick={() => {
               setUploadError(null);
@@ -510,7 +591,7 @@ const PatientDetail: React.FC = () => {
             className="flex items-center bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
           >
             <UploadCloud size={18} className="mr-2 text-pink-600" />
-            Termos de Consentimento
+            Termos
             {documents.length > 0 && (
               <span className="ml-2 bg-pink-100 text-pink-700 text-xs font-bold px-2 py-0.5 rounded-full">
                 {documents.length}
@@ -681,10 +762,25 @@ const PatientDetail: React.FC = () => {
         {/* Info Card */}
         <div className="md:col-span-1 space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="font-semibold text-slate-800 mb-4 flex items-center">
-              <User size={18} className="mr-2 text-pink-500" />
-              Dados Pessoais
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-800 flex items-center">
+                <User size={18} className="mr-2 text-pink-500" />
+                Dados Pessoais
+              </h3>
+              {patientAdherenceLevel && (
+                <span className={`px-3 py-1 text-xs font-bold rounded-full border ${
+                  patientAdherenceLevel === 'BOA' ? 'bg-green-100 text-green-700 border-green-200' :
+                  patientAdherenceLevel === 'MODERADA' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                  patientAdherenceLevel === 'BAIXA' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                  'bg-red-100 text-red-700 border-red-200'
+                }`}>
+                  {patientAdherenceLevel === 'BOA' ? 'BOA ADESAO' :
+                   patientAdherenceLevel === 'MODERADA' ? 'MODERADA' :
+                   patientAdherenceLevel === 'BAIXA' ? 'BAIXA ADESAO' :
+                   'ABANDONO'}
+                </span>
+              )}
+            </div>
             <div className="space-y-3 text-sm">
               <div>
                 <span className="text-slate-500 block">Nascimento</span>
@@ -1053,6 +1149,19 @@ const PatientDetail: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Adherence Report Modal */}
+      {selectedTreatmentForReport && (
+        <AdherenceReportModal
+          isOpen={isAdherenceReportOpen}
+          onClose={() => {
+            setIsAdherenceReportOpen(false);
+            setSelectedTreatmentForReport(null);
+          }}
+          treatmentId={selectedTreatmentForReport.id}
+          protocolName={selectedTreatmentForReport.protocolName}
+        />
       )}
     </div>
   );
