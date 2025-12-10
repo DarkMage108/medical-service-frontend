@@ -115,13 +115,14 @@ const Dashboard: React.FC = () => {
 
   // Quick Update Handler
   const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus', value: string) => {
-  try {
-    const updates = { [field]: value };
-    const updated = await dosesApi.update(doseId, updates);
-    setDoses(prev => prev.map(d => d.id === doseId ? updated : d));
-  } catch (err: any) {
-    setError(err.message || 'Erro ao atualizar dose');
-  }
+    try {
+      const updates = { [field]: value };
+      const updated = await dosesApi.update(doseId, updates);
+      setDoses(prev => prev.map(d => d.id === doseId ? { ...d, ...updated } : d));
+    } catch (err: any) {
+      console.error('Error updating dose:', err);
+      setError(err.message || 'Erro ao atualizar dose');
+    }
   };
 
   // Helpers
