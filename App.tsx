@@ -45,13 +45,47 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Menu key to path mapping for redirects
+const MENU_TO_PATH: Record<string, string> = {
+  dashboard: '/',
+  checklist: '/checklist',
+  nursing: '/enfermagem',
+  patients: '/pacientes',
+  history: '/historico',
+  inventory: '/estoque',
+  diagnoses: '/diagnosticos',
+  protocols: '/protocolos',
+};
+
+// Order of fallback routes
+const MENU_ORDER = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'diagnoses', 'protocols'];
+
+// Default redirect component - redirects to first accessible route
+const DefaultRedirect: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+  const { permissions, isLoading: permissionsLoading } = usePermissions();
+
+  if (isLoading || permissionsLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Find first accessible route
+  const firstAccessible = MENU_ORDER.find(key => permissions[key]);
+  const redirectTo = firstAccessible ? MENU_TO_PATH[firstAccessible] : '/login';
+  return <Navigate to={redirectTo} replace />;
+};
+
 // Protected route with permission check
 const ProtectedRouteWithPermission: React.FC<{
   children: React.ReactNode;
   menuKey: string;
 }> = ({ children, menuKey }) => {
   const { isAuthenticated, isLoading } = useAuth();
-  const { hasAccess, isLoading: permissionsLoading } = usePermissions();
+  const { hasAccess, permissions, isLoading: permissionsLoading } = usePermissions();
 
   if (isLoading || permissionsLoading) {
     return <LoadingScreen />;
@@ -62,7 +96,10 @@ const ProtectedRouteWithPermission: React.FC<{
   }
 
   if (!hasAccess(menuKey)) {
-    return <Navigate to="/" replace />;
+    // Find first accessible route
+    const firstAccessible = MENU_ORDER.find(key => permissions[key]);
+    const redirectTo = firstAccessible ? MENU_TO_PATH[firstAccessible] : '/login';
+    return <Navigate to={redirectTo} replace />;
   }
 
   return <>{children}</>;
@@ -241,8 +278,8 @@ const AppContent: React.FC = () => {
         }
       />
 
-      {/* Catch all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Catch all - redirect to first accessible route */}
+      <Route path="*" element={<DefaultRedirect />} />
     </Routes>
   );
 };

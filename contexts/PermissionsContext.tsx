@@ -53,8 +53,6 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, [loadPermissions, user]);
 
   const hasAccess = useCallback((menuKey: string): boolean => {
-    // Always allow dashboard access as fallback
-    if (menuKey === 'dashboard') return true;
     return permissions[menuKey] ?? false;
   }, [permissions]);
 
