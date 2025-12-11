@@ -362,6 +362,17 @@ const InventoryList: React.FC = () => {
   }
   };
 
+  const handleDeleteInventoryItem = async (item: InventoryItem) => {
+  if (!window.confirm(`Excluir o lote "${item.lotNumber}" de ${item.medicationName}? Esta acao nao pode ser desfeita.`)) return;
+
+  try {
+    await inventoryApi.delete(item.id);
+    setInventory(prev => prev.filter(i => i.id !== item.id));
+  } catch (err: any) {
+    setError(err.message || 'Erro ao excluir item do estoque');
+  }
+  };
+
   if (isLoading) {
   return (
     <div className="flex items-center justify-center h-64">
@@ -479,13 +490,22 @@ const InventoryList: React.FC = () => {
             <td className="px-6 py-3 text-slate-500">{formatDate(item.entryDate)}</td>
             <td className="px-6 py-3 text-right font-bold text-slate-800">{item.quantity} {item.unit}</td>
             <td className="px-6 py-3 text-right">
+              <div className="flex items-center justify-end gap-1">
               <button
-              onClick={() => handleEditClick(item)}
-              className="p-1.5 text-slate-400 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors"
-              title="Editar Estoque"
+                onClick={() => handleEditClick(item)}
+                className="p-1.5 text-slate-400 hover:text-pink-600 hover:bg-pink-50 rounded-lg transition-colors"
+                title="Editar Estoque"
               >
-              <Edit2 size={16} />
+                <Edit2 size={16} />
               </button>
+              <button
+                onClick={() => handleDeleteInventoryItem(item)}
+                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Excluir Lote"
+              >
+                <Trash2 size={16} />
+              </button>
+              </div>
             </td>
             </tr>
           ))}
