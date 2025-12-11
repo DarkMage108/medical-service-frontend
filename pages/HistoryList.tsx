@@ -100,6 +100,7 @@ const HistoryList: React.FC = () => {
               id: contactId,
               dismissedAt: dismissedAt,
               patientName: patient.fullName,
+              patientPhone: patient.guardian?.phonePrimary || '',
               protocolName: proto.name,
               message: m.message,
               isMonitoring: proto.category === ProtocolCategory.MONITORING || proto.category === 'MONITORING',
@@ -293,8 +294,13 @@ const HistoryList: React.FC = () => {
                           {item.dismissedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </td>
-                      <td className="px-6 py-4 font-bold text-slate-800">
-                        {item.patientName}
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-800">{item.patientName}</div>
+                        {item.patientPhone && (
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            {item.patientPhone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         {item.isMonitoring ? (
