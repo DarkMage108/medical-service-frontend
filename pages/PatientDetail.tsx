@@ -630,7 +630,7 @@ const PatientDetail: React.FC = () => {
 
                     <Link
                       to={evt.type === 'message' ? '/' : `/tratamento/${evt.treatmentId}`}
-                      className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[72px] overflow-hidden ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
+                      className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[90px] overflow-hidden ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
                       title={evt.subtitle}
                     >
                       <p className={`text-xs font-bold truncate ${isLate ? 'text-red-800' : 'text-slate-800'}`}>
