@@ -65,6 +65,7 @@ const NursingList: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editStatus, setEditStatus] = useState<DoseStatus>(DoseStatus.PENDING);
   const [editApplicationDate, setEditApplicationDate] = useState('');
+  const [editApplicationTime, setEditApplicationTime] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Load data from API
@@ -231,7 +232,11 @@ const NursingList: React.FC = () => {
   const handleOpenModal = (item: NursingItem) => {
     setSelectedItem(item);
     setEditStatus(item.status);
+    // Extract date part (YYYY-MM-DD)
     setEditApplicationDate(item.dose.applicationDate.split('T')[0]);
+    // Extract time part (HH:MM)
+    const timePart = item.dose.applicationDate.split('T')[1];
+    setEditApplicationTime(timePart ? timePart.substring(0, 5) : '08:00');
     setIsModalOpen(true);
   };
 
@@ -241,15 +246,18 @@ const NursingList: React.FC = () => {
 
     setIsSaving(true);
     try {
+      // Combine date and time into ISO format
+      const applicationDateTime = `${editApplicationDate}T${editApplicationTime}:00`;
+
       await dosesApi.update(selectedItem.doseId, {
         status: editStatus,
-        applicationDate: editApplicationDate,
+        applicationDate: applicationDateTime,
       });
 
       // Update local state
       setDoses(prev => prev.map(d =>
         d.id === selectedItem.doseId
-          ? { ...d, status: editStatus, applicationDate: editApplicationDate }
+          ? { ...d, status: editStatus, applicationDate: applicationDateTime }
           : d
       ));
 
@@ -577,17 +585,30 @@ const NursingList: React.FC = () => {
               </div>
             </div>
 
-            {/* Application Date */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Data da Aplicacao
-              </label>
-              <input
-                type="date"
-                value={editApplicationDate}
-                onChange={(e) => setEditApplicationDate(e.target.value)}
-                className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-              />
+            {/* Application Date and Time */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Data da Aplicacao
+                </label>
+                <input
+                  type="date"
+                  value={editApplicationDate}
+                  onChange={(e) => setEditApplicationDate(e.target.value)}
+                  className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Horario da Aplicacao
+                </label>
+                <input
+                  type="time"
+                  value={editApplicationTime}
+                  onChange={(e) => setEditApplicationTime(e.target.value)}
+                  className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                />
+              </div>
             </div>
 
             {/* Actions */}
