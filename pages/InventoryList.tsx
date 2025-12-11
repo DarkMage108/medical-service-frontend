@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { inventoryApi, medicationsApi, purchaseRequestsApi, dispenseLogsApi } from '../services/api';
 import { InventoryItem, MedicationBase } from '../types';
@@ -141,11 +141,12 @@ const InventoryList: React.FC = () => {
 
   // --- DERIVED DATA ---
 
-  // Group Inventory by Medication Name
+  // Group Inventory by Medication Name (exclude items with quantity = 0)
   const groupedInventory = useMemo(() => {
   const grouped: Record<string, { total: number, lots: InventoryItem[] }> = {};
 
-  inventory.forEach(item => {
+  // Filter out items with quantity = 0
+  inventory.filter(item => item.quantity > 0).forEach(item => {
     if (!grouped[item.medicationName]) {
     grouped[item.medicationName] = { total: 0, lots: [] };
     }
