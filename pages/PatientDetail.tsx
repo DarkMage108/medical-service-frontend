@@ -617,7 +617,7 @@ const PatientDetail: React.FC = () => {
                 const isDose = evt.type === 'dose';
 
                 return (
-                  <div key={evt.id} className="relative z-10 flex flex-col items-center min-w-[140px] text-center flex-shrink-0 group">
+                  <div key={evt.id} className="relative z-10 flex flex-col items-center w-[120px] text-center flex-shrink-0 group">
                     <div className={`mb-2 text-xs font-bold ${isLate ? 'text-red-600' : 'text-slate-500'}`}>
                       {formatDate(evt.date)}
                     </div>
@@ -630,12 +630,13 @@ const PatientDetail: React.FC = () => {
 
                     <Link
                       to={evt.type === 'message' ? '/' : `/tratamento/${evt.treatmentId}`}
-                      className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
+                      className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[72px] overflow-hidden ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
+                      title={evt.subtitle}
                     >
                       <p className={`text-xs font-bold truncate ${isLate ? 'text-red-800' : 'text-slate-800'}`}>
                         {evt.title}
                       </p>
-                      <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5" title={evt.subtitle}>
+                      <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
                         {evt.subtitle}
                       </p>
                       {isLate && (
