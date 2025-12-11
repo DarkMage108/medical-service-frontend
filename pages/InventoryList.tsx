@@ -158,6 +158,24 @@ const InventoryList: React.FC = () => {
     .filter(g => g.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [inventory, searchTerm]);
 
+  // Compute real-time stock per medication for purchase request display
+  const stockByMedication = useMemo(() => {
+  const stockMap: Record<string, number> = {};
+  const today = new Date();
+  inventory.forEach(item => {
+    // Only count active, non-expired items with quantity > 0
+    if (item.active !== false && item.quantity > 0 && new Date(item.expiryDate) > today) {
+    stockMap[item.medicationName] = (stockMap[item.medicationName] || 0) + item.quantity;
+    }
+  });
+  return stockMap;
+  }, [inventory]);
+
+  // Filter requests to exclude RECEIVED status
+  const activeRequests = useMemo(() => {
+  return requests.filter(r => r.status !== 'RECEIVED');
+  }, [requests]);
+
   // --- REPORT DATA PROCESSING (MATRIX) ---
   const reportMatrix = useMemo(() => {
   const filteredLogs = logs.filter(log => {
@@ -230,9 +248,24 @@ const InventoryList: React.FC = () => {
   const handleUpdateStatus = async (id: string, status: 'ORDERED' | 'RECEIVED') => {
   try {
     await purchaseRequestsApi.update(id, status);
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    if (status === 'RECEIVED') {
+      // Remove from list when received
+      setRequests(prev => prev.filter(r => r.id !== id));
+    } else {
+      setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    }
   } catch (err: any) {
     setError(err.message || 'Erro ao atualizar status');
+  }
+  };
+
+  const handleDeleteRequest = async (id: string) => {
+  if (!window.confirm('Excluir este pedido de compra?')) return;
+  try {
+    await purchaseRequestsApi.delete(id);
+    setRequests(prev => prev.filter(r => r.id !== id));
+  } catch (err: any) {
+    setError(err.message || 'Erro ao excluir pedido');
   }
   };
 
@@ -418,9 +451,9 @@ const InventoryList: React.FC = () => {
       className={`flex items-center px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'orders' ? 'bg-pink-50 text-pink-700' : 'text-slate-600 hover:bg-slate-50'}`}
       >
       Pedidos
-      {requests.filter(r => r.status === 'PENDING').length > 0 && (
+      {activeRequests.filter(r => r.status === 'PENDING').length > 0 && (
         <span className="ml-2 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded-full">
-        {requests.filter(r => r.status === 'PENDING').length}
+        {activeRequests.filter(r => r.status === 'PENDING').length}
         </span>
       )}
       </button>
@@ -781,47 +814,51 @@ const InventoryList: React.FC = () => {
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {requests.length === 0 ? (
+        {activeRequests.length === 0 ? (
         <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhum pedido de compra necessário no momento.</td></tr>
         ) : (
-        requests.map(req => (
+        activeRequests.map(req => {
+          const realTimeStock = stockByMedication[req.medicationName] || 0;
+          return (
           <tr key={req.id} className="hover:bg-slate-50">
-          <td className="px-6 py-4">{formatDate(req.createdAt)}</td>
-          <td className="px-6 py-4 font-medium text-slate-800">{req.medicationName}</td>
-          <td className="px-6 py-4 text-red-600 font-bold">{req.currentStock}</td>
-          <td className="px-6 py-4">{req.predictedConsumption10Days}</td>
-          <td className="px-6 py-4">
+            <td className="px-6 py-4">{formatDate(req.createdAt)}</td>
+            <td className="px-6 py-4 font-medium text-slate-800">{req.medicationName}</td>
+            <td className="px-6 py-4 text-red-600 font-bold">{realTimeStock}</td>
+            <td className="px-6 py-4">{req.predictedConsumption10Days}</td>
+            <td className="px-6 py-4">
             <span className={`text-xs px-2 py-1 rounded-full font-bold ${req.status === 'PENDING' ? 'bg-orange-100 text-orange-700' :
-              req.status === 'ORDERED' ? 'bg-blue-100 text-blue-700' :
-              'bg-green-100 text-green-700'
+              'bg-blue-100 text-blue-700'
             }`}>
-            {req.status === 'PENDING' ? 'Pendente' : req.status === 'ORDERED' ? 'Comprado' : 'Recebido'}
+              {req.status === 'PENDING' ? 'Pendente' : 'Comprado'}
             </span>
-          </td>
-          <td className="px-6 py-4 text-right">
+            </td>
+            <td className="px-6 py-4 text-right">
             <div className="flex justify-end gap-2">
-            {req.status === 'PENDING' && (
+              {req.status === 'PENDING' && (
               <button onClick={() => handleUpdateStatus(req.id, 'ORDERED')} className="text-blue-600 hover:underline text-xs font-bold border border-blue-200 px-2 py-1 rounded hover:bg-blue-50">
-              Marcar Comprado
+                Marcar Comprado
               </button>
-            )}
-            {req.status === 'ORDERED' && (
+              )}
+              {req.status === 'ORDERED' && (
               <button
-              onClick={() => handleReceiveOrder(req)}
-              className="text-white bg-green-600 hover:bg-green-700 text-xs font-bold px-3 py-1.5 rounded flex items-center transition-colors shadow-sm"
+                onClick={() => handleReceiveOrder(req)}
+                className="text-white bg-green-600 hover:bg-green-700 text-xs font-bold px-3 py-1.5 rounded flex items-center transition-colors shadow-sm"
               >
-              Receber <ArrowRight size={12} className="ml-1" />
+                Receber <ArrowRight size={12} className="ml-1" />
               </button>
-            )}
-            {req.status === 'RECEIVED' && (
-              <span className="text-slate-400 text-xs italic flex items-center">
-              <Check size={12} className="mr-1" /> Concluído
-              </span>
-            )}
+              )}
+              <button
+              onClick={() => handleDeleteRequest(req.id)}
+              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+              title="Excluir pedido"
+              >
+              <Trash2 size={16} />
+              </button>
             </div>
-          </td>
+            </td>
           </tr>
-        ))
+          );
+        })
         )}
       </tbody>
       </table>
