@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 const DEMO_USERS = [
   { email: 'admin@azevedo.com', password: 'admin123', name: 'Administrador', role: 'ADMIN' },
   { email: 'medico@azevedo.com', password: 'doctor123', name: 'Dr. Silva', role: 'DOCTOR' },
-  { email: 'secretaria@azevedo.com', password: 'secretary123', name: 'Maria SecretÃ¡ria', role: 'SECRETARY' },
+  { email: 'secretaria@azevedo.com', password: 'secretary123', name: 'Maria Secretária', role: 'SECRETARY' },
 ];
 
 const Login: React.FC = () => {
@@ -25,7 +25,7 @@ const Login: React.FC = () => {
   try {
     await login(email, password);
   } catch (err: any) {
-    setLocalError(err.message || 'Credenciais invÃ¡lidas. Verifique seu email e senha.');
+    setLocalError(err.message || 'Credenciais inválidas. Verifique seu email e senha.');
   } finally {
     setIsSubmitting(false);
   }
@@ -40,8 +40,8 @@ const Login: React.FC = () => {
       <div className="flex items-center justify-center mx-auto mb-4">
       <img src="/logo.png" alt="Logo" className="h-24" />
       </div>
-      <h1 className="text-2xl font-bold text-white mb-2">Azevedo ServiÃ§os MÃ©dicos</h1>
-      <p className="text-pink-100">Acesso Restrito Ã  Equipe ClÃ­nica</p>
+      <h1 className="text-2xl font-bold text-white mb-2">Azevedo Serviços Médicos</h1>
+      <p className="text-pink-100">Acesso Restrito à Equipe Clínica</p>
     </div>
 
     <div className="p-8">
@@ -75,7 +75,7 @@ const Login: React.FC = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-colors"
-          placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+          placeholder="••••••••"
           required
           disabled={isSubmitting}
         />
@@ -133,7 +133,7 @@ const Login: React.FC = () => {
       </div>
 
       <div className="mt-6 text-center text-xs text-slate-400">
-      &copy; 2024 Azevedo ServiÃ§os MÃ©dicos. Todos os direitos reservados.
+      &copy; 2024 Azevedo Serviços Médicos. Todos os direitos reservados.
       </div>
     </div>
     </div>

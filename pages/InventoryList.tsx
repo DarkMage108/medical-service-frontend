@@ -12,7 +12,7 @@ const PHARMACEUTICAL_FORM_OPTIONS = [
   { code: 'AMPOLA', label: 'Ampola' },
   { code: 'FRASCO', label: 'Frasco' },
   { code: 'SERINGA_PRONTA', label: 'Seringa Pronta' },
-  { code: 'PO_LIOFILIZADO', label: 'PÃ³ Liofilizado' },
+  { code: 'PO_LIOFILIZADO', label: 'Pó Liofilizado' },
   { code: 'COMPRIMIDO', label: 'Comprimido' },
 ] as const;
 
@@ -388,9 +388,9 @@ const InventoryList: React.FC = () => {
     <div>
       <h1 className="text-2xl font-bold text-slate-800 flex items-center">
       <Package size={28} className="mr-3 text-pink-600" />
-      Estoque de MedicaÃ§Ãµes
+      Estoque de Medicações
       </h1>
-      <p className="text-slate-500 mt-1">GestÃ£o de lotes, dispensaÃ§Ã£o e compras.</p>
+      <p className="text-slate-500 mt-1">Gestão de lotes, dispensação e compras.</p>
     </div>
 
     {/* TABS */}
@@ -429,7 +429,7 @@ const InventoryList: React.FC = () => {
       className={`flex items-center px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'reports' ? 'bg-pink-50 text-pink-700' : 'text-slate-600 hover:bg-slate-50'}`}
       >
       <PieChart size={16} className="mr-2" />
-      RelatÃ³rios Gerenciais
+      Relatórios Gerenciais
       </button>
     </div>
     </div>
@@ -451,7 +451,7 @@ const InventoryList: React.FC = () => {
       </div>
       <input
         type="text"
-        placeholder="Buscar medicaÃ§Ã£o..."
+        placeholder="Buscar medicação..."
         className="block w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-pink-500 focus:border-pink-500"
         value={searchTerm}
         onChange={e => setSearchTerm(e.target.value)}
@@ -474,7 +474,7 @@ const InventoryList: React.FC = () => {
             <th className="px-6 py-2">Validade</th>
             <th className="px-6 py-2">Entrada</th>
             <th className="px-6 py-2 text-right">Quantidade</th>
-            <th className="px-6 py-2 text-right">AÃ§Ã£o</th>
+            <th className="px-6 py-2 text-right">Ação</th>
           </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -542,7 +542,7 @@ const InventoryList: React.FC = () => {
         />
         </div>
         <div className="md:col-span-2">
-        <label className="block text-sm font-medium text-slate-700 mb-1">LaboratÃ³rio (Opc)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Laboratório (Opc)</label>
         <input
           type="text"
           placeholder="Ex: Eurofarma"
@@ -552,7 +552,7 @@ const InventoryList: React.FC = () => {
         />
         </div>
         <div className="md:col-span-2">
-        <label className="block text-sm font-medium text-slate-700 mb-1">PrincÃ­pio Ativo</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Princípio Ativo</label>
         <input
           type="text"
           required
@@ -563,7 +563,7 @@ const InventoryList: React.FC = () => {
         />
         </div>
         <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">ApresentaÃ§Ã£o (Dosagem)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Apresentação (Dosagem)</label>
         <input
           type="text"
           required
@@ -574,7 +574,7 @@ const InventoryList: React.FC = () => {
         />
         </div>
         <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Forma FarmacÃªutica</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Forma Farmacêutica</label>
         <select
           className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
           value={newForm}
@@ -606,11 +606,11 @@ const InventoryList: React.FC = () => {
         <thead className="text-xs text-slate-500 uppercase bg-white">
         <tr>
           <th className="px-6 py-3">Nome Comercial</th>
-          <th className="px-6 py-3">PrincÃ­pio Ativo</th>
-          <th className="px-6 py-3">ApresentaÃ§Ã£o</th>
+          <th className="px-6 py-3">Princípio Ativo</th>
+          <th className="px-6 py-3">Apresentação</th>
           <th className="px-6 py-3">Forma</th>
-          <th className="px-6 py-3">LaboratÃ³rio</th>
-          <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+          <th className="px-6 py-3">Laboratório</th>
+          <th className="px-6 py-3 text-right">Ação</th>
         </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -655,11 +655,11 @@ const InventoryList: React.FC = () => {
         <div>
         <p className="font-bold text-blue-800">Recebendo Pedido</p>
         <p className="text-sm text-blue-600 mt-1">
-          Preencha os dados do lote fÃ­sico para concluir o recebimento deste pedido.
-          O pedido serÃ¡ marcado como <span className="font-bold">RECEBIDO</span> apÃ³s salvar.
+          Preencha os dados do lote físico para concluir o recebimento deste pedido.
+          O pedido será marcado como <span className="font-bold">RECEBIDO</span> após salvar.
         </p>
         <button onClick={() => { setFulfillingRequestId(null); setEntryMedication(''); setEntryQuantity(0); }} className="text-xs text-blue-500 underline mt-2 hover:text-blue-700">
-          Cancelar vÃ­nculo (Entrada avulsa)
+          Cancelar vínculo (Entrada avulsa)
         </button>
         </div>
       </div>
@@ -667,7 +667,7 @@ const InventoryList: React.FC = () => {
 
       <form onSubmit={handleSaveEntry} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">MedicaÃ§Ã£o</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Medicação</label>
         <select
         required
         className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -696,7 +696,7 @@ const InventoryList: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">NÃºmero do Lote</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Número do Lote</label>
         <input
           type="text"
           required
@@ -761,28 +761,28 @@ const InventoryList: React.FC = () => {
     {/* --- TAB: PEDIDOS --- */}
     {activeTab === 'orders' && (
     <SectionCard
-      title="Pedidos de Compra (AutomÃ¡ticos)"
+      title="Pedidos de Compra (Automáticos)"
       icon={<ShoppingCart size={18} className="text-purple-600" />}
       headerBg="bg-purple-50/30"
     >
       <div className="p-4 bg-purple-50/50 text-purple-800 text-sm mb-4 rounded-lg flex items-start mx-4 mt-4">
       <AlertTriangle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-      <p>O sistema gera pedidos automaticamente quando o estoque Ã© insuficiente para cobrir as doses agendadas dos prÃ³ximos 10 dias.</p>
+      <p>O sistema gera pedidos automaticamente quando o estoque é insuficiente para cobrir as doses agendadas dos próximos 10 dias.</p>
       </div>
       <table className="w-full text-sm text-left">
       <thead className="text-xs text-slate-500 uppercase bg-slate-50">
         <tr>
         <th className="px-6 py-3">Data Gerado</th>
-        <th className="px-6 py-3">MedicaÃ§Ã£o</th>
+        <th className="px-6 py-3">Medicação</th>
         <th className="px-6 py-3">Estoque Atual</th>
         <th className="px-6 py-3">Demanda (10d)</th>
         <th className="px-6 py-3">Status</th>
-        <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+        <th className="px-6 py-3 text-right">Ação</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {requests.length === 0 ? (
-        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhum pedido de compra necessÃ¡rio no momento.</td></tr>
+        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhum pedido de compra necessário no momento.</td></tr>
         ) : (
         requests.map(req => (
           <tr key={req.id} className="hover:bg-slate-50">
@@ -815,7 +815,7 @@ const InventoryList: React.FC = () => {
             )}
             {req.status === 'RECEIVED' && (
               <span className="text-slate-400 text-xs italic flex items-center">
-              <Check size={12} className="mr-1" /> ConcluÃ­do
+              <Check size={12} className="mr-1" /> Concluído
               </span>
             )}
             </div>
@@ -828,18 +828,18 @@ const InventoryList: React.FC = () => {
     </SectionCard>
     )}
 
-    {/* --- TAB: RELATÃ“RIOS --- */}
+    {/* --- TAB: RELATÓRIOS --- */}
     {activeTab === 'reports' && (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col md:flex-row items-end md:items-center justify-between gap-4">
       <div className="flex items-center gap-2">
         <BarChart3 size={20} className="text-pink-600" />
-        <h3 className="font-bold text-slate-800">RelatÃ³rio de DispensaÃ§Ã£o</h3>
+        <h3 className="font-bold text-slate-800">Relatório de Dispensação</h3>
       </div>
 
       <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
         <div className="flex flex-col">
-        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1">InÃ­cio</label>
+        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1">Início</label>
         <input
           type="date"
           value={reportStartDate}
@@ -862,16 +862,16 @@ const InventoryList: React.FC = () => {
           className="flex items-center bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-slate-200 h-[34px]"
         >
           <ArrowRightLeft size={14} className="mr-2" />
-          {reportViewMode === 'monthly' ? 'VisÃ£o Mensal' : 'VisÃ£o Trimestral'}
+          {reportViewMode === 'monthly' ? 'Visão Mensal' : 'Visão Trimestral'}
         </button>
         </div>
       </div>
       </div>
 
-      <SectionCard title={`DispensaÃ§Ã£o ${reportViewMode === 'monthly' ? 'Mensal' : 'Trimestral'} (Unidades)`} icon={<BarChart3 size={18} className="text-slate-600" />} headerBg="bg-slate-50">
+      <SectionCard title={`Dispensação ${reportViewMode === 'monthly' ? 'Mensal' : 'Trimestral'} (Unidades)`} icon={<BarChart3 size={18} className="text-slate-600" />} headerBg="bg-slate-50">
       {reportMatrix.rows.length === 0 ? (
         <div className="p-12 text-center text-slate-400">
-        Nenhum dado encontrado no perÃ­odo selecionado.
+        Nenhum dado encontrado no período selecionado.
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -928,12 +928,12 @@ const InventoryList: React.FC = () => {
     </div>
     )}
 
-    {/* --- MODAL DE EDIÃ‡ÃƒO DE ESTOQUE --- */}
+    {/* --- MODAL DE EDIÇÃO DE ESTOQUE --- */}
     <Modal open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Editar Lote de Estoque" icon={<Edit2 size={20} className="text-pink-600" />}>
     {editingItem && (
       <form onSubmit={handleSaveEdit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">MedicaÃ§Ã£o (Fixo)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Medicação (Fixo)</label>
         <input
         type="text"
         disabled
@@ -985,7 +985,7 @@ const InventoryList: React.FC = () => {
         className="flex items-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
         >
         {isSavingEdit ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
-        Salvar AlteraÃ§Ãµes
+        Salvar Alterações
         </button>
       </div>
       </form>

@@ -160,7 +160,7 @@ const Dashboard: React.FC = () => {
     setIsCopied(false);
     setIsDelivered(false);
   } else {
-    alert('EndereÃ§o nÃ£o cadastrado para este paciente.');
+    alert('Endereço não cadastrado para este paciente.');
   }
   };
 
@@ -202,7 +202,7 @@ const Dashboard: React.FC = () => {
   if (!file || !uploadTargetPatientId) return;
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    alert(`O arquivo Ã© muito grande. O limite mÃ¡ximo Ã© de ${MAX_FILE_SIZE_MB}MB.`);
+    alert(`O arquivo é muito grande. O limite máximo é de ${MAX_FILE_SIZE_MB}MB.`);
     return;
   }
 
@@ -213,7 +213,7 @@ const Dashboard: React.FC = () => {
   ];
 
   if (!allowedTypes.includes(file.type)) {
-    alert('Formato invÃ¡lido. Apenas PDF ou Word.');
+    alert('Formato inválido. Apenas PDF ou Word.');
     return;
   }
 
@@ -418,7 +418,7 @@ const Dashboard: React.FC = () => {
   const patientsByDiagnosis = useMemo(() => {
   const counts: Record<string, number> = {};
   patients.filter(p => p.active).forEach(p => {
-    const diag = p.mainDiagnosis || 'NÃ£o Informado';
+    const diag = p.mainDiagnosis || 'Não Informado';
     counts[diag] = (counts[diag] || 0) + 1;
   });
   return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
@@ -525,8 +525,8 @@ const Dashboard: React.FC = () => {
     <div className="flex gap-2">
       <select className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-500">
       <option>Todos</option>
-      <option>Ãšltimos 30 dias</option>
-      <option>Ãšltimos 7 dias</option>
+      <option>Últimos 30 dias</option>
+      <option>Últimos 7 dias</option>
       </select>
     </div>
     </div>
@@ -541,7 +541,7 @@ const Dashboard: React.FC = () => {
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
     <KpiCard
-      title="ReposiÃ§Ã£o de Estoque" subtitle="Pedidos AutomÃ¡ticos" value={pendingPurchases}
+      title="Reposição de Estoque" subtitle="Pedidos Automáticos" value={pendingPurchases}
       icon={<ShoppingCart size={20} className={pendingPurchases > 0 ? "text-red-600 animate-pulse" : "text-emerald-600"} />}
       accentColor={pendingPurchases > 0 ? "red" : "green"}
       onClick={() => navigate('/estoque', { state: { activeTab: 'orders' } })}
@@ -562,7 +562,7 @@ const Dashboard: React.FC = () => {
       onClick={() => scrollToSection('section-consent')}
     />
     <KpiCard
-      title="Doses em Atraso" subtitle="Requer atenÃ§Ã£o" value={overdueDoses.length}
+      title="Doses em Atraso" subtitle="Requer atenção" value={overdueDoses.length}
       icon={<AlertCircle size={20} className="text-red-600" />} accentColor="red"
       onClick={() => scrollToSection('section-overdue')}
     />
@@ -605,7 +605,7 @@ const Dashboard: React.FC = () => {
     countBadge={highActivityDoses.length} badgeColor="bg-amber-100 text-amber-800" headerBg="bg-amber-50/30"
     >
     <div className="p-2 bg-amber-50 text-amber-800 text-xs text-center border-b border-amber-100">
-      Doses marcadas como <b>Aplicada</b> e <b>PAGO</b> sÃ£o removidas desta lista automaticamente.
+      Doses marcadas como <b>Aplicada</b> e <b>PAGO</b> são removidas desta lista automaticamente.
     </div>
     <table className="w-full text-sm text-left">
       <thead className="bg-slate-50 text-xs text-slate-400 uppercase sticky top-0 z-10">
@@ -617,12 +617,12 @@ const Dashboard: React.FC = () => {
         <th className="px-6 py-3">Status Dose</th>
         <th className="px-6 py-3">Pagamento</th>
         <th className="px-6 py-3">Enf.</th>
-        <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+        <th className="px-6 py-3 text-right">Ação</th>
       </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
       {highActivityDoses.length === 0 ? (
-        <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-400">Nenhuma pendÃªncia operacional para a semana.</td></tr>
+        <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-400">Nenhuma pendência operacional para a semana.</td></tr>
       ) : (
         highActivityDoses.map((dose) => {
         const patient = getPatientByTreatmentId(dose.treatmentId);
@@ -638,7 +638,7 @@ const Dashboard: React.FC = () => {
               <button
               onClick={(e) => handleViewAddress(e, dose.treatmentId, dose.id)}
               className="p-1 rounded-full text-pink-600 bg-pink-50 hover:bg-pink-100 transition-colors"
-              title="Ver EndereÃ§o e Entrega"
+              title="Ver Endereço e Entrega"
               >
               <Bike size={16} />
               </button>
@@ -703,7 +703,7 @@ const Dashboard: React.FC = () => {
 
     {/* Upcoming Messages */}
     <SectionCard
-    title="PrÃ³ximas Mensagens"
+    title="Próximas Mensagens"
     icon={<MessageSquare size={18} className="text-indigo-600" />}
     countBadge={upcomingContacts.length} badgeColor="bg-indigo-100 text-indigo-800" headerBg="bg-indigo-50/30"
     >
@@ -714,14 +714,14 @@ const Dashboard: React.FC = () => {
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Contato</th>
         <th className="px-6 py-3">Protocolo</th>
-        <th className="px-6 py-3">AÃ§Ã£o / Mensagem</th>
-        <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+        <th className="px-6 py-3">Ação / Mensagem</th>
+        <th className="px-6 py-3 text-right">Ação</th>
         <th className="px-6 py-3 text-right">Detalhes</th>
       </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
       {upcomingContacts.length === 0 ? (
-        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-400">Nenhum ponto de contato prÃ³ximo.</td></tr>
+        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-400">Nenhum ponto de contato próximo.</td></tr>
       ) : (
         upcomingContacts.map(contact => (
         <tr
@@ -732,7 +732,7 @@ const Dashboard: React.FC = () => {
           <td className="px-6 py-4 font-bold text-slate-800">
           {formatDate(contact.date.toISOString())}
           <span className="block text-xs font-normal text-slate-500">
-            {contact.diffDays === 0 ? 'Hoje' : (contact.diffDays > 0 ? `Em ${contact.diffDays} dias` : `HÃ¡ ${Math.abs(contact.diffDays)} dias`)}
+            {contact.diffDays === 0 ? 'Hoje' : (contact.diffDays > 0 ? `Em ${contact.diffDays} dias` : `Há ${Math.abs(contact.diffDays)} dias`)}
           </span>
           </td>
           <td className="px-6 py-4 font-medium text-slate-800">
@@ -784,7 +784,7 @@ const Dashboard: React.FC = () => {
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 lg:col-span-1">
       <h3 className="font-bold text-slate-800 mb-4 flex items-center">
       <Activity size={18} className="mr-2 text-pink-600" />
-      Pacientes Ativos por DiagnÃ³stico
+      Pacientes Ativos por Diagnóstico
       </h3>
       <div className="space-y-4">
       {patientsByDiagnosis.map((item) => (
@@ -814,8 +814,8 @@ const Dashboard: React.FC = () => {
         <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
         <tr>
           <th className="px-6 py-3">Paciente</th>
-          <th className="px-6 py-3">ResponsÃ¡vel</th>
-          <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+          <th className="px-6 py-3">Responsável</th>
+          <th className="px-6 py-3 text-right">Ação</th>
         </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -845,14 +845,14 @@ const Dashboard: React.FC = () => {
     </div>
 
     {/* Consent Pending */}
-    <SectionCard id="section-consent" title="PendÃªncia: Termo de Consentimento" icon={<FileWarning size={18} className="text-cyan-600" />} countBadge={patientsMissingConsent.length} badgeColor="bg-cyan-100 text-cyan-800" headerBg="bg-cyan-50/30">
+    <SectionCard id="section-consent" title="Pendência: Termo de Consentimento" icon={<FileWarning size={18} className="text-cyan-600" />} countBadge={patientsMissingConsent.length} badgeColor="bg-cyan-100 text-cyan-800" headerBg="bg-cyan-50/30">
     <table className="w-full text-sm text-left">
       <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
       <tr>
         <th className="px-6 py-3">Paciente</th>
-        <th className="px-6 py-3">DiagnÃ³stico</th>
-        <th className="px-6 py-3">ResponsÃ¡vel</th>
-        <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+        <th className="px-6 py-3">Diagnóstico</th>
+        <th className="px-6 py-3">Responsável</th>
+        <th className="px-6 py-3 text-right">Ação</th>
       </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -900,13 +900,13 @@ const Dashboard: React.FC = () => {
         <th className="px-6 py-3">Data Agendada</th>
         <th className="px-6 py-3">Faltam</th>
         <th className="px-6 py-3">Paciente</th>
-        <th className="px-6 py-3">ResponsÃ¡vel</th>
-        <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+        <th className="px-6 py-3">Responsável</th>
+        <th className="px-6 py-3 text-right">Ação</th>
       </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
       {approachingConsults.length === 0 ? (
-        <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma consulta prÃ³xima agendada.</td></tr>
+        <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma consulta próxima agendada.</td></tr>
       ) : (
         approachingConsults.map(dose => {
         const patient = getPatient(dose.treatmentId);
@@ -966,8 +966,8 @@ const Dashboard: React.FC = () => {
       <tr>
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Contato</th>
-        <th className="px-6 py-3">Atraso (Ãšlt. Dose)</th>
-        <th className="px-6 py-3 text-right">AÃ§Ã£o</th>
+        <th className="px-6 py-3">Atraso (Últ. Dose)</th>
+        <th className="px-6 py-3 text-right">Ação</th>
       </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -1005,9 +1005,9 @@ const Dashboard: React.FC = () => {
     </SectionCard>
 
     {/* MODALS */}
-    <Modal open={addressModalOpen} onClose={() => setAddressModalOpen(false)} title="EndereÃ§o de Entrega" icon={<Bike size={18} className="text-amber-600" />}>
+    <Modal open={addressModalOpen} onClose={() => setAddressModalOpen(false)} title="Endereço de Entrega" icon={<Bike size={18} className="text-amber-600" />}>
     <div className="mb-4">
-      <p className="text-xs uppercase font-bold text-slate-400 mb-1">ResponsÃ¡vel</p>
+      <p className="text-xs uppercase font-bold text-slate-400 mb-1">Responsável</p>
       <p className="font-bold text-slate-800 text-lg">{selectedGuardianName}</p>
     </div>
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 font-mono text-sm text-slate-700 break-words">
@@ -1019,11 +1019,11 @@ const Dashboard: React.FC = () => {
       className="w-full flex items-center justify-center py-2.5 rounded-lg font-medium transition-colors bg-green-500 text-white hover:bg-green-600 shadow-sm"
       >
       <MessageCircle size={18} className="mr-2" />
-      WhatsApp ResponsÃ¡vel
+      WhatsApp Responsável
       </button>
       <button onClick={handleCopyAddress} className={`w-full flex items-center justify-center py-2.5 rounded-lg font-medium transition-colors ${isCopied ? 'bg-slate-600 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>
       {isCopied ? <Check size={18} className="mr-2" /> : <Copy size={18} className="mr-2" />}
-      {isCopied ? 'EndereÃ§o Copiado!' : 'Copiar EndereÃ§o'}
+      {isCopied ? 'Endereço Copiado!' : 'Copiar Endereço'}
       </button>
       <label className={`mt-2 flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${isDelivered ? 'bg-green-100 border-green-300 text-green-800' : 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'}`}>
       <div className="flex items-center">
@@ -1039,7 +1039,7 @@ const Dashboard: React.FC = () => {
     <form onSubmit={handleSaveDoseFull}>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pb-4 border-b border-slate-100">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Data da AplicaÃ§Ã£o</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Data da Aplicação</label>
         <input type="date" required value={editDoseDate} onChange={(e) => setEditDoseDate(e.target.value)} className="w-full border-slate-300 rounded-lg" />
       </div>
       <div>
@@ -1054,7 +1054,7 @@ const Dashboard: React.FC = () => {
         </select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">SituaÃ§Ã£o Pagamento</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Situação Pagamento</label>
         <select required={editDoseStatus !== DoseStatus.NOT_ACCEPTED} disabled={editDoseStatus === DoseStatus.NOT_ACCEPTED} value={editDosePayment} onChange={(e) => setEditDosePayment(e.target.value as PaymentStatus)} className={`w-full border-slate-300 rounded-lg ${editDoseStatus === DoseStatus.NOT_ACCEPTED ? 'bg-slate-100 opacity-50' : ''}`}>
         <option value="" disabled>Selecione...</option>
         {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
@@ -1062,12 +1062,12 @@ const Dashboard: React.FC = () => {
       </div>
       <div className="lg:col-span-4 flex items-center mt-2">
         <input id="modalIsLast" type="checkbox" checked={editIsLast} onChange={(e) => setEditIsLast(e.target.checked)} className="w-4 h-4 text-pink-600 border-slate-300 rounded" />
-        <label htmlFor="modalIsLast" className="ml-2 text-sm font-medium text-slate-900">Esta Ã© a Ãºltima dose antes da consulta?</label>
+        <label htmlFor="modalIsLast" className="ml-2 text-sm font-medium text-slate-900">Esta é a última dose antes da consulta?</label>
       </div>
       </div>
       <div className="mt-4">
       <h4 className="font-bold text-slate-700 mb-3 flex items-center text-sm uppercase tracking-wide">
-        <UserCheck size={16} className="mr-2 text-pink-600" /> Acompanhamento e SatisfaÃ§Ã£o
+        <UserCheck size={16} className="mr-2 text-pink-600" /> Acompanhamento e Satisfação
       </h4>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
         <div className="md:col-span-1">
@@ -1075,7 +1075,7 @@ const Dashboard: React.FC = () => {
         <select required value={editNurse} onChange={e => setEditNurse(e.target.value)} className="w-full border-slate-300 rounded-lg">
           <option value="" disabled>Selecione...</option>
           <option value="yes">Sim</option>
-          <option value="no">NÃ£o</option>
+          <option value="no">Não</option>
         </select>
         </div>
         <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 ${editNurse !== 'yes' ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1094,8 +1094,8 @@ const Dashboard: React.FC = () => {
           <span className={`w-10 h-10 flex items-center justify-center bg-white border border-slate-200 font-bold rounded-lg ${editSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40' : ''}`}>{editScore}</span>
         </div>
         <div className="md:col-span-3">
-          <label className="block text-sm font-medium text-slate-700 mb-1">4. ComentÃ¡rio</label>
-          <input type="text" value={editComment} onChange={e => setEditComment(e.target.value)} placeholder="ObservaÃ§Ã£o sobre o atendimento..." className="w-full border-slate-300 rounded-lg" />
+          <label className="block text-sm font-medium text-slate-700 mb-1">4. Comentário</label>
+          <input type="text" value={editComment} onChange={e => setEditComment(e.target.value)} placeholder="Observação sobre o atendimento..." className="w-full border-slate-300 rounded-lg" />
         </div>
         </div>
       </div>
@@ -1104,7 +1104,7 @@ const Dashboard: React.FC = () => {
       <button type="button" onClick={() => setDoseModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg mr-2">Cancelar</button>
       <button type="submit" disabled={isSavingDose} className="flex items-center px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
         {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
-        {isSavingDose ? 'Salvando...' : 'Salvar AlteraÃ§Ãµes'}
+        {isSavingDose ? 'Salvando...' : 'Salvar Alterações'}
       </button>
       </div>
     </form>
@@ -1118,7 +1118,7 @@ const Dashboard: React.FC = () => {
       <p className="font-bold text-slate-800">{consultPatientName}</p>
       </div>
       <form onSubmit={handleSaveConsult}>
-      <label className="block text-sm font-medium text-slate-700 mb-1">Data para PrÃ³xima Consulta Indicada</label>
+      <label className="block text-sm font-medium text-slate-700 mb-1">Data para Próxima Consulta Indicada</label>
       <input
         type="date"
         required
@@ -1151,7 +1151,7 @@ const Dashboard: React.FC = () => {
     {selectedContact && (
       <div className="space-y-6">
       <div>
-        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">AÃ§Ã£o / Mensagem</label>
+        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Ação / Mensagem</label>
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 relative group">
         <p className="text-slate-800 font-medium text-sm pr-8 leading-relaxed">{selectedContact.message}</p>
         <button onClick={handleCopyMessage} className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Copiar mensagem">
@@ -1170,7 +1170,7 @@ const Dashboard: React.FC = () => {
         </div>
         <div className="border-t border-slate-100 pt-3">
         <div className="flex justify-between items-center">
-          <div><p className="text-xs text-slate-500 mb-1">ResponsÃ¡vel</p><p className="font-medium text-slate-800">{selectedContact.patientGuardian}</p></div>
+          <div><p className="text-xs text-slate-500 mb-1">Responsável</p><p className="font-medium text-slate-800">{selectedContact.patientGuardian}</p></div>
           <div className="text-right">
           <p className="text-xs text-slate-500 mb-1">Telefone</p>
           <button onClick={() => navigator.clipboard.writeText(selectedContact.patientPhone)} className="flex items-center font-mono font-bold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-1 rounded transition-colors" title="Copiar telefone">

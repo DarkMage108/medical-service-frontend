@@ -119,20 +119,20 @@ const MedicationList: React.FC = () => {
   const validationErrors: string[] = [];
 
   if (!name.trim()) {
-    validationErrors.push('Nome do protocolo Ã© obrigatÃ³rio');
+    validationErrors.push('Nome do protocolo é obrigatório');
   }
 
   if (!category) {
-    validationErrors.push('Categoria Ã© obrigatÃ³ria');
+    validationErrors.push('Categoria é obrigatória');
   }
 
   if (!frequency || Number(frequency) < 1) {
-    validationErrors.push('FrequÃªncia (dias) Ã© obrigatÃ³ria e deve ser maior que 0');
+    validationErrors.push('Frequência (dias) é obrigatória e deve ser maior que 0');
   }
 
   // For MEDICATION category, medication type is recommended but not strictly required
   if (category === ProtocolCategory.MEDICATION && !medication) {
-    validationErrors.push('Medicamento Ã© recomendado para protocolos medicamentosos');
+    validationErrors.push('Medicamento é recomendado para protocolos medicamentosos');
   }
 
   if (validationErrors.length > 0) {
@@ -209,9 +209,9 @@ const MedicationList: React.FC = () => {
     <div>
     <h1 className="text-2xl font-bold text-slate-800 flex items-center">
       <ClipboardList size={28} className="mr-3 text-pink-600" />
-      GestÃ£o de Protocolos
+      Gestão de Protocolos
     </h1>
-    <p className="text-slate-500 mt-1">Gerencie os protocolos de medicamentos e rÃ©guas de relacionamento.</p>
+    <p className="text-slate-500 mt-1">Gerencie os protocolos de medicamentos e réguas de relacionamento.</p>
     </div>
 
     {error && (
@@ -230,7 +230,7 @@ const MedicationList: React.FC = () => {
       </h3>
       {editingId && (
         <button type="button" onClick={resetForm} className="text-sm text-slate-500 hover:text-slate-700 flex items-center bg-slate-100 px-3 py-1 rounded-lg">
-        <X size={14} className="mr-1" /> Cancelar EdiÃ§Ã£o
+        <X size={14} className="mr-1" /> Cancelar Edição
         </button>
       )}
       </div>
@@ -245,7 +245,7 @@ const MedicationList: React.FC = () => {
         </div>
         <div>
         <p className="font-bold text-slate-800">Medicamentoso</p>
-        <p className="text-xs text-slate-500">Envolve aplicaÃ§Ã£o de doses e controle de estoque.</p>
+        <p className="text-xs text-slate-500">Envolve aplicação de doses e controle de estoque.</p>
         </div>
       </div>
       <div className={`cursor-pointer border rounded-lg p-4 flex items-center transition-all ${category === ProtocolCategory.MONITORING ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}
@@ -255,7 +255,7 @@ const MedicationList: React.FC = () => {
         <MessageSquare size={20} />
         </div>
         <div>
-        <p className="font-bold text-slate-800">RÃ©gua de Contato</p>
+        <p className="font-bold text-slate-800">Régua de Contato</p>
         <p className="text-xs text-slate-500">Apenas acompanhamento, mensagens e procedimentos.</p>
         </div>
       </div>
@@ -275,7 +275,7 @@ const MedicationList: React.FC = () => {
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">
-        {category === ProtocolCategory.MEDICATION ? 'Intervalo (Dias)' : 'DuraÃ§Ã£o do Ciclo (Dias)'}
+        {category === ProtocolCategory.MEDICATION ? 'Intervalo (Dias)' : 'Duração do Ciclo (Dias)'}
         </label>
         <input
         type="number"
@@ -325,35 +325,35 @@ const MedicationList: React.FC = () => {
       )}
 
       <div className="lg:col-span-2">
-        <label className="block text-sm font-medium text-slate-700 mb-1">Meta TerapÃªutica</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Meta Terapêutica</label>
         <input
         type="text"
         value={goal}
         onChange={e => setGoal(e.target.value)}
-        placeholder="Ex: SupressÃ£o puberal"
+        placeholder="Ex: Supressão puberal"
         className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
         />
       </div>
       <div className="lg:col-span-4">
-        <label className="block text-sm font-medium text-slate-700 mb-1">Mensagem PadrÃ£o / InstruÃ§Ã£o (Geral)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Mensagem Padrão / Instrução (Geral)</label>
         <textarea
         rows={2}
         value={message}
         onChange={e => setMessage(e.target.value)}
-        placeholder="InstruÃ§Ãµes gerais para a equipe ou paciente..."
+        placeholder="Instruções gerais para a equipe ou paciente..."
         className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
         />
       </div>
       </div>
 
-      {/* SeÃ§Ã£o RÃ©gua de Contato (Milestones) */}
+      {/* Seção Régua de Contato (Milestones) */}
       <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
       <h4 className="font-bold text-slate-700 mb-3 flex items-center">
         <Calendar size={18} className="mr-2 text-pink-600" />
-        RÃ©gua de Contato / Mensagens AutomÃ¡ticas
+        Régua de Contato / Mensagens Automáticas
       </h4>
       <p className="text-xs text-slate-500 mb-4">
-        Adicione lembretes ou mensagens que devem ser enviadas em dias especÃ­ficos do ciclo.
+        Adicione lembretes ou mensagens que devem ser enviadas em dias específicos do ciclo.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4 items-start">
@@ -373,18 +373,18 @@ const MedicationList: React.FC = () => {
         </div>
         <div className="md:col-span-5">
         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-          Mensagem / AÃ§Ã£o (WhatsApp)
+          Mensagem / Ação (WhatsApp)
         </label>
         <textarea
           rows={6}
           value={newMileMsg}
           onChange={e => setNewMileMsg(e.target.value)}
-          placeholder={`OlÃ¡, [Nome]! Tudo bem?\n\nSeguem informaÃ§Ãµes sobre o tratamento...\n\nðŸ’Š *MedicaÃ§Ã£o*: R$1.380`}
+          placeholder={`Olá, [Nome]! Tudo bem?\n\nSeguem informações sobre o tratamento...\n\n💊 *Medicação*: R$1.380`}
           className="block w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500 font-mono"
         />
         <div className="flex flex-col md:flex-row justify-between items-center mt-2 gap-3">
           <p className="text-[10px] text-slate-400">
-          Suporta Emojis (ðŸ’Š, ðŸ›µ) e formataÃ§Ã£o WhatsApp (*negrito*, _itÃ¡lico_).
+          Suporta Emojis (💊, 🛵) e formatação WhatsApp (*negrito*, _itálico_).
           </p>
           <button
           type="button"
@@ -393,7 +393,7 @@ const MedicationList: React.FC = () => {
           className="w-full md:w-auto bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center shadow-sm"
           >
           <Plus size={16} className="mr-2" />
-          Adicionar Ã  RÃ©gua
+          Adicionar à Régua
           </button>
         </div>
         </div>
@@ -432,7 +432,7 @@ const MedicationList: React.FC = () => {
         className="bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 font-medium flex items-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : (editingId ? <Edit2 size={18} className="mr-2" /> : <Plus size={18} className="mr-2" />)}
-        {editingId ? (isSaving ? 'Salvando...' : 'Salvar AlteraÃ§Ãµes') : (isSaving ? 'Adicionando...' : 'Adicionar Protocolo')}
+        {editingId ? (isSaving ? 'Salvando...' : 'Salvar Alterações') : (isSaving ? 'Adicionando...' : 'Adicionar Protocolo')}
       </button>
       </div>
     </form>
@@ -445,7 +445,7 @@ const MedicationList: React.FC = () => {
         {/* Badge Category */}
         <div className="absolute top-4 right-14">
           {proto.category === ProtocolCategory.MONITORING ? (
-          <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">RÃ©gua Contato</span>
+          <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">Régua Contato</span>
           ) : (
           <span className="bg-pink-100 text-pink-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">Medicamento</span>
           )}
@@ -498,7 +498,7 @@ const MedicationList: React.FC = () => {
         {/* Exibir Milestones se houver */}
         {proto.milestones && proto.milestones.length > 0 && (
           <div className="mt-4 pt-3 border-t border-slate-200/50">
-          <span className="text-xs font-bold text-slate-400 uppercase mb-2 block">RÃ©gua de Contato ({proto.milestones.length} msgs)</span>
+          <span className="text-xs font-bold text-slate-400 uppercase mb-2 block">Régua de Contato ({proto.milestones.length} msgs)</span>
           <div className="flex flex-col gap-2">
             {proto.milestones.slice(0, 3).map((m, idx) => (
             <div key={idx} className="bg-white border border-slate-200 rounded px-3 py-2 text-xs text-slate-600 flex items-start" title={m.message}>
