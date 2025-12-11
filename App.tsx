@@ -13,6 +13,8 @@ import MedicationList from './pages/MedicationList';
 import HistoryList from './pages/HistoryList';
 import InventoryList from './pages/InventoryList';
 import PermissionsManager from './pages/PermissionsManager';
+import UserManagement from './pages/UserManagement';
+import Profile from './pages/Profile';
 import Checklist from './pages/Checklist';
 import NursingList from './pages/NursingList';
 import { Loader2 } from 'lucide-react';
@@ -211,6 +213,30 @@ const AppContent: React.FC = () => {
             ) : (
               <Navigate to="/" replace />
             )}
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/usuarios"
+        element={
+          <ProtectedRoute>
+            {layoutUser?.role === UserRole.ADMIN ? (
+              <Layout user={layoutUser!} onLogout={handleLogout}>
+                <UserManagement />
+              </Layout>
+            ) : (
+              <Navigate to="/" replace />
+            )}
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/perfil"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <Profile />
+            </Layout>
           </ProtectedRoute>
         }
       />

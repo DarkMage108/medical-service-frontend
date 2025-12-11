@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
 import { usePermissions } from '../contexts/PermissionsContext';
@@ -49,13 +49,21 @@ const MENU_LABELS: Record<string, string> = {
   protocols: 'Protocolos',
 };
 
-// Static nav item for permissions (admin only)
-const PERMISSIONS_NAV_ITEM = {
-  key: 'permissions',
-  label: 'Permissões',
-  path: '/permissoes',
-  icon: Shield,
-};
+// Static nav items for admin only
+const ADMIN_NAV_ITEMS = [
+  {
+    key: 'users',
+    label: 'Usuarios',
+    path: '/usuarios',
+    icon: UsersRound,
+  },
+  {
+    key: 'permissions',
+    label: 'Permissoes',
+    path: '/permissoes',
+    icon: Shield,
+  },
+];
 
 const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   const location = useLocation();
@@ -81,9 +89,9 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
     const order = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'diagnoses', 'protocols'];
     items.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 
-    // Add permissions menu for admins
+    // Add admin-only menus
     if (user.role === UserRole.ADMIN) {
-      items.push(PERMISSIONS_NAV_ITEM);
+      items.push(...ADMIN_NAV_ITEMS);
     }
 
     return items;
@@ -105,15 +113,16 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
         
         {/* User Profile Mini Card */}
         <div className="px-4 py-4 border-b border-slate-50">
-            <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg">
-                <div className="bg-pink-100 text-pink-600 rounded-full p-2">
+            <Link to="/perfil" className="flex items-center gap-3 bg-slate-50 hover:bg-slate-100 p-3 rounded-lg transition-colors group">
+                <div className="bg-pink-100 text-pink-600 rounded-full p-2 group-hover:bg-pink-200">
                     <UserCircle size={20} />
                 </div>
-                <div className="overflow-hidden">
+                <div className="overflow-hidden flex-1">
                     <p className="text-sm font-bold text-slate-800 truncate">{user.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{ROLE_LABELS[user.role] || 'Usuário'}</p>
+                    <p className="text-xs text-slate-500 truncate">{ROLE_LABELS[user.role] || 'Usuario'}</p>
                 </div>
-            </div>
+                <Settings size={16} className="text-slate-400 group-hover:text-slate-600 flex-shrink-0" />
+            </Link>
         </div>
         
         <nav className="flex-1 py-4 px-3 space-y-1" aria-label="Navegação Principal">

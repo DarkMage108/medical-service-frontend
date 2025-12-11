@@ -3,10 +3,11 @@ import { TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, UserRole } fr
 
 export const SESSION_KEY = 'azevedo_user_session';
 
-export const ROLE_LABELS = {
+export const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.ADMIN]: 'Administrador',
   [UserRole.DOCTOR]: 'Médico',
-  [UserRole.SECRETARY]: 'Secretária'
+  [UserRole.SECRETARY]: 'Secretária',
+  [UserRole.NURSE]: 'Enfermeira'
 };
 
 // Display labels for enums (Portuguese)

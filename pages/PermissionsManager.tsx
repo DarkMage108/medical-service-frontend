@@ -67,8 +67,8 @@ const PermissionsManager: React.FC = () => {
       setIsSaving(true);
       setError(null);
 
-      // Save permissions for DOCTOR and SECRETARY only (ADMIN is locked)
-      const rolesToSave = ['DOCTOR', 'SECRETARY'];
+      // Save permissions for DOCTOR, SECRETARY and NURSE only (ADMIN is locked)
+      const rolesToSave = ['DOCTOR', 'SECRETARY', 'NURSE'];
 
       await Promise.all(
         rolesToSave.map(role =>
@@ -95,8 +95,8 @@ const PermissionsManager: React.FC = () => {
       setIsSaving(true);
       setError(null);
 
-      // Reset permissions for DOCTOR and SECRETARY only
-      const rolesToReset = ['DOCTOR', 'SECRETARY'];
+      // Reset permissions for DOCTOR, SECRETARY and NURSE only
+      const rolesToReset = ['DOCTOR', 'SECRETARY', 'NURSE'];
 
       const responses = await Promise.all(
         rolesToReset.map(role => permissionsApi.resetRolePermissions(role))
@@ -128,8 +128,8 @@ const PermissionsManager: React.FC = () => {
     );
   }
 
-  // Order roles: ADMIN first (locked), then DOCTOR, SECRETARY
-  const roles = ['ADMIN', 'DOCTOR', 'SECRETARY'];
+  // Order roles: ADMIN first (locked), then DOCTOR, SECRETARY, NURSE
+  const roles = ['ADMIN', 'DOCTOR', 'SECRETARY', 'NURSE'];
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">

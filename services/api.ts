@@ -94,6 +94,13 @@ export const authApi = {
       body: JSON.stringify({ currentPassword, newPassword }),
     });
   },
+
+  updateProfile: async (data: { name: string }) => {
+    return apiFetch<any>('/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // ============== USERS API ==============
