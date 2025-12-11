@@ -585,10 +585,23 @@ export const dismissedLogsApi = {
     return apiFetch<{ data: any[] }>('/dashboard/dismissed-logs');
   },
 
-  dismiss: async (contactId: string) => {
+  dismiss: async (contactId: string, feedback?: any) => {
     return apiFetch<any>('/dashboard/dismiss-contact', {
       method: 'POST',
-      body: JSON.stringify({ contactId }),
+      body: JSON.stringify({ contactId, feedback }),
+    });
+  },
+
+  updateFeedback: async (contactId: string, feedback: any) => {
+    return apiFetch<any>(`/dashboard/dismissed-logs/${encodeURIComponent(contactId)}/feedback`, {
+      method: 'PATCH',
+      body: JSON.stringify({ feedback }),
+    });
+  },
+
+  resolveFeedback: async (contactId: string) => {
+    return apiFetch<any>(`/dashboard/dismissed-logs/${encodeURIComponent(contactId)}/resolve`, {
+      method: 'POST',
     });
   },
 };

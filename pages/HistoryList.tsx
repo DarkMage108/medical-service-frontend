@@ -50,7 +50,21 @@ const HistoryList: React.FC = () => {
         patientsApi.getAll({ limit: 100 })
       ]);
 
-      setDismissedLogs(logsRes.data || []);
+      // Transform API response to expected format
+      const transformedLogs = (logsRes.data || []).map((log: any) => ({
+        contactId: log.contactId,
+        dismissedAt: log.dismissedAt,
+        feedback: log.feedbackText ? {
+          text: log.feedbackText,
+          classification: log.feedbackClassification,
+          needsMedicalResponse: log.feedbackNeedsMedical,
+          urgency: log.feedbackUrgency,
+          status: log.feedbackStatus || 'pending',
+          registeredAt: log.dismissedAt,
+        } : undefined
+      }));
+
+      setDismissedLogs(transformedLogs);
       setTreatments(treatmentsRes.data || []);
       setProtocols(protocolsRes.data || []);
       setPatients(patientsRes.data || []);
@@ -141,19 +155,24 @@ const HistoryList: React.FC = () => {
   const handleResolveFeedback = async (item: any) => {
     if (!window.confirm("Deseja marcar este atendimento como CONCLUIDO?")) return;
 
-    // Note: The backend doesn't have a specific resolve endpoint yet
-    // For now, we'll update the feedback with resolved status
-    // This would need a backend endpoint to properly persist
-    const updatedLogs = dismissedLogs.map(log => {
-      if (log.contactId === item.id && log.feedback) {
-        return {
-          ...log,
-          feedback: { ...log.feedback, status: 'resolved' as const }
-        };
-      }
-      return log;
-    });
-    setDismissedLogs(updatedLogs);
+    try {
+      await dismissedLogsApi.resolveFeedback(item.id);
+
+      // Update local state
+      const updatedLogs = dismissedLogs.map(log => {
+        if (log.contactId === item.id && log.feedback) {
+          return {
+            ...log,
+            feedback: { ...log.feedback, status: 'resolved' as const }
+          };
+        }
+        return log;
+      });
+      setDismissedLogs(updatedLogs);
+    } catch (err: any) {
+      console.error('Error resolving feedback:', err);
+      alert('Erro ao marcar como concluido: ' + (err.message || 'Erro desconhecido'));
+    }
   };
 
   const handleSaveFeedback = async (e: React.FormEvent) => {
@@ -175,7 +194,10 @@ const HistoryList: React.FC = () => {
         status: existingStatus
       };
 
-      // Update local state (would need backend endpoint to persist)
+      // Call API to persist feedback
+      await dismissedLogsApi.updateFeedback(selectedLogId, feedbackData);
+
+      // Update local state
       const updatedLogs = dismissedLogs.map(log => {
         if (log.contactId === selectedLogId) {
           return { ...log, feedback: feedbackData };
