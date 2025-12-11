@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, HeartPulse, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
 import { usePermissions } from '../contexts/PermissionsContext';
@@ -99,7 +99,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
       {/* Sidebar - Desktop */}
       <aside className="w-full md:w-64 bg-white border-r border-slate-200 flex-shrink-0 hidden md:flex flex-col">
         <div className="h-16 flex items-center px-6 border-b border-slate-100">
-          <HeartPulse className="text-pink-600 mr-2 flex-shrink-0" size={28} />
+          <img src="/logo.png" alt="Logo" className="h-10 mr-2 flex-shrink-0" />
           <span className="font-bold text-slate-800 text-sm leading-tight">Azevedo Serviços Médicos</span>
         </div>
         
@@ -152,7 +152,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
       <div className="md:hidden bg-white border-b border-slate-200 p-4 flex flex-col sticky top-0 z-20 gap-3">
          <div className="flex items-center justify-between">
              <div className="flex items-center">
-                <HeartPulse className="text-pink-600 mr-2" size={24} />
+                <img src="/logo.png" alt="Logo" className="h-8 mr-2" />
                 <span className="font-bold text-slate-800 text-sm">Azevedo Serviços Médicos</span>
              </div>
              <button onClick={onLogout} className="text-slate-400">

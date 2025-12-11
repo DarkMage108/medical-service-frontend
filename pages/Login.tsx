@@ -1,5 +1,5 @@
-﻿import React, { useState } from 'react';
-import { HeartPulse, Lock, Mail, Info, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Lock, Mail, Info, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const DEMO_USERS = [
@@ -37,8 +37,8 @@ const Login: React.FC = () => {
   <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
     <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-8 text-center">
-      <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-      <HeartPulse className="text-white" size={32} />
+      <div className="flex items-center justify-center mx-auto mb-4">
+      <img src="/logo.png" alt="Logo" className="h-24" />
       </div>
       <h1 className="text-2xl font-bold text-white mb-2">Azevedo ServiÃ§os MÃ©dicos</h1>
       <p className="text-pink-100">Acesso Restrito Ã  Equipe ClÃ­nica</p>
