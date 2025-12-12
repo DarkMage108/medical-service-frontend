@@ -213,8 +213,11 @@ const TreatmentDetail: React.FC = () => {
       const isNurse = doseNurseSelection === 'yes';
       const finalSurveyStatus = !isNurse ? SurveyStatus.NOT_SENT : (doseSurveyStatus as SurveyStatus || SurveyStatus.NOT_SENT);
 
+      const cycleNumber = doses.length + 1;
+
       const doseData = {
         treatmentId: id,
+        cycleNumber: cycleNumber,
         applicationDate: new Date(doseDate).toISOString(),
         lotNumber: dosePurchased ? doseLot : '',
         inventoryLotId: dosePurchased ? selectedInventoryId : undefined,
