@@ -202,8 +202,8 @@ const TreatmentDetail: React.FC = () => {
     if (dosePurchased && !dosePayment) { alert("Selecione a Situacao do Pagamento"); return; }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
 
-    if (protocol.category === ProtocolCategory.MEDICATION && dosePurchased && !selectedInventoryId && !editingDoseId) {
-      alert("Para medicamento comprado, selecione um lote disponivel no estoque.");
+    if (protocol.category === ProtocolCategory.MEDICATION && !selectedInventoryId && !editingDoseId) {
+      alert("Para medicamento, selecione um lote disponivel no estoque.");
       return;
     }
 
@@ -219,8 +219,8 @@ const TreatmentDetail: React.FC = () => {
         treatmentId: id,
         cycleNumber: cycleNumber,
         applicationDate: new Date(doseDate).toISOString(),
-        lotNumber: dosePurchased ? doseLot : '',
-        inventoryLotId: dosePurchased ? selectedInventoryId : undefined,
+        lotNumber: doseLot || '',
+        inventoryLotId: selectedInventoryId || undefined,
         purchased: dosePurchased,
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
@@ -552,9 +552,12 @@ const TreatmentDetail: React.FC = () => {
               </div>
             </div>
 
-            {protocol.category === ProtocolCategory.MEDICATION && dosePurchased ? (
+            {protocol.category === ProtocolCategory.MEDICATION ? (
               <div className="lg:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Lote (Estoque)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Lote (Estoque)
+                  {!dosePurchased && <span className="ml-2 text-xs text-blue-600 font-normal">(Medicamento da clínica)</span>}
+                </label>
                 <div className="flex gap-2">
                   <select
                     value={selectedInventoryId}
@@ -578,7 +581,7 @@ const TreatmentDetail: React.FC = () => {
               </div>
             ) : (
               <div className="lg:col-span-2 flex items-center justify-center bg-slate-50 rounded-lg border border-dashed border-slate-200 text-slate-400 text-sm">
-                Lote indisponivel (Sem compra)
+                Lote não aplicável para este protocolo
               </div>
             )}
 
