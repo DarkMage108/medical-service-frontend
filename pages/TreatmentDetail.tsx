@@ -107,10 +107,20 @@ const TreatmentDetail: React.FC = () => {
 
   // Available Inventory Lots for this Protocol
   const availableLots = useMemo(() => {
-    if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || !protocol.medicationType) return [];
+    if (!protocol) return [];
 
+    // If protocol has medicationType, filter by it
+    if (protocol.medicationType) {
+      return inventory.filter(item =>
+        item.medicationName === protocol.medicationType &&
+        item.active &&
+        item.quantity > 0 &&
+        new Date(item.expiryDate) >= new Date()
+      );
+    }
+
+    // If no medicationType, show all available inventory items
     return inventory.filter(item =>
-      item.medicationName === protocol.medicationType &&
       item.active &&
       item.quantity > 0 &&
       new Date(item.expiryDate) >= new Date()
@@ -202,8 +212,9 @@ const TreatmentDetail: React.FC = () => {
     if (dosePurchased && !dosePayment) { alert("Selecione a Situacao do Pagamento"); return; }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
 
-    if (protocol.category === ProtocolCategory.MEDICATION && !selectedInventoryId && !editingDoseId) {
-      alert("Para medicamento, selecione um lote disponivel no estoque.");
+    // Only require inventory lot if there are available lots and it's a new dose
+    if (availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
+      alert("Selecione um lote disponivel no estoque.");
       return;
     }
 
@@ -552,38 +563,32 @@ const TreatmentDetail: React.FC = () => {
               </div>
             </div>
 
-            {protocol.category === ProtocolCategory.MEDICATION ? (
-              <div className="lg:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Lote (Estoque)
-                  {!dosePurchased && <span className="ml-2 text-xs text-blue-600 font-normal">(Medicamento da clínica)</span>}
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedInventoryId}
-                    onChange={handleInventorySelection}
-                    disabled={!!editingDoseId && !!selectedInventoryId}
-                    className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
-                  >
-                    <option value="">Selecione um lote do estoque...</option>
-                    {availableLots.map(item => (
-                      <option key={item.id} value={item.id}>
-                        {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
-                      </option>
-                    ))}
-                  </select>
-                  {availableLots.length === 0 && (
-                    <div className="text-red-500 text-xs flex items-center w-24">
-                      <AlertTriangle size={14} className="mr-1" /> Sem estoque
-                    </div>
-                  )}
-                </div>
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Lote (Estoque)
+                {!dosePurchased && <span className="ml-2 text-xs text-blue-600 font-normal">(Medicamento da clínica)</span>}
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedInventoryId}
+                  onChange={handleInventorySelection}
+                  disabled={!!editingDoseId && !!selectedInventoryId}
+                  className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
+                >
+                  <option value="">Selecione um lote do estoque...</option>
+                  {availableLots.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.medicationName} - Lote: {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
+                    </option>
+                  ))}
+                </select>
+                {availableLots.length === 0 && (
+                  <div className="text-red-500 text-xs flex items-center w-24">
+                    <AlertTriangle size={14} className="mr-1" /> Sem estoque
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="lg:col-span-2 flex items-center justify-center bg-slate-50 rounded-lg border border-dashed border-slate-200 text-slate-400 text-sm">
-                Lote não aplicável para este protocolo
-              </div>
-            )}
+            </div>
 
             <input type="hidden" value={doseLot} />
 
