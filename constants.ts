@@ -47,12 +47,27 @@ const toDate = (value: string | Date): Date => {
 
 export const formatDate = (dateInput: string | Date | undefined | null): string => {
   if (!dateInput) return '-';
-  
+
+  // Se for string no formato ISO (YYYY-MM-DD ou com T), extrair apenas a parte da data
+  if (typeof dateInput === 'string') {
+    // Pega apenas a parte YYYY-MM-DD para evitar problemas de timezone
+    const dateOnly = dateInput.split('T')[0];
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    if (year && month && day) {
+      return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+    }
+  }
+
   const date = toDate(dateInput);
   // Proteção contra datas inválidas
   if (isNaN(date.getTime())) return '-';
-  
-  return new Intl.DateTimeFormat('pt-BR').format(date);
+
+  // Usar UTC para evitar conversão de timezone
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+
+  return `${day}/${month}/${year}`;
 };
 
 export const addDays = (date: string | Date, days: number): Date => {
