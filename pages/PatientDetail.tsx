@@ -154,8 +154,18 @@ const PatientDetail: React.FC = () => {
       }
 
       if (proto.milestones) {
+        // Use last applied dose date as reference (D0), fallback to startDate
+        const treatmentDosesForMilestones = doses.filter(d => d.treatmentId === t.id);
+        const lastAppliedDose = treatmentDosesForMilestones
+          .filter(d => d.status === DoseStatus.APPLIED)
+          .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
+
+        const referenceDate = lastAppliedDose
+          ? new Date(lastAppliedDose.applicationDate)
+          : new Date(t.startDate);
+
         proto.milestones.forEach((m: any) => {
-          const contactDate = addDays(new Date(t.startDate), m.day);
+          const contactDate = addDays(referenceDate, m.day);
           const contactId = `${t.id}_m_${m.day}`;
 
           const isDone = dismissedLogs.some(log => log.contactId === contactId);
@@ -185,14 +195,19 @@ const PatientDetail: React.FC = () => {
   const completedEvents = useMemo(() => {
     if (!patient) return [];
     const events: any[] = [];
+    const TODAY = new Date();
+    TODAY.setHours(23, 59, 59, 999); // End of today
 
     treatments.forEach(t => {
       const proto = protocols.find(p => p.id === t.protocolId);
       if (!proto) return;
 
-      // Applied doses
+      // Applied doses - only show if date is in the past or today
       const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
-      const appliedDoses = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.NOT_ACCEPTED);
+      const appliedDoses = treatmentDoses.filter(d =>
+        (d.status === DoseStatus.APPLIED || d.status === DoseStatus.NOT_ACCEPTED) &&
+        new Date(d.applicationDate) <= TODAY
+      );
 
       appliedDoses.forEach(d => {
         events.push({
