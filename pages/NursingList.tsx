@@ -198,11 +198,8 @@ const NursingList: React.FC = () => {
 
     // Filter by view mode
     if (viewMode === 'pending') {
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      items = items.filter(item =>
-        item.status === DoseStatus.PENDING && item.scheduledDate <= today
-      );
+      // Show ALL pending doses (including future dates) - nurse needs to see upcoming appointments
+      items = items.filter(item => item.status === DoseStatus.PENDING);
     } else {
       items = items.filter(item =>
         item.status === DoseStatus.APPLIED || item.status === DoseStatus.NOT_ACCEPTED
