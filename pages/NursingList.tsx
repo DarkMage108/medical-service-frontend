@@ -150,8 +150,8 @@ const NursingList: React.FC = () => {
       const protocol = protocols.find(p => p.id === treatment.protocolId);
       if (!patient || !protocol) return;
 
-      // Filter doses for this treatment
-      const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
+      // Filter doses for this treatment - ONLY show doses where nurse === true
+      const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id && d.nurse === true);
 
       treatmentDoses.forEach(dose => {
         const scheduledDate = new Date(dose.applicationDate);
