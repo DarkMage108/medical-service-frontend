@@ -8,9 +8,10 @@ import KpiCard from '../components/ui/KpiCard';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
 import {
-  AlertCircle, CheckCircle2, UserX, MessageCircle, ChevronRight,
+  AlertCircle, CheckCircle2, UserX, MessageCircle, ChevronRight, ChevronLeft,
   Calendar, Clock, FileWarning, UploadCloud, Edit, CalendarRange,
-  Syringe, Bike, Copy, Check, Stethoscope, Save, Loader2, Trophy, User, X
+  Syringe, Bike, Copy, Check, Stethoscope, Save, Loader2, Trophy, User, X,
+  ArrowUp, ArrowDown
 } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -69,6 +70,22 @@ const Dashboard: React.FC = () => {
   const [editSurveyStatus, setEditSurveyStatus] = useState<SurveyStatus | ''>('');
   const [editScore, setEditScore] = useState(0);
   const [editComment, setEditComment] = useState('');
+
+  // Pagination States (10 items per page)
+  const ITEMS_PER_PAGE = 10;
+  const [activityPage, setActivityPage] = useState(1);
+  const [messagesPage, setMessagesPage] = useState(1);
+  const [surveysPage, setSurveysPage] = useState(1);
+  const [consentPage, setConsentPage] = useState(1);
+  const [consultsPage, setConsultsPage] = useState(1);
+  const [overduePage, setOverduePage] = useState(1);
+
+  // Sort direction states (true = ascending/closest first, false = descending/farthest first)
+  const [activitySortAsc, setActivitySortAsc] = useState(true);
+  const [messagesSortAsc, setMessagesSortAsc] = useState(true);
+  const [surveysSortAsc, setSurveysSortAsc] = useState(true);
+  const [consultsSortAsc, setConsultsSortAsc] = useState(true);
+  const [overdueSortAsc, setOverdueSortAsc] = useState(true);
 
   // Load data from API
   const loadData = useCallback(async () => {
@@ -372,8 +389,15 @@ const Dashboard: React.FC = () => {
   return Object.values(latestDosesMap).filter(d => {
     const nextDate = new Date(d.calculatedNextDate);
     return diffInDays(nextDate, TODAY) < 0;
+  }).sort((a, b) => {
+    const diff = new Date(a.calculatedNextDate).getTime() - new Date(b.calculatedNextDate).getTime();
+    if (diff !== 0) return overdueSortAsc ? diff : -diff;
+    // Secondary sort by patient name when dates are equal
+    const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
+    const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
+    return patientA.localeCompare(patientB);
   });
-  }, [doses]);
+  }, [doses, overdueSortAsc, treatments, patients]);
 
   // Pending Surveys
   const pendingSurveys = useMemo(() => {
@@ -382,8 +406,15 @@ const Dashboard: React.FC = () => {
     const isPendingStatus = d.surveyStatus === SurveyStatus.WAITING || d.surveyStatus === SurveyStatus.SENT || d.surveyStatus === SurveyStatus.NOT_SENT;
     const isZeroScore = !d.surveyScore || d.surveyScore === 0;
     return isPendingStatus || isZeroScore;
+  }).sort((a, b) => {
+    const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
+    if (diff !== 0) return surveysSortAsc ? diff : -diff;
+    // Secondary sort by patient name when dates are equal
+    const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
+    const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
+    return patientA.localeCompare(patientB);
   });
-  }, [doses]);
+  }, [doses, surveysSortAsc, treatments, patients]);
 
   // Approaching Consults
   const approachingConsults = useMemo(() => {
@@ -396,9 +427,14 @@ const Dashboard: React.FC = () => {
   }).sort((a, b) => {
     if (!a.consultationDate) return -1;
     if (!b.consultationDate) return 1;
-    return new Date(a.consultationDate).getTime() - new Date(b.consultationDate).getTime();
+    const diff = new Date(a.consultationDate).getTime() - new Date(b.consultationDate).getTime();
+    if (diff !== 0) return consultsSortAsc ? diff : -diff;
+    // Secondary sort by patient name when dates are equal
+    const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
+    const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
+    return patientA.localeCompare(patientB);
   });
-  }, [doses]);
+  }, [doses, consultsSortAsc, treatments, patients]);
 
   // NPS
   const npsMetrics = useMemo(() => {
@@ -454,8 +490,15 @@ const Dashboard: React.FC = () => {
     const hasPendingStatus = d.status === DoseStatus.PENDING;
     const hasPendingPayment = d.paymentStatus !== PaymentStatus.PAID;
     return inRange || (isOld && (hasPendingStatus || hasPendingPayment));
-  }).sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
-  }, [doses]);
+  }).sort((a, b) => {
+    const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
+    if (diff !== 0) return activitySortAsc ? diff : -diff;
+    // Secondary sort by patient name when dates are equal
+    const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
+    const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
+    return patientA.localeCompare(patientB);
+  });
+  }, [doses, activitySortAsc, treatments, patients]);
 
   // Upcoming Contacts
   const upcomingContacts = useMemo(() => {
@@ -494,12 +537,90 @@ const Dashboard: React.FC = () => {
     }
     });
   });
-  return contacts.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [treatments, protocols, patients, dismissedLogs]);
+  return contacts.sort((a, b) => {
+    const diff = a.date.getTime() - b.date.getTime();
+    if (diff !== 0) return messagesSortAsc ? diff : -diff;
+    // Secondary sort by patient name when dates are equal
+    return a.patientName.localeCompare(b.patientName);
+  });
+  }, [treatments, protocols, patients, dismissedLogs, messagesSortAsc]);
 
   const scrollToSection = (id: string) => {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+
+  // Pagination helper
+  const paginate = <T,>(items: T[], page: number): T[] => {
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return items.slice(start, start + ITEMS_PER_PAGE);
+  };
+
+  const getTotalPages = (total: number): number => Math.ceil(total / ITEMS_PER_PAGE);
+
+  // Pagination Component
+  const Pagination = ({
+    currentPage,
+    totalPages,
+    onPageChange
+  }: {
+    currentPage: number;
+    totalPages: number;
+    onPageChange: (page: number) => void;
+  }) => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <div className="flex items-center justify-center gap-1 py-3 border-t border-slate-100 bg-slate-50/50">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+          <button
+            key={page}
+            onClick={() => onPageChange(page)}
+            className={`min-w-[32px] h-8 rounded-lg text-sm font-medium transition-colors ${
+              page === currentPage
+                ? 'bg-pink-600 text-white'
+                : 'text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {page}
+          </button>
+        ))}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
+    );
+  };
+
+  // Sort Button Component
+  const SortButton = ({
+    isAsc,
+    onToggle,
+    label
+  }: {
+    isAsc: boolean;
+    onToggle: () => void;
+    label?: string;
+  }) => (
+    <button
+      onClick={onToggle}
+      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+      title={isAsc ? 'Ordenado: mais próximo primeiro' : 'Ordenado: mais distante primeiro'}
+    >
+      {isAsc ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+      <span className="hidden sm:inline">{label || 'Data'}</span>
+    </button>
+  );
 
   if (isLoading) {
   return (
@@ -612,7 +733,12 @@ const Dashboard: React.FC = () => {
     <table className="w-full text-sm text-left">
       <thead className="bg-slate-50 text-xs text-slate-400 uppercase sticky top-0 z-10">
       <tr>
-        <th className="px-6 py-3">Data</th>
+        <th className="px-6 py-3">
+          <div className="flex items-center gap-1">
+            Data
+            <SortButton isAsc={activitySortAsc} onToggle={() => { setActivitySortAsc(!activitySortAsc); setActivityPage(1); }} />
+          </div>
+        </th>
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Telefone</th>
         <th className="px-6 py-3">Protocolo</th>
@@ -626,7 +752,7 @@ const Dashboard: React.FC = () => {
       {highActivityDoses.length === 0 ? (
         <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-400">Nenhuma pendência operacional para a semana.</td></tr>
       ) : (
-        highActivityDoses.map((dose) => {
+        paginate(highActivityDoses, activityPage).map((dose) => {
         const patient = getPatientByTreatmentId(dose.treatmentId);
         return (
           <tr key={dose.id} className="hover:bg-amber-50/20 transition-colors" onClick={() => navigate(`/tratamento/${dose.treatmentId}`)}>
@@ -701,6 +827,11 @@ const Dashboard: React.FC = () => {
       )}
       </tbody>
     </table>
+    <Pagination
+      currentPage={activityPage}
+      totalPages={getTotalPages(highActivityDoses.length)}
+      onPageChange={setActivityPage}
+    />
     </SectionCard>
 
     {/* Upcoming Messages */}
@@ -712,7 +843,12 @@ const Dashboard: React.FC = () => {
     <table className="w-full text-sm text-left">
       <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
       <tr>
-        <th className="px-6 py-3">Data Prevista</th>
+        <th className="px-6 py-3">
+          <div className="flex items-center gap-1">
+            Data Prevista
+            <SortButton isAsc={messagesSortAsc} onToggle={() => { setMessagesSortAsc(!messagesSortAsc); setMessagesPage(1); }} />
+          </div>
+        </th>
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Contato</th>
         <th className="px-6 py-3">Protocolo</th>
@@ -725,7 +861,7 @@ const Dashboard: React.FC = () => {
       {upcomingContacts.length === 0 ? (
         <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-400">Nenhum ponto de contato próximo.</td></tr>
       ) : (
-        upcomingContacts.map(contact => (
+        paginate(upcomingContacts, messagesPage).map(contact => (
         <tr
           key={contact.id}
           onClick={() => handleOpenMessageModal(contact)}
@@ -778,6 +914,11 @@ const Dashboard: React.FC = () => {
       )}
       </tbody>
     </table>
+    <Pagination
+      currentPage={messagesPage}
+      totalPages={getTotalPages(upcomingContacts.length)}
+      onPageChange={setMessagesPage}
+    />
     </SectionCard>
 
     {/* Grid (Diagnosis / Survey) */}
@@ -815,6 +956,12 @@ const Dashboard: React.FC = () => {
       <table className="w-full text-sm text-left">
         <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
         <tr>
+          <th className="px-6 py-3">
+            <div className="flex items-center gap-1">
+              Data
+              <SortButton isAsc={surveysSortAsc} onToggle={() => { setSurveysSortAsc(!surveysSortAsc); setSurveysPage(1); }} />
+            </div>
+          </th>
           <th className="px-6 py-3">Paciente</th>
           <th className="px-6 py-3">Responsável</th>
           <th className="px-6 py-3 text-right">Ação</th>
@@ -822,12 +969,13 @@ const Dashboard: React.FC = () => {
         </thead>
         <tbody className="divide-y divide-slate-100">
         {pendingSurveys.length === 0 ? (
-          <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400">Nenhuma pesquisa pendente.</td></tr>
+          <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Nenhuma pesquisa pendente.</td></tr>
         ) : (
-          pendingSurveys.map(dose => {
+          paginate(pendingSurveys, surveysPage).map(dose => {
           const patient = getPatientByTreatmentId(dose.treatmentId);
           return (
             <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`, { state: { editDoseId: dose.id } })} className="hover:bg-blue-50/30 cursor-pointer transition-colors">
+            <td className="px-6 py-3 font-bold text-slate-700">{formatDate(dose.applicationDate)}</td>
             <td className="px-6 py-3 font-medium text-slate-800">{patient?.fullName || 'Desconhecido'}</td>
             <td className="px-6 py-3 text-slate-600">
               <div>{patient?.guardian.fullName}</div>
@@ -842,6 +990,11 @@ const Dashboard: React.FC = () => {
         )}
         </tbody>
       </table>
+      <Pagination
+        currentPage={surveysPage}
+        totalPages={getTotalPages(pendingSurveys.length)}
+        onPageChange={setSurveysPage}
+      />
       </SectionCard>
     </div>
     </div>
@@ -861,7 +1014,7 @@ const Dashboard: React.FC = () => {
       {patientsMissingConsent.length === 0 ? (
         <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Todos os pacientes possuem termo anexado.</td></tr>
       ) : (
-        patientsMissingConsent.map(patient => (
+        paginate(patientsMissingConsent, consentPage).map(patient => (
         <tr key={patient.id} onClick={() => navigate(`/pacientes/${patient.id}`)} className="hover:bg-cyan-50/20 cursor-pointer transition-colors">
           <td className="px-6 py-4 font-medium text-slate-800">{patient.fullName}</td>
           <td className="px-6 py-4">
@@ -892,6 +1045,11 @@ const Dashboard: React.FC = () => {
       )}
       </tbody>
     </table>
+    <Pagination
+      currentPage={consentPage}
+      totalPages={getTotalPages(patientsMissingConsent.length)}
+      onPageChange={setConsentPage}
+    />
     </SectionCard>
 
     {/* Consults */}
@@ -899,7 +1057,12 @@ const Dashboard: React.FC = () => {
     <table className="w-full text-sm text-left">
       <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
       <tr>
-        <th className="px-6 py-3">Data Agendada</th>
+        <th className="px-6 py-3">
+          <div className="flex items-center gap-1">
+            Data Agendada
+            <SortButton isAsc={consultsSortAsc} onToggle={() => { setConsultsSortAsc(!consultsSortAsc); setConsultsPage(1); }} />
+          </div>
+        </th>
         <th className="px-6 py-3">Faltam</th>
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Responsável</th>
@@ -910,7 +1073,7 @@ const Dashboard: React.FC = () => {
       {approachingConsults.length === 0 ? (
         <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma consulta próxima agendada.</td></tr>
       ) : (
-        approachingConsults.map(dose => {
+        paginate(approachingConsults, consultsPage).map(dose => {
         const patient = getPatient(dose.treatmentId);
         const hasDate = !!dose.consultationDate;
         let daysLeft = 0;
@@ -959,6 +1122,11 @@ const Dashboard: React.FC = () => {
       )}
       </tbody>
     </table>
+    <Pagination
+      currentPage={consultsPage}
+      totalPages={getTotalPages(approachingConsults.length)}
+      onPageChange={setConsultsPage}
+    />
     </SectionCard>
 
     {/* Overdue Doses */}
@@ -968,7 +1136,12 @@ const Dashboard: React.FC = () => {
       <tr>
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Contato</th>
-        <th className="px-6 py-3">Atraso (Últ. Dose)</th>
+        <th className="px-6 py-3">
+          <div className="flex items-center gap-1">
+            Atraso (Últ. Dose)
+            <SortButton isAsc={overdueSortAsc} onToggle={() => { setOverdueSortAsc(!overdueSortAsc); setOverduePage(1); }} />
+          </div>
+        </th>
         <th className="px-6 py-3 text-right">Ação</th>
       </tr>
       </thead>
@@ -976,7 +1149,7 @@ const Dashboard: React.FC = () => {
       {overdueDoses.length === 0 ? (
         <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Nenhuma dose atrasada.</td></tr>
       ) : (
-        overdueDoses.map(dose => {
+        paginate(overdueDoses, overduePage).map(dose => {
         const patient = getPatient(dose.treatmentId);
         const nextDate = new Date(dose.calculatedNextDate);
         const daysDiff = diffInDays(nextDate, TODAY);
@@ -1004,6 +1177,11 @@ const Dashboard: React.FC = () => {
       )}
       </tbody>
     </table>
+    <Pagination
+      currentPage={overduePage}
+      totalPages={getTotalPages(overdueDoses.length)}
+      onPageChange={setOverduePage}
+    />
     </SectionCard>
 
     {/* MODALS */}
