@@ -311,7 +311,7 @@ const TreatmentDetail: React.FC = () => {
 
   const isEditMedicationProtocol = useMemo(() => {
     const proto = protocols.find(p => p.id === editProtocolId);
-    return proto?.category === ProtocolCategory.MEDICATION;
+    return proto?.category === ProtocolCategory.MEDICATION || proto?.category === 'MEDICATION';
   }, [editProtocolId, protocols]);
 
   const previewNextDate = protocol ? addDays(new Date(doseDate), protocol.frequencyDays || 30) : new Date();
