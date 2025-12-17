@@ -180,7 +180,9 @@ const Dashboard: React.FC = () => {
   const handleConfirmDelivery = async (e: React.ChangeEvent<HTMLInputElement>) => {
   if (e.target.checked && selectedDoseId) {
     setIsDelivered(true);
+    // Update both paymentStatus to PAID and deliveryStatus to DELIVERED
     await handleQuickUpdate(selectedDoseId, 'paymentStatus', PaymentStatus.PAID);
+    await handleQuickUpdate(selectedDoseId, 'deliveryStatus', 'DELIVERED');
     setTimeout(() => {
     setAddressModalOpen(false);
     setIsDelivered(false);
