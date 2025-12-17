@@ -24,7 +24,8 @@ interface NursingItem {
   phone: string;
   address: string;
   cep: string;
-  scheduledDate: Date;
+  scheduledDate: Date;      // For sorting
+  scheduledDateStr: string; // Original ISO string for display (avoids timezone issues)
   scheduledTime: string;
   status: DoseStatus;
   lotNumber?: string;
@@ -154,8 +155,11 @@ const NursingList: React.FC = () => {
       const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id && d.nurse === true);
 
       treatmentDoses.forEach(dose => {
-        const scheduledDate = new Date(dose.applicationDate);
-        scheduledDate.setHours(0, 0, 0, 0);
+        // Parse date from ISO string to avoid timezone issues
+        // Extract just the date part (YYYY-MM-DD) for creating Date object for sorting
+        const dateOnly = dose.applicationDate.split('T')[0];
+        const [year, month, day] = dateOnly.split('-').map(Number);
+        const scheduledDate = new Date(year, month - 1, day); // Local date without timezone shift
 
         // Build address string
         const addr = patient.address;
@@ -178,7 +182,8 @@ const NursingList: React.FC = () => {
           address: addressStr,
           cep: cepStr,
           scheduledDate,
-          scheduledTime: new Date(dose.applicationDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          scheduledDateStr: dose.applicationDate, // Keep original string for display
+          scheduledTime: '00:00', // Default time since we store date only
           status: dose.status as DoseStatus,
           lotNumber: dose.lotNumber,
           expiryDate: dose.expiryDate,
@@ -411,7 +416,7 @@ const NursingList: React.FC = () => {
               <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Calendar size={16} className="text-pink-500" />
-                  <span className="font-bold text-slate-700">{formatDate(item.scheduledDate)}</span>
+                  <span className="font-bold text-slate-700">{formatDate(item.scheduledDateStr)}</span>
                   <span className="text-slate-400 flex items-center gap-1">
                     <Clock size={14} />
                     {item.scheduledTime}

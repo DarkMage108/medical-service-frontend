@@ -111,15 +111,23 @@ const PatientDetail: React.FC = () => {
       if (proto.category === ProtocolCategory.MEDICATION || proto.category === 'MEDICATION') {
         const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
 
+        // Helper to parse ISO date string without timezone shift
+        const parseLocalDate = (dateStr: string) => {
+          const dateOnly = dateStr.split('T')[0];
+          const [year, month, day] = dateOnly.split('-').map(Number);
+          return new Date(year, month - 1, day);
+        };
+
         const pendingDoses = treatmentDoses.filter(d => d.status === DoseStatus.PENDING);
         pendingDoses.forEach(d => {
+          const doseDate = parseLocalDate(d.applicationDate);
           events.push({
             id: d.id,
-            date: new Date(d.applicationDate),
+            date: doseDate,
             type: 'dose',
             title: `Dose ${d.cycleNumber}`,
             subtitle: proto.medicationType,
-            status: diffInDays(new Date(d.applicationDate), TODAY) < 0 ? 'late' : 'pending',
+            status: diffInDays(doseDate, TODAY) < 0 ? 'late' : 'pending',
             treatmentId: t.id
           });
         });
@@ -133,10 +141,11 @@ const PatientDetail: React.FC = () => {
           let nextCycle = 1;
 
           if (lastDose) {
-            nextDate = addDays(new Date(lastDose.applicationDate), proto.frequencyDays || 30);
+            nextDate = parseLocalDate(lastDose.applicationDate);
+            nextDate.setDate(nextDate.getDate() + (proto.frequencyDays || 30));
             nextCycle = lastDose.cycleNumber + 1;
           } else {
-            nextDate = new Date(t.startDate);
+            nextDate = parseLocalDate(t.startDate);
           }
 
           if (diffInDays(nextDate, TODAY) > -60) {
@@ -154,25 +163,45 @@ const PatientDetail: React.FC = () => {
       }
 
       if (proto.milestones) {
-        // Use last applied dose date as reference (D0), fallback to startDate
+        // Use last applied dose date as reference (D0)
+        // If no applied dose, use the first pending dose date as reference
+        // Fallback to startDate only if no doses exist
         const treatmentDosesForMilestones = doses.filter(d => d.treatmentId === t.id);
         const lastAppliedDose = treatmentDosesForMilestones
           .filter(d => d.status === DoseStatus.APPLIED)
           .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
 
+        const firstPendingDose = treatmentDosesForMilestones
+          .filter(d => d.status === DoseStatus.PENDING)
+          .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime())[0];
+
+        // Priority: last applied dose > first pending dose > treatment startDate
+        // Parse date string correctly to avoid timezone issues
+        const getLocalDate = (dateStr: string) => {
+          const dateOnly = dateStr.split('T')[0];
+          const [year, month, day] = dateOnly.split('-').map(Number);
+          return new Date(year, month - 1, day);
+        };
+
         const referenceDate = lastAppliedDose
-          ? new Date(lastAppliedDose.applicationDate)
-          : new Date(t.startDate);
+          ? getLocalDate(lastAppliedDose.applicationDate)
+          : firstPendingDose
+            ? getLocalDate(firstPendingDose.applicationDate)
+            : getLocalDate(t.startDate);
 
         proto.milestones.forEach((m: any) => {
-          const contactDate = addDays(referenceDate, m.day);
+          // Add days manually to avoid timezone issues
+          const contactDate = new Date(referenceDate);
+          contactDate.setDate(contactDate.getDate() + m.day);
+
           const contactId = `${t.id}_m_${m.day}`;
 
           const isDone = dismissedLogs.some(log => log.contactId === contactId);
 
           if (!isDone) {
             const diff = diffInDays(contactDate, TODAY);
-            if (diff > -10 && diff < 90) {
+            // Show events from 10 days ago up to 365 days in the future (covers D+84 and beyond)
+            if (diff > -10 && diff < 365) {
               events.push({
                 id: contactId,
                 date: contactDate,
