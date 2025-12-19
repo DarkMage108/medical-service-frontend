@@ -12,6 +12,7 @@ import DiagnosisList from './pages/DiagnosisList';
 import MedicationList from './pages/MedicationList';
 import HistoryList from './pages/HistoryList';
 import InventoryList from './pages/InventoryList';
+import CashRegister from './pages/CashRegister';
 import PermissionsManager from './pages/PermissionsManager';
 import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
@@ -53,12 +54,13 @@ const MENU_TO_PATH: Record<string, string> = {
   patients: '/pacientes',
   history: '/historico',
   inventory: '/estoque',
+  cashregister: '/caixa',
   diagnoses: '/diagnosticos',
   protocols: '/protocolos',
 };
 
 // Order of fallback routes
-const MENU_ORDER = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'diagnoses', 'protocols'];
+const MENU_ORDER = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'cashregister', 'diagnoses', 'protocols'];
 
 // Default redirect component - redirects to first accessible route
 const DefaultRedirect: React.FC = () => {
@@ -215,6 +217,16 @@ const AppContent: React.FC = () => {
           <ProtectedRouteWithPermission menuKey="inventory">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <InventoryList />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+      <Route
+        path="/caixa"
+        element={
+          <ProtectedRouteWithPermission menuKey="cashregister">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <CashRegister />
             </Layout>
           </ProtectedRouteWithPermission>
         }

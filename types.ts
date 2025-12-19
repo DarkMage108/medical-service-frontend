@@ -215,6 +215,13 @@ export interface InventoryItem {
   unit: string; // ex: Ampola
   entryDate: string;
   active: boolean;
+  // Financial fields
+  unitCost?: number; // Custo unitário
+  baseSalePrice?: number; // Preço de venda base
+  defaultCommission?: number; // Comissão padrão (R$)
+  defaultTax?: number; // Impostos padrão (R$)
+  defaultDelivery?: number; // Entrega padrão (R$)
+  defaultOther?: number; // Outros padrão (R$)
 }
 
 export interface DispenseLog {
@@ -235,4 +242,136 @@ export interface PurchaseRequest {
   currentStock: number;
   status: 'PENDING' | 'ORDERED' | 'RECEIVED';
   suggestedQuantity?: number;
+}
+
+// --- FINANCEIRO (CAIXA) ---
+
+export enum PaymentMethod {
+  PIX = 'PIX',
+  CARD = 'CARD',
+  BOLETO = 'BOLETO'
+}
+
+export interface Sale {
+  id: string;
+  doseId: string;
+  inventoryItemId: string;
+  patientId: string;
+
+  // Financial data
+  salePrice: number;
+  unitCost: number;
+  commission: number;
+  tax: number;
+  delivery: number;
+  other: number;
+
+  // Calculated
+  grossProfit: number;
+  netProfit: number;
+
+  paymentMethod: PaymentMethod;
+  saleDate: string;
+
+  // Relations (populated)
+  patient?: {
+    id: string;
+    fullName: string;
+  };
+  inventoryItem?: {
+    id: string;
+    medicationName: string;
+    lotNumber: string;
+  };
+  dose?: {
+    id: string;
+    applicationDate: string;
+    cycleNumber: number;
+  };
+}
+
+export interface PendingSale {
+  doseId: string;
+  applicationDate: string;
+  cycleNumber: number;
+  patientId: string;
+  patientName: string;
+  inventoryItem: {
+    id: string;
+    medicationName: string;
+    lotNumber: string;
+    unitCost: number;
+    baseSalePrice: number;
+    defaultCommission: number;
+    defaultTax: number;
+    defaultDelivery: number;
+    defaultOther: number;
+  } | null;
+  defaults: {
+    salePrice: number;
+    unitCost: number;
+    commission: number;
+    tax: number;
+    delivery: number;
+    other: number;
+  } | null;
+}
+
+export interface SalesKPI {
+  period: string;
+  current: {
+    grossRevenue: number;
+    totalSales: number;
+    cmv: number;
+    opex: number;
+    netProfit: number;
+    netMargin: string;
+  };
+  previous: {
+    grossRevenue: number;
+    totalSales: number;
+    cmv: number;
+    opex: number;
+    netProfit: number;
+  } | null;
+  variation: {
+    grossRevenue: { value: number; percent: string | null };
+    totalSales: { value: number; percent: string | null };
+    netProfit: { value: number; percent: string | null };
+  } | null;
+}
+
+export interface LotPricing {
+  id: string;
+  medicationName: string;
+  lotNumber: string;
+  quantity: number;
+  unitCost: number;
+  baseSalePrice: number;
+  defaultCommission: number;
+  defaultTax: number;
+  defaultDelivery: number;
+  defaultOther: number;
+  expiryDate: string;
+  estimatedProfit: number;
+  estimatedMargin: number;
+}
+
+export interface MonthlyReport {
+  year: number;
+  month: number;
+  summary: {
+    grossRevenue: number;
+    cmv: number;
+    opex: number;
+    netProfit: number;
+    netMargin: string;
+    totalSales: number;
+  };
+  byPaymentMethod: {
+    PIX: { count: number; total: number };
+    CARD: { count: number; total: number };
+    BOLETO: { count: number; total: number };
+  };
+  sales: Sale[];
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { inventoryApi, medicationsApi, purchaseRequestsApi, dispenseLogsApi } from '../services/api';
 import { InventoryItem, MedicationBase } from '../types';
-import { Package, Plus, Search, AlertTriangle, ShoppingCart, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, PieChart, ArrowRight } from 'lucide-react';
+import { Package, Plus, Search, AlertTriangle, ShoppingCart, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, PieChart, ArrowRight, DollarSign } from 'lucide-react';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
 import { formatDate } from '../constants';
@@ -127,6 +127,14 @@ const InventoryList: React.FC = () => {
   const [entryQuantity, setEntryQuantity] = useState(0);
   const [entryUnit, setEntryUnit] = useState('AMPOLA');
   const [isSavingEntry, setIsSavingEntry] = useState(false);
+
+  // Financial fields for lot entry
+  const [entryUnitCost, setEntryUnitCost] = useState<number>(0);
+  const [entryBaseSalePrice, setEntryBaseSalePrice] = useState<number>(0);
+  const [entryCommission, setEntryCommission] = useState<number>(0);
+  const [entryTax, setEntryTax] = useState<number>(0);
+  const [entryDelivery, setEntryDelivery] = useState<number>(0);
+  const [entryOther, setEntryOther] = useState<number>(0);
 
   // State to link Order -> Entry
   const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
@@ -295,6 +303,13 @@ const InventoryList: React.FC = () => {
     expiryDate: entryExpiry,
     quantity: Number(entryQuantity),
     unit: unitLabel,
+    // Financial fields
+    unitCost: entryUnitCost,
+    baseSalePrice: entryBaseSalePrice,
+    defaultCommission: entryCommission,
+    defaultTax: entryTax,
+    defaultDelivery: entryDelivery,
+    defaultOther: entryOther,
     };
 
     const created = await inventoryApi.create(newItem);
@@ -308,9 +323,16 @@ const InventoryList: React.FC = () => {
     alert('Entrada de estoque realizada com sucesso!');
     }
 
+    // Reset form fields
     setEntryLot('');
     setEntryQuantity(0);
     setEntryExpiry('');
+    setEntryUnitCost(0);
+    setEntryBaseSalePrice(0);
+    setEntryCommission(0);
+    setEntryTax(0);
+    setEntryDelivery(0);
+    setEntryOther(0);
     setActiveTab('list');
   } catch (err: any) {
     setError(err.message || 'Erro ao salvar entrada');
@@ -776,6 +798,114 @@ const InventoryList: React.FC = () => {
           ))}
         </select>
         </div>
+      </div>
+
+      {/* Financial Fields Section */}
+      <div className="mt-6 pt-6 border-t border-slate-200">
+        <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center">
+        <DollarSign size={16} className="mr-2 text-emerald-600" />
+        Dados Financeiros do Lote (Padrão para CAIXA)
+        </h4>
+
+        {entryBaseSalePrice === 0 && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+          <AlertTriangle size={14} className="inline mr-1" />
+          Sem preço padrão definido: o lançamento no CAIXA não será autopreenchido.
+        </div>
+        )}
+
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Custo Unitário (R$)</label>
+          <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          className="block w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+          value={entryUnitCost || ''}
+          onChange={e => setEntryUnitCost(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Preço de Venda Base (R$)</label>
+          <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          className="block w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+          value={entryBaseSalePrice || ''}
+          onChange={e => setEntryBaseSalePrice(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Comissão (R$)</label>
+          <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          className="block w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+          value={entryCommission || ''}
+          onChange={e => setEntryCommission(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Impostos (R$)</label>
+          <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          className="block w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+          value={entryTax || ''}
+          onChange={e => setEntryTax(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Entrega (R$)</label>
+          <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          className="block w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+          value={entryDelivery || ''}
+          onChange={e => setEntryDelivery(Number(e.target.value))}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Outros (R$)</label>
+          <input
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0,00"
+          className="block w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+          value={entryOther || ''}
+          onChange={e => setEntryOther(Number(e.target.value))}
+          />
+        </div>
+        </div>
+
+        {/* Real-time margin preview */}
+        {entryBaseSalePrice > 0 && (
+        <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+          <div className="flex justify-between items-center text-sm">
+          <span className="text-emerald-700 font-medium">Lucro Estimado por Unidade:</span>
+          <span className="font-bold text-emerald-800">
+            R$ {((entryBaseSalePrice - entryUnitCost - entryCommission - entryTax - entryDelivery - entryOther)).toFixed(2)}
+          </span>
+          </div>
+          <div className="flex justify-between items-center text-sm mt-1">
+          <span className="text-emerald-600">Margem Estimada:</span>
+          <span className="font-bold text-emerald-700">
+            {((((entryBaseSalePrice - entryUnitCost - entryCommission - entryTax - entryDelivery - entryOther) / entryBaseSalePrice) * 100) || 0).toFixed(1)}%
+          </span>
+          </div>
+        </div>
+        )}
       </div>
 
       <div className="pt-4 flex justify-end">

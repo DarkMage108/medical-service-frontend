@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings, DollarSign } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
 import { usePermissions } from '../contexts/PermissionsContext';
@@ -21,6 +21,7 @@ const MENU_ICONS: Record<string, LucideIcon> = {
   patients: Users,
   history: History,
   inventory: Package,
+  cashregister: DollarSign,
   diagnoses: Stethoscope,
   protocols: ClipboardList,
 };
@@ -33,6 +34,7 @@ const MENU_PATHS: Record<string, string> = {
   patients: '/pacientes',
   history: '/historico',
   inventory: '/estoque',
+  cashregister: '/caixa',
   diagnoses: '/diagnosticos',
   protocols: '/protocolos',
 };
@@ -45,6 +47,7 @@ const MENU_LABELS: Record<string, string> = {
   patients: 'Pacientes',
   history: 'Historico',
   inventory: 'Estoque',
+  cashregister: 'CAIXA',
   diagnoses: 'Diagnosticos',
   protocols: 'Protocolos',
 };
@@ -86,7 +89,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
     });
 
     // Sort items in a logical order
-    const order = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'diagnoses', 'protocols'];
+    const order = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'cashregister', 'diagnoses', 'protocols'];
     items.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
 
     // Add admin-only menus

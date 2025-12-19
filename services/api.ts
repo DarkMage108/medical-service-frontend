@@ -652,6 +652,96 @@ export const permissionsApi = {
   },
 };
 
+// ============== SALES API (CAIXA) ==============
+
+export const salesApi = {
+  // Get all sales with filters
+  getAll: async (params?: {
+    startDate?: string;
+    endDate?: string;
+    paymentMethod?: string;
+    patientId?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    if (params?.paymentMethod) searchParams.set('paymentMethod', params.paymentMethod);
+    if (params?.patientId) searchParams.set('patientId', params.patientId);
+    const query = searchParams.toString();
+    return apiFetch<{ data: any[] }>(`/sales${query ? `?${query}` : ''}`);
+  },
+
+  // Get a single sale
+  getById: async (id: string) => {
+    return apiFetch<any>(`/sales/${id}`);
+  },
+
+  // Get pending sales (doses applied + paid but not registered)
+  getPending: async () => {
+    return apiFetch<{ data: any[]; count: number }>('/sales/pending');
+  },
+
+  // Create a sale (register financial transaction)
+  create: async (data: {
+    doseId: string;
+    salePrice: number;
+    commission?: number;
+    tax?: number;
+    delivery?: number;
+    other?: number;
+    paymentMethod: string;
+  }) => {
+    return apiFetch<any>('/sales', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Update a sale
+  update: async (id: string, data: {
+    salePrice?: number;
+    commission?: number;
+    tax?: number;
+    delivery?: number;
+    other?: number;
+    paymentMethod?: string;
+  }) => {
+    return apiFetch<any>(`/sales/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Delete a sale
+  delete: async (id: string) => {
+    return apiFetch<void>(`/sales/${id}`, { method: 'DELETE' });
+  },
+
+  // Get KPIs (financial summary)
+  getKPIs: async (period?: 'month' | '3months' | 'year' | 'all') => {
+    const query = period ? `?period=${period}` : '';
+    return apiFetch<any>(`/sales/kpis${query}`);
+  },
+
+  // Get prices/profitability by lot
+  getLotPricing: async (sortBy?: 'margin' | 'profit' | 'medication', sortOrder?: 'asc' | 'desc') => {
+    const searchParams = new URLSearchParams();
+    if (sortBy) searchParams.set('sortBy', sortBy);
+    if (sortOrder) searchParams.set('sortOrder', sortOrder);
+    const query = searchParams.toString();
+    return apiFetch<{ data: any[] }>(`/sales/lot-pricing${query ? `?${query}` : ''}`);
+  },
+
+  // Get monthly report
+  getMonthlyReport: async (year?: number, month?: number) => {
+    const searchParams = new URLSearchParams();
+    if (year) searchParams.set('year', String(year));
+    if (month) searchParams.set('month', String(month));
+    const query = searchParams.toString();
+    return apiFetch<any>(`/sales/monthly-report${query ? `?${query}` : ''}`);
+  },
+};
+
 // ============== HEALTH CHECK ==============
 
 export const healthCheck = async () => {
@@ -675,5 +765,6 @@ export default {
   dashboard: dashboardApi,
   documents: documentsApi,
   dismissedLogs: dismissedLogsApi,
+  sales: salesApi,
   healthCheck,
 };
