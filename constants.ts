@@ -41,8 +41,23 @@ export const TREATMENT_STATUS_LABELS: Record<TreatmentStatus, string> = {
 
 // --- DATE HELPERS ---
 
+// Converte para Date usando timezone local de forma consistente
 const toDate = (value: string | Date): Date => {
-   return value instanceof Date ? value : new Date(value);
+  if (value instanceof Date) return value;
+  // Para strings ISO, criar data interpretando como local
+  if (typeof value === 'string' && value.includes('T')) {
+    // Se tem timezone info (Z ou +/-), usar new Date diretamente
+    if (value.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(value)) {
+      return new Date(value);
+    }
+  }
+  return new Date(value);
+};
+
+// Cria uma data "limpa" sem componente de hora (meia-noite local)
+const toDateOnly = (value: string | Date): Date => {
+  const d = toDate(value);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
 
 export const formatDate = (dateInput: string | Date | undefined | null): string => {
@@ -62,25 +77,26 @@ export const formatDate = (dateInput: string | Date | undefined | null): string 
   // Proteção contra datas inválidas
   if (isNaN(date.getTime())) return '-';
 
-  // Usar UTC para evitar conversão de timezone
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const year = date.getUTCFullYear();
+  // Usar local timezone consistentemente
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
 
   return `${day}/${month}/${year}`;
 };
 
 export const addDays = (date: string | Date, days: number): Date => {
-  const result = toDate(date);
+  const result = toDateOnly(date);
   result.setDate(result.getDate() + days);
   return result;
 };
 
 export const diffInDays = (dateFuture: string | Date, datePast: string | Date): number => {
-  const future = toDate(dateFuture);
-  const past = toDate(datePast);
+  // Usar apenas a parte da data (ignorar horas) para cálculo consistente
+  const future = toDateOnly(dateFuture);
+  const past = toDateOnly(datePast);
   const diffTime = future.getTime() - past.getTime();
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return Math.round(diffTime / (1000 * 60 * 60 * 24));
 };
 
 // --- STATUS COLORS ---
