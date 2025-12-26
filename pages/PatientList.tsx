@@ -25,7 +25,6 @@ const PatientList: React.FC = () => {
   const [newDiagnosis, setNewDiagnosis] = useState('');
   const [newGuardian, setNewGuardian] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [relationship, setRelationship] = useState('');
   const [street, setStreet] = useState('');
   const [number, setNumber] = useState('');
   const [complement, setComplement] = useState('');
@@ -35,6 +34,10 @@ const PatientList: React.FC = () => {
   const [zipCode, setZipCode] = useState('');
   const [isLoadingCep, setIsLoadingCep] = useState(false);
   const [clinicalNotes, setClinicalNotes] = useState('');
+
+  // Autocomplete states
+  const [nameSuggestions, setNameSuggestions] = useState<PatientFull[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Load data from API
   const loadData = async () => {
@@ -134,7 +137,6 @@ const PatientList: React.FC = () => {
     setNewDiagnosis('');
     setNewGuardian('');
     setNewPhone('');
-    setRelationship('');
     setStreet('');
     setNumber('');
     setComplement('');
@@ -143,7 +145,44 @@ const PatientList: React.FC = () => {
     setState('');
     setZipCode('');
     setClinicalNotes('');
+    setNameSuggestions([]);
+    setShowSuggestions(false);
   };
+
+  // Normalize string for comparison (remove accents, lowercase)
+  const normalizeString = (str: string) =>
+    str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Search patients by name for autocomplete (local filtering)
+  const searchPatientsByName = useCallback((name: string) => {
+    if (name.length < 2) {
+      setNameSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const normalizedSearch = normalizeString(name);
+    const matches = patients.filter(p =>
+      normalizeString(p.fullName).includes(normalizedSearch)
+    ).slice(0, 5);
+
+    setNameSuggestions(matches);
+    setShowSuggestions(matches.length > 0);
+  }, [patients]);
+
+  // Debounced name search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (newName.length >= 2) {
+        searchPatientsByName(newName);
+      } else {
+        setNameSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [newName, searchPatientsByName]);
 
   const handleZipCodeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, '');
@@ -179,14 +218,13 @@ const PatientList: React.FC = () => {
     try {
       const patientData = {
         fullName: newName,
-        birthDate: birthDate || undefined,
-        gender: gender || undefined,
+        birthDate: birthDate,
+        gender: gender,
         mainDiagnosis: newDiagnosis,
         clinicalNotes: clinicalNotes || undefined,
         guardian: {
           fullName: newGuardian,
-          phonePrimary: newPhone,
-          relationship: relationship || undefined
+          phonePrimary: newPhone
         },
         address: street ? {
           street,
@@ -334,6 +372,7 @@ const PatientList: React.FC = () => {
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-4 py-4 w-16">ID</th>
                 <th className="px-6 py-4">Paciente</th>
                 <th className="px-6 py-4">Responsavel</th>
                 <th className="px-6 py-4">Diagnostico</th>
@@ -343,11 +382,13 @@ const PatientList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredPatients.map(patient => (
+              {filteredPatients.map((patient, index) => (
                 <tr key={patient.id} className="hover:bg-slate-50 transition-colors group">
+                  <td className="px-4 py-4 text-center">
+                    <span className="text-sm font-medium text-slate-600">{index + 1}</span>
+                  </td>
                   <td className="px-6 py-4">
                     <div className="font-semibold text-slate-900">{patient.fullName}</div>
-                    <div className="text-xs text-slate-500">ID: {patient.id.substring(0, 8)}...</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-slate-900">{patient.guardian?.fullName || '-'}</div>
@@ -433,27 +474,56 @@ const PatientList: React.FC = () => {
                   Dados Pessoais
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
+                  <div className="md:col-span-2 relative">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       Nome Completo <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                      placeholder="Ex: Maria Alice..."
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        onFocus={() => nameSuggestions.length > 0 && setShowSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                        className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 pr-8"
+                        placeholder="Ex: Maria Alice..."
+                      />
+                    </div>
+                    {/* Autocomplete suggestions */}
+                    {showSuggestions && nameSuggestions.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        <div className="px-3 py-2 bg-amber-50 border-b border-amber-200">
+                          <span className="text-xs text-amber-700 font-medium">
+                            ⚠️ Pacientes com nome similar já cadastrados:
+                          </span>
+                        </div>
+                        {nameSuggestions.map((patient) => (
+                          <div
+                            key={patient.id}
+                            className="px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                          >
+                            <div className="font-medium text-slate-800">{patient.fullName}</div>
+                            <div className="text-xs text-slate-500 flex gap-2">
+                              {patient.mainDiagnosis && <span>{patient.mainDiagnosis}</span>}
+                              {patient.guardian?.phonePrimary && <span>• {patient.guardian.phonePrimary}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Data de Nascimento</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Data de Nascimento <span className="text-red-500">*</span>
+                    </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Calendar size={18} className="text-slate-400" />
                       </div>
                       <input
                         type="date"
+                        required
                         value={birthDate}
                         onChange={e => setBirthDate(e.target.value)}
                         className="pl-10 block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
@@ -461,9 +531,12 @@ const PatientList: React.FC = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Sexo</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Sexo <span className="text-red-500">*</span>
+                    </label>
                     <select
                       value={gender}
+                      required
                       onChange={e => setGender(e.target.value)}
                       className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                     >
@@ -519,21 +592,6 @@ const PatientList: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Parentesco</label>
-                    <select
-                      value={relationship}
-                      onChange={e => setRelationship(e.target.value)}
-                      className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                    >
-                      <option value="" disabled>Selecione...</option>
-                      <option value="Mae">Mae</option>
-                      <option value="Pai">Pai</option>
-                      <option value="Avo">Avo</option>
-                      <option value="Tio/Tia">Tio/Tia</option>
-                      <option value="Outro">Outro</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       Telefone Principal <span className="text-red-500">*</span>
                     </label>

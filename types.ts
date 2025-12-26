@@ -33,7 +33,7 @@ export interface Guardian {
   phonePrimary: string;
   phoneSecondary?: string;
   email?: string;
-  relationship: string;
+  relationship?: string;
 }
 
 export interface Patient {
