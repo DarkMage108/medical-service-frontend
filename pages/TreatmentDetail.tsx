@@ -235,7 +235,7 @@ const TreatmentDetail: React.FC = () => {
         purchased: dosePurchased,
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
-        paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : PaymentStatus.WAITING_PIX,
+        paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : undefined,
         isLastBeforeConsult: doseIsLast,
         consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
         nurse: isNurse,
@@ -808,9 +808,13 @@ const TreatmentDetail: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-block px-2 py-1 rounded-md border ${getStatusColor(dose.paymentStatus)}`}>
-                      {PAYMENT_STATUS_LABELS[dose.paymentStatus] || dose.paymentStatus}
-                    </span>
+                    {dose.purchased === false ? (
+                      <span className="text-slate-400 text-xs italic">N/A</span>
+                    ) : (
+                      <span className={`inline-block px-2 py-1 rounded-md border ${getStatusColor(dose.paymentStatus)}`}>
+                        {PAYMENT_STATUS_LABELS[dose.paymentStatus] || dose.paymentStatus}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     {dose.deliveryStatus === 'delivered' && (

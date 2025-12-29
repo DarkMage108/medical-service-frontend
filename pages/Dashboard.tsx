@@ -70,6 +70,7 @@ const Dashboard: React.FC = () => {
   const [editSurveyStatus, setEditSurveyStatus] = useState<SurveyStatus | ''>('');
   const [editScore, setEditScore] = useState(0);
   const [editComment, setEditComment] = useState('');
+  const [editPurchased, setEditPurchased] = useState(true);
 
   // Pagination States (10 items per page)
   const ITEMS_PER_PAGE = 10;
@@ -266,6 +267,7 @@ const Dashboard: React.FC = () => {
   setEditSurveyStatus(dose.surveyStatus);
   setEditScore(dose.surveyScore || 0);
   setEditComment(dose.surveyComment || '');
+  setEditPurchased(dose.purchased !== false);
   setDoseModalOpen(true);
   };
 
@@ -790,6 +792,9 @@ const Dashboard: React.FC = () => {
             </select>
           </td>
           <td className="px-6 py-4">
+            {dose.purchased === false ? (
+            <span className="text-slate-400 text-xs italic">N/A</span>
+            ) : (
             <select
             value={dose.paymentStatus}
             disabled={dose.status === DoseStatus.NOT_ACCEPTED}
@@ -800,6 +805,7 @@ const Dashboard: React.FC = () => {
             <option value="" disabled>Selecione...</option>
             {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
             </select>
+            )}
           </td>
           <td className="px-6 py-4">
             <button
@@ -1235,10 +1241,14 @@ const Dashboard: React.FC = () => {
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Situação Pagamento</label>
+        {!editPurchased ? (
+        <div className="w-full py-2 px-3 bg-slate-100 border border-slate-200 rounded-lg text-slate-400 text-sm italic">N/A (Sem compra)</div>
+        ) : (
         <select required={editDoseStatus !== DoseStatus.NOT_ACCEPTED} disabled={editDoseStatus === DoseStatus.NOT_ACCEPTED} value={editDosePayment} onChange={(e) => setEditDosePayment(e.target.value as PaymentStatus)} className={`w-full border-slate-300 rounded-lg ${editDoseStatus === DoseStatus.NOT_ACCEPTED ? 'bg-slate-100 opacity-50' : ''}`}>
         <option value="" disabled>Selecione...</option>
         {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
         </select>
+        )}
       </div>
       <div className="lg:col-span-4 flex items-center mt-2">
         <input id="modalIsLast" type="checkbox" checked={editIsLast} onChange={(e) => setEditIsLast(e.target.checked)} className="w-4 h-4 text-pink-600 border-slate-300 rounded" />
