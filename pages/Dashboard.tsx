@@ -103,9 +103,9 @@ const Dashboard: React.FC = () => {
     purchaseRes,
     dismissedRes
     ] = await Promise.all([
-    dosesApi.getAll(),
-    patientsApi.getAll(),
-    treatmentsApi.getAll(),
+    dosesApi.getAll({ limit: 500 }),
+    patientsApi.getAll({ limit: 500 }),
+    treatmentsApi.getAll({ limit: 500 }),
     protocolsApi.getAll(),
     documentsApi.getAll(),
     purchaseRequestsApi.getAll(),
@@ -510,14 +510,27 @@ const Dashboard: React.FC = () => {
   activeTreatments.forEach(t => {
     const proto = protocols.find(p => p.id === t.protocolId);
     if (!proto || !proto.milestones || proto.milestones.length === 0) return;
-    const startDate = new Date(t.startDate);
+
+    // Find the last applied dose for this treatment to use as reference date
+    // The contact timeline (régua) should be based on the last applied dose, not startDate
+    const treatmentDoses = doses.filter(d => d.treatmentId === t.id && d.status === DoseStatus.APPLIED);
+    const lastAppliedDose = treatmentDoses.length > 0
+      ? treatmentDoses.reduce((latest, d) =>
+          new Date(d.applicationDate) > new Date(latest.applicationDate) ? d : latest
+        )
+      : null;
+
+    // Use last applied dose date as reference, fallback to treatment startDate
+    const referenceDate = lastAppliedDose
+      ? new Date(lastAppliedDose.applicationDate)
+      : new Date(t.startDate);
 
     proto.milestones.forEach(m => {
     const contactId = `${t.id}_m_${m.day}`;
 
     if (dismissedLogs.some(log => log.contactId === contactId)) return;
 
-    const contactDate = addDays(startDate, m.day);
+    const contactDate = addDays(referenceDate, m.day);
     const diff = diffInDays(contactDate, TODAY);
 
     if (diff >= -60) {
@@ -545,7 +558,7 @@ const Dashboard: React.FC = () => {
     // Secondary sort by patient name when dates are equal
     return a.patientName.localeCompare(b.patientName);
   });
-  }, [treatments, protocols, patients, dismissedLogs, messagesSortAsc]);
+  }, [treatments, protocols, patients, dismissedLogs, doses, messagesSortAsc]);
 
   const scrollToSection = (id: string) => {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
