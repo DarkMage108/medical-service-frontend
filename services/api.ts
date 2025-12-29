@@ -592,6 +592,19 @@ export const dismissedLogsApi = {
     });
   },
 
+  createManual: async (data: {
+    patientId: string;
+    patientName: string;
+    patientPhone?: string;
+    message?: string;
+    feedback?: any;
+  }) => {
+    return apiFetch<any>('/dashboard/manual-contact', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   updateFeedback: async (contactId: string, feedback: any) => {
     return apiFetch<any>(`/dashboard/dismissed-logs/${encodeURIComponent(contactId)}/feedback`, {
       method: 'PATCH',

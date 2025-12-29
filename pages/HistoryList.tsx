@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { dismissedLogsApi, treatmentsApi, protocolsApi, patientsApi } from '../services/api';
 import { TreatmentStatus, ProtocolCategory, PatientFeedback, Treatment, Protocol, PatientFull } from '../types';
-import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw } from 'lucide-react';
+import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone } from 'lucide-react';
 import { formatDate } from '../constants';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
@@ -11,6 +11,12 @@ interface DismissedLog {
   contactId: string;
   dismissedAt: string;
   feedback?: PatientFeedback;
+  // Manual entry fields
+  origin?: 'regua' | 'manual';
+  patientId?: string;
+  patientName?: string;
+  patientPhone?: string;
+  manualMessage?: string;
 }
 
 const HistoryList: React.FC = () => {
@@ -38,6 +44,16 @@ const HistoryList: React.FC = () => {
   const [existingStatus, setExistingStatus] = useState<PatientFeedback['status']>('pending');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Manual Registration Modal States
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [manualPatientId, setManualPatientId] = useState('');
+  const [manualMessage, setManualMessage] = useState('');
+  const [manualResponseText, setManualResponseText] = useState('');
+  const [manualClassification, setManualClassification] = useState<PatientFeedback['classification'] | ''>('');
+  const [manualNeedsMedical, setManualNeedsMedical] = useState<string>('');
+  const [manualUrgency, setManualUrgency] = useState<PatientFeedback['urgency'] | ''>('');
+  const [isSavingManual, setIsSavingManual] = useState(false);
+
   // Load data from API
   const loadData = async () => {
     setIsLoading(true);
@@ -54,6 +70,11 @@ const HistoryList: React.FC = () => {
       const transformedLogs = (logsRes.data || []).map((log: any) => ({
         contactId: log.contactId,
         dismissedAt: log.dismissedAt,
+        origin: log.origin || 'regua',
+        patientId: log.patientId,
+        patientName: log.patientName,
+        patientPhone: log.patientPhone,
+        manualMessage: log.manualMessage,
         feedback: log.feedbackText ? {
           text: log.feedbackText,
           classification: log.feedbackClassification,
@@ -93,6 +114,7 @@ const HistoryList: React.FC = () => {
       cutoffDate.setDate(today.getDate() - filterDays);
     }
 
+    // Process regua-based logs
     treatments.forEach((t: Treatment) => {
       const proto = protocols.find((p: Protocol) => p.id === t.protocolId);
       if (!proto || !proto.milestones) return;
@@ -101,7 +123,7 @@ const HistoryList: React.FC = () => {
         const contactId = `${t.id}_m_${m.day}`;
         const log = logsMap.get(contactId);
 
-        if (log) {
+        if (log && log.origin !== 'manual') {
           const dismissedAt = new Date(log.dismissedAt);
 
           if (cutoffDate && dismissedAt < cutoffDate) {
@@ -118,10 +140,32 @@ const HistoryList: React.FC = () => {
               protocolName: proto.name,
               message: m.message,
               isMonitoring: proto.category === ProtocolCategory.MONITORING || proto.category === 'MONITORING',
-              feedback: log.feedback
+              feedback: log.feedback,
+              origin: 'regua'
             });
           }
         }
+      });
+    });
+
+    // Process manual logs
+    dismissedLogs.filter(log => log.origin === 'manual').forEach(log => {
+      const dismissedAt = new Date(log.dismissedAt);
+
+      if (cutoffDate && dismissedAt < cutoffDate) {
+        return;
+      }
+
+      items.push({
+        id: log.contactId,
+        dismissedAt: dismissedAt,
+        patientName: log.patientName || 'Paciente',
+        patientPhone: log.patientPhone || '',
+        protocolName: 'Atendimento Manual',
+        message: log.manualMessage || 'Registro manual de atendimento',
+        isMonitoring: false,
+        feedback: log.feedback,
+        origin: 'manual'
       });
     });
 
@@ -215,6 +259,62 @@ const HistoryList: React.FC = () => {
     }
   };
 
+  // Manual Registration Handlers
+  const handleOpenManualModal = () => {
+    setManualPatientId('');
+    setManualMessage('');
+    setManualResponseText('');
+    setManualClassification('');
+    setManualNeedsMedical('');
+    setManualUrgency('');
+    setIsManualModalOpen(true);
+  };
+
+  const handleSaveManualRegistration = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!manualPatientId) {
+      alert("Por favor, selecione um paciente.");
+      return;
+    }
+
+    if (manualResponseText && (!manualClassification || !manualUrgency || !manualNeedsMedical)) {
+      alert("Se houver resposta, preencha todos os campos de classificacao.");
+      return;
+    }
+
+    setIsSavingManual(true);
+
+    try {
+      const selectedPatient = patients.find(p => p.id === manualPatientId);
+
+      const feedbackData = manualResponseText ? {
+        text: manualResponseText,
+        classification: manualClassification,
+        needsMedicalResponse: manualNeedsMedical === 'yes',
+        urgency: manualUrgency,
+      } : undefined;
+
+      await dismissedLogsApi.createManual({
+        patientId: manualPatientId,
+        patientName: selectedPatient?.fullName || 'Paciente',
+        patientPhone: selectedPatient?.guardian?.phonePrimary,
+        message: manualMessage || undefined,
+        feedback: feedbackData,
+      });
+
+      // Reload data to show new entry
+      await loadData();
+
+      setIsManualModalOpen(false);
+    } catch (err: any) {
+      console.error('Error saving manual registration:', err);
+      alert('Erro ao salvar registro manual: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsSavingManual(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -249,6 +349,14 @@ const HistoryList: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleOpenManualModal}
+            className="flex items-center px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-sm font-medium"
+          >
+            <Plus size={18} className="mr-2" />
+            Registrar Atendimento Manual
+          </button>
+
           <button
             onClick={loadData}
             disabled={isLoading}
@@ -325,13 +433,20 @@ const HistoryList: React.FC = () => {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {item.isMonitoring ? (
-                          <span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded border border-blue-100 font-medium">
-                            {item.protocolName}
-                          </span>
-                        ) : (
-                          <span className="text-slate-600">{item.protocolName}</span>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {item.origin === 'manual' ? (
+                            <span className="bg-amber-50 text-amber-700 text-xs px-2 py-1 rounded border border-amber-200 font-medium inline-flex items-center w-fit">
+                              <MessageSquare size={12} className="mr-1" />
+                              MANUAL
+                            </span>
+                          ) : item.isMonitoring ? (
+                            <span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded border border-blue-100 font-medium w-fit">
+                              {item.protocolName}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">{item.protocolName}</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-slate-600 max-w-xs truncate" title={item.message}>
                         {item.message}
@@ -503,6 +618,146 @@ const HistoryList: React.FC = () => {
             >
               {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
               {isSaving ? 'Salvando...' : 'Salvar Resposta'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MANUAL REGISTRATION MODAL */}
+      <Modal open={isManualModalOpen} onClose={() => setIsManualModalOpen(false)} title="Registrar Atendimento Manual" icon={<Plus size={20} className="text-pink-600" />}>
+        <form onSubmit={handleSaveManualRegistration} className="space-y-5">
+          <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-4">
+            <p className="text-xs text-amber-700">
+              <strong>Atendimento Manual:</strong> Use este formulario para registrar mensagens ou atendimentos recebidos fora da regua de contato (ex: WhatsApp avulso).
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">
+              Paciente <span className="text-red-500">*</span>
+            </label>
+            <select
+              required
+              value={manualPatientId}
+              onChange={e => setManualPatientId(e.target.value)}
+              className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+            >
+              <option value="">Selecione um paciente...</option>
+              {patients.map(p => (
+                <option key={p.id} value={p.id}>{p.fullName}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">
+              Contexto / Mensagem recebida
+            </label>
+            <textarea
+              rows={3}
+              value={manualMessage}
+              onChange={e => setManualMessage(e.target.value)}
+              className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+              placeholder="Descreva o contexto ou a mensagem recebida do paciente..."
+            />
+          </div>
+
+          <div className="border-t border-slate-200 pt-4">
+            <h4 className="text-sm font-bold text-slate-700 mb-3">Resposta do Paciente (opcional)</h4>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  Resposta do paciente (texto livre)
+                </label>
+                <textarea
+                  rows={3}
+                  value={manualResponseText}
+                  onChange={e => setManualResponseText(e.target.value)}
+                  className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                  placeholder="Descreva a resposta ou duvida do paciente..."
+                />
+              </div>
+
+              {manualResponseText && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Classificacao da resposta <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      {['Resposta geral', 'Duvida sobre medicacao, dose', 'Sintomas/queixas'].map((opt) => (
+                        <label key={opt} className={`flex items-center p-2 rounded-lg border cursor-pointer transition-all text-xs ${manualClassification === opt ? 'bg-pink-50 border-pink-500 ring-1 ring-pink-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                          <input
+                            type="radio"
+                            name="manualClassification"
+                            value={opt}
+                            checked={manualClassification === opt}
+                            onChange={(e) => setManualClassification(e.target.value as any)}
+                            className="w-3 h-3 text-pink-600 focus:ring-pink-500 border-gray-300"
+                          />
+                          <span className="ml-2 font-medium text-slate-700">{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Precisa de resposta medica? <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex gap-4">
+                      <label className={`flex-1 flex items-center justify-center p-2 rounded-lg border cursor-pointer transition-all ${manualNeedsMedical === 'yes' ? 'bg-purple-50 border-purple-500 text-purple-700 ring-1 ring-purple-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        <input type="radio" name="manualMedical" value="yes" checked={manualNeedsMedical === 'yes'} onChange={() => setManualNeedsMedical('yes')} className="sr-only" />
+                        <Stethoscope size={14} className="mr-1" /> Sim
+                      </label>
+                      <label className={`flex-1 flex items-center justify-center p-2 rounded-lg border cursor-pointer transition-all ${manualNeedsMedical === 'no' ? 'bg-slate-100 border-slate-400 text-slate-800 ring-1 ring-slate-400' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        <input type="radio" name="manualMedical" value="no" checked={manualNeedsMedical === 'no'} onChange={() => setManualNeedsMedical('no')} className="sr-only" />
+                        Nao
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                      Urgencia <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className={`flex flex-col items-center p-2 rounded-lg border cursor-pointer text-center transition-all ${manualUrgency === 'Sem urgencia' ? 'bg-green-50 border-green-500 text-green-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                        <input type="radio" name="manualUrgency" value="Sem urgencia" checked={manualUrgency === 'Sem urgencia'} onChange={(e) => setManualUrgency(e.target.value as any)} className="sr-only" />
+                        <span className="text-xs font-bold">Sem urgencia</span>
+                      </label>
+                      <label className={`flex flex-col items-center p-2 rounded-lg border cursor-pointer text-center transition-all ${manualUrgency === 'Atencao' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                        <input type="radio" name="manualUrgency" value="Atencao" checked={manualUrgency === 'Atencao'} onChange={(e) => setManualUrgency(e.target.value as any)} className="sr-only" />
+                        <span className="text-xs font-bold flex items-center"><AlertTriangle size={10} className="mr-1" /> Atencao</span>
+                      </label>
+                      <label className={`flex flex-col items-center p-2 rounded-lg border cursor-pointer text-center transition-all ${manualUrgency === 'Urgente' ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                        <input type="radio" name="manualUrgency" value="Urgente" checked={manualUrgency === 'Urgente'} onChange={(e) => setManualUrgency(e.target.value as any)} className="sr-only" />
+                        <span className="text-xs font-bold flex items-center"><AlertCircle size={10} className="mr-1" /> Urgente</span>
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsManualModalOpen(false)}
+              disabled={isSavingManual}
+              className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSavingManual}
+              className="flex items-center px-6 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 font-bold shadow-md shadow-pink-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSavingManual ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
+              {isSavingManual ? 'Salvando...' : 'Salvar Registro'}
             </button>
           </div>
         </form>
