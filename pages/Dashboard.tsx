@@ -483,8 +483,10 @@ const Dashboard: React.FC = () => {
   const endRange = new Date();
   endRange.setDate(endRange.getDate() + 7);
   return doses.filter(d => {
-    // If dose is APPLIED and either PAID or no purchase (purchased=false), remove from list
-    const paymentResolved = d.paymentStatus === PaymentStatus.PAID || d.purchased === false;
+    // Check if there was no purchase (purchased is explicitly false or paymentStatus is null/undefined)
+    const noPurchase = d.purchased === false || (!d.paymentStatus && d.purchased !== true);
+    // If dose is APPLIED and either PAID or no purchase, remove from list
+    const paymentResolved = d.paymentStatus === PaymentStatus.PAID || noPurchase;
     if (d.status === DoseStatus.APPLIED && paymentResolved) {
     return false;
     }
@@ -492,8 +494,8 @@ const Dashboard: React.FC = () => {
     const inRange = appDate >= startRange && appDate <= endRange;
     const isOld = appDate < startRange;
     const hasPendingStatus = d.status === DoseStatus.PENDING;
-    // Only consider payment pending if there was a purchase
-    const hasPendingPayment = d.purchased !== false && d.paymentStatus !== PaymentStatus.PAID;
+    // Only consider payment pending if there was a purchase (purchased is true and has a payment status)
+    const hasPendingPayment = !noPurchase && d.paymentStatus !== PaymentStatus.PAID;
     return inRange || (isOld && (hasPendingStatus || hasPendingPayment));
   }).sort((a, b) => {
     const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
