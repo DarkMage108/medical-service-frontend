@@ -132,7 +132,7 @@ const Dashboard: React.FC = () => {
   }, [loadData]);
 
   // Quick Update Handler
-  const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus', value: string) => {
+  const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus' | 'deliveryStatus', value: string) => {
     try {
       const updates = { [field]: value };
       const updated = await dosesApi.update(doseId, updates);
@@ -198,9 +198,9 @@ const Dashboard: React.FC = () => {
   const handleConfirmDelivery = async (e: React.ChangeEvent<HTMLInputElement>) => {
   if (e.target.checked && selectedDoseId) {
     setIsDelivered(true);
-    // Update both paymentStatus to PAID and deliveryStatus to DELIVERED
+    // Update both paymentStatus to PAID and deliveryStatus to delivered
     await handleQuickUpdate(selectedDoseId, 'paymentStatus', PaymentStatus.PAID);
-    await handleQuickUpdate(selectedDoseId, 'deliveryStatus', 'DELIVERED');
+    await handleQuickUpdate(selectedDoseId, 'deliveryStatus', 'delivered');
     setTimeout(() => {
     setAddressModalOpen(false);
     setIsDelivered(false);
