@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { dismissedLogsApi, treatmentsApi, protocolsApi, patientsApi } from '../services/api';
 import { TreatmentStatus, ProtocolCategory, PatientFeedback, Treatment, Protocol, PatientFull } from '../types';
-import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone } from 'lucide-react';
+import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone, X } from 'lucide-react';
 import { formatDate } from '../constants';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
@@ -47,6 +47,9 @@ const HistoryList: React.FC = () => {
   // Manual Registration Modal States
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [manualPatientId, setManualPatientId] = useState('');
+  const [manualPatientSearch, setManualPatientSearch] = useState('');
+  const [manualPatientSuggestions, setManualPatientSuggestions] = useState<PatientFull[]>([]);
+  const [showPatientSuggestions, setShowPatientSuggestions] = useState(false);
   const [manualMessage, setManualMessage] = useState('');
   const [manualResponseText, setManualResponseText] = useState('');
   const [manualClassification, setManualClassification] = useState<PatientFeedback['classification'] | ''>('');
@@ -100,6 +103,42 @@ const HistoryList: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Helper function to normalize strings for search (remove accents, lowercase)
+  const normalizeString = (str: string) =>
+    str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Search patients by name for autocomplete
+  const searchPatients = (searchText: string) => {
+    if (searchText.length < 2) {
+      setManualPatientSuggestions([]);
+      setShowPatientSuggestions(false);
+      return;
+    }
+
+    const normalizedSearch = normalizeString(searchText);
+    const matches = patients.filter(p =>
+      normalizeString(p.fullName).includes(normalizedSearch)
+    ).slice(0, 8); // Limit to 8 suggestions
+
+    setManualPatientSuggestions(matches);
+    setShowPatientSuggestions(matches.length > 0);
+  };
+
+  // Handle patient selection from autocomplete
+  const handleSelectPatient = (patient: PatientFull) => {
+    setManualPatientId(patient.id);
+    setManualPatientSearch(patient.fullName);
+    setShowPatientSuggestions(false);
+  };
+
+  // Clear patient selection
+  const clearPatientSelection = () => {
+    setManualPatientId('');
+    setManualPatientSearch('');
+    setManualPatientSuggestions([]);
+    setShowPatientSuggestions(false);
+  };
 
   // Combine logs with real data for display
   const historyItems = useMemo(() => {
@@ -305,6 +344,14 @@ const HistoryList: React.FC = () => {
 
       // Reload data to show new entry
       await loadData();
+
+      // Reset form fields
+      clearPatientSelection();
+      setManualMessage('');
+      setManualResponseText('');
+      setManualClassification('');
+      setManualNeedsMedical('');
+      setManualUrgency('');
 
       setIsManualModalOpen(false);
     } catch (err: any) {
@@ -624,7 +671,15 @@ const HistoryList: React.FC = () => {
       </Modal>
 
       {/* MANUAL REGISTRATION MODAL */}
-      <Modal open={isManualModalOpen} onClose={() => setIsManualModalOpen(false)} title="Registrar Atendimento Manual" icon={<Plus size={20} className="text-pink-600" />}>
+      <Modal open={isManualModalOpen} onClose={() => {
+        clearPatientSelection();
+        setManualMessage('');
+        setManualResponseText('');
+        setManualClassification('');
+        setManualNeedsMedical('');
+        setManualUrgency('');
+        setIsManualModalOpen(false);
+      }} title="Registrar Atendimento Manual" icon={<Plus size={20} className="text-pink-600" />}>
         <form onSubmit={handleSaveManualRegistration} className="space-y-5">
           <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-4">
             <p className="text-xs text-amber-700">
@@ -632,21 +687,78 @@ const HistoryList: React.FC = () => {
             </p>
           </div>
 
-          <div>
+          <div className="relative">
             <label className="block text-sm font-bold text-slate-700 mb-1">
               Paciente <span className="text-red-500">*</span>
             </label>
-            <select
-              required
-              value={manualPatientId}
-              onChange={e => setManualPatientId(e.target.value)}
-              className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-            >
-              <option value="">Selecione um paciente...</option>
-              {patients.map(p => (
-                <option key={p.id} value={p.id}>{p.fullName}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <input
+                type="text"
+                value={manualPatientSearch}
+                onChange={e => {
+                  setManualPatientSearch(e.target.value);
+                  searchPatients(e.target.value);
+                  if (!e.target.value) {
+                    setManualPatientId('');
+                  }
+                }}
+                onFocus={() => {
+                  if (manualPatientSearch.length >= 2) {
+                    searchPatients(manualPatientSearch);
+                  }
+                }}
+                placeholder="Digite o nome do paciente..."
+                className={`w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 pr-10 ${manualPatientId ? 'bg-green-50 border-green-300' : ''}`}
+              />
+              {manualPatientId && (
+                <button
+                  type="button"
+                  onClick={clearPatientSelection}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500 rounded-full hover:bg-red-50"
+                  title="Limpar seleção"
+                >
+                  <X size={16} />
+                </button>
+              )}
+              {!manualPatientId && manualPatientSearch.length >= 2 && (
+                <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              )}
+            </div>
+
+            {/* Autocomplete suggestions dropdown */}
+            {showPatientSuggestions && manualPatientSuggestions.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                {manualPatientSuggestions.map(patient => (
+                  <button
+                    key={patient.id}
+                    type="button"
+                    onClick={() => handleSelectPatient(patient)}
+                    className="w-full px-4 py-2 text-left hover:bg-pink-50 flex items-center gap-2 border-b border-slate-100 last:border-b-0"
+                  >
+                    <User size={14} className="text-slate-400" />
+                    <span className="font-medium text-slate-700">{patient.fullName}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Selected patient indicator */}
+            {manualPatientId && (
+              <div className="mt-1 flex items-center gap-1 text-xs text-green-600">
+                <CheckCircle2 size={12} />
+                <span>Paciente selecionado</span>
+              </div>
+            )}
+
+            {/* No results message */}
+            {showPatientSuggestions && manualPatientSuggestions.length === 0 && manualPatientSearch.length >= 2 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-sm text-slate-500">
+                Nenhum paciente encontrado
+              </div>
+            )}
+
+            {/* Hidden required input for form validation */}
+            <input type="hidden" required value={manualPatientId} />
           </div>
 
           <div>
