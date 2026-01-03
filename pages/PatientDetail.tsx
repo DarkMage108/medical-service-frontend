@@ -1,9 +1,9 @@
 ﻿
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi } from '../services/api';
+import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi, patientEventsApi, PatientEvent } from '../services/api';
 import { formatDate, getTreatmentStatusColor, addDays, diffInDays } from '../constants';
-import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2, ClipboardList } from 'lucide-react';
+import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2, ClipboardList, Calendar } from 'lucide-react';
 import AdherenceReportModal from '../components/AdherenceReportModal';
 import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose } from '../types';
 
@@ -48,6 +48,14 @@ const PatientDetail: React.FC = () => {
   const [isAdherenceReportOpen, setIsAdherenceReportOpen] = useState(false);
   const [selectedTreatmentForReport, setSelectedTreatmentForReport] = useState<{ id: string; protocolName: string } | null>(null);
 
+  // Manual Event Modal State
+  const [manualEvents, setManualEvents] = useState<PatientEvent[]>([]);
+  const [isManualEventModalOpen, setIsManualEventModalOpen] = useState(false);
+  const [manualEventTitle, setManualEventTitle] = useState('');
+  const [manualEventDate, setManualEventDate] = useState('');
+  const [manualEventDescription, setManualEventDescription] = useState('');
+  const [isSavingManualEvent, setIsSavingManualEvent] = useState(false);
+
   // Form states for Patient Edit
   const [editName, setEditName] = useState('');
   const [editGuardianName, setEditGuardianName] = useState('');
@@ -69,13 +77,14 @@ const PatientDetail: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [patientRes, treatmentsRes, protocolsRes, dosesRes, dismissedRes, docsRes] = await Promise.all([
+      const [patientRes, treatmentsRes, protocolsRes, dosesRes, dismissedRes, docsRes, eventsRes] = await Promise.all([
         patientsApi.getById(id),
         treatmentsApi.getAll({ patientId: id }),
         protocolsApi.getAll(),
         dosesApi.getAll({ limit: 500 }),
         dismissedLogsApi.getAll(),
-        patientsApi.getDocuments(id)
+        patientsApi.getDocuments(id),
+        patientEventsApi.getByPatient(id)
       ]);
 
       // getById returns the patient object directly, not wrapped in { data: ... }
@@ -85,6 +94,7 @@ const PatientDetail: React.FC = () => {
       setDoses(dosesRes.data || []);
       setDismissedLogs(dismissedRes.data || []);
       setDocuments(docsRes.data || []);
+      setManualEvents(eventsRes.data || []);
     } catch (err: any) {
       console.error('Error loading patient:', err);
       setError(err.message || 'Erro ao carregar paciente');
@@ -217,8 +227,27 @@ const PatientDetail: React.FC = () => {
       }
     });
 
+    // Add manual events
+    const TODAY_MANUAL = new Date();
+    manualEvents.forEach(evt => {
+      const eventDate = new Date(evt.eventDate);
+      const diff = diffInDays(eventDate, TODAY_MANUAL);
+      // Show manual events from past 10 days to future 365 days
+      if (diff > -10 && diff < 365) {
+        events.push({
+          id: `manual_${evt.id}`,
+          date: eventDate,
+          type: 'manual',
+          title: evt.title,
+          subtitle: evt.description || '',
+          status: diff < 0 ? 'late' : 'pending',
+          source: 'manual'
+        });
+      }
+    });
+
     return events.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [treatments, patient, protocols, doses, dismissedLogs]);
+  }, [treatments, patient, protocols, doses, dismissedLogs, manualEvents]);
 
   // Past/Completed Events Logic
   const completedEvents = useMemo(() => {
@@ -556,6 +585,58 @@ const PatientDetail: React.FC = () => {
     }
   };
 
+  // Handle Save Manual Event
+  const handleSaveManualEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !manualEventTitle || !manualEventDate) return;
+
+    // Validate date is not in the past
+    const eventDateObj = new Date(manualEventDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (eventDateObj < today) {
+      alert('A data do evento não pode ser no passado.');
+      return;
+    }
+
+    setIsSavingManualEvent(true);
+
+    try {
+      await patientEventsApi.create(id, {
+        title: manualEventTitle,
+        eventDate: new Date(manualEventDate).toISOString(),
+        description: manualEventDescription || undefined,
+      });
+
+      await loadData();
+      setIsManualEventModalOpen(false);
+      setManualEventTitle('');
+      setManualEventDate('');
+      setManualEventDescription('');
+    } catch (err: any) {
+      console.error('Error creating manual event:', err);
+      alert('Erro ao criar evento: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsSavingManualEvent(false);
+    }
+  };
+
+  // Handle Delete Manual Event
+  const handleDeleteManualEvent = async (eventId: string) => {
+    if (!confirm('Tem certeza que deseja excluir este evento?')) return;
+
+    try {
+      // Extract actual event ID from the prefixed ID
+      const actualId = eventId.replace('manual_', '');
+      await patientEventsApi.delete(actualId);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error deleting manual event:', err);
+      alert('Erro ao excluir evento: ' + (err.message || 'Erro desconhecido'));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -646,55 +727,103 @@ const PatientDetail: React.FC = () => {
       </div>
 
       {/* Timeline Events */}
-      {patient.active && timelineEvents.length > 0 && (
+      {patient.active && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden">
-          <h3 className="font-bold text-slate-700 mb-6 flex items-center">
-            <Clock size={18} className="mr-2 text-pink-500" />
-            Proximos Eventos Programados
-          </h3>
-          <div className="relative">
-            <div className="absolute top-4 left-0 w-full h-0.5 bg-slate-100 z-0"></div>
-
-            <div className="flex gap-8 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent px-2">
-              {timelineEvents.map((evt) => {
-                const isLate = evt.status === 'late';
-                const isDose = evt.type === 'dose';
-
-                return (
-                  <div key={evt.id} className="relative z-10 flex flex-col items-center w-[120px] text-center flex-shrink-0 group">
-                    <div className={`mb-2 text-xs font-bold ${isLate ? 'text-red-600' : 'text-slate-500'}`}>
-                      {formatDate(evt.date)}
-                    </div>
-
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 shadow-sm transition-all mb-3 ${isLate ? 'bg-red-50 border-red-500 text-red-600' :
-                      'bg-white border-blue-500 text-blue-600'
-                      }`}>
-                      {isDose ? <Syringe size={14} /> : <MessageCircle size={14} />}
-                    </div>
-
-                    <Link
-                      to={evt.type === 'message' ? '/' : `/tratamento/${evt.treatmentId}`}
-                      className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[90px] overflow-hidden ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
-                      title={evt.subtitle}
-                    >
-                      <p className={`text-xs font-bold truncate ${isLate ? 'text-red-800' : 'text-slate-800'}`}>
-                        {evt.title}
-                      </p>
-                      <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
-                        {evt.subtitle}
-                      </p>
-                      {isLate && (
-                        <span className="inline-block mt-1 text-[9px] font-bold text-red-600 bg-white px-1.5 py-0.5 rounded border border-red-200">
-                          Atrasado
-                        </span>
-                      )}
-                    </Link>
-                  </div>
-                );
-              })}
-              <div className="min-w-[20px]"></div>
-            </div>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="font-bold text-slate-700 flex items-center">
+              <Clock size={18} className="mr-2 text-pink-500" />
+              Proximos Eventos Programados
+            </h3>
+            <button
+              onClick={() => setIsManualEventModalOpen(true)}
+              className="flex items-center text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              <Plus size={16} className="mr-1" />
+              Agendar Evento Manual
+            </button>
           </div>
+
+          {timelineEvents.length > 0 ? (
+            <div className="relative">
+              <div className="absolute top-4 left-0 w-full h-0.5 bg-slate-100 z-0"></div>
+
+              <div className="flex gap-8 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent px-2">
+                {timelineEvents.map((evt) => {
+                  const isLate = evt.status === 'late';
+                  const isDose = evt.type === 'dose';
+                  const isManual = evt.type === 'manual';
+
+                  return (
+                    <div key={evt.id} className="relative z-10 flex flex-col items-center w-[120px] text-center flex-shrink-0 group">
+                      <div className={`mb-2 text-xs font-bold ${isLate ? 'text-red-600' : 'text-slate-500'}`}>
+                        {formatDate(evt.date)}
+                      </div>
+
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 shadow-sm transition-all mb-3 ${isLate ? 'bg-red-50 border-red-500 text-red-600' :
+                        isManual ? 'bg-amber-50 border-amber-500 text-amber-600' :
+                        'bg-white border-blue-500 text-blue-600'
+                        }`}>
+                        {isDose ? <Syringe size={14} /> : isManual ? <Calendar size={14} /> : <MessageCircle size={14} />}
+                      </div>
+
+                      {isManual ? (
+                        <div
+                          className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[90px] overflow-hidden relative ${isLate ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100 hover:border-amber-200'}`}
+                          title={evt.subtitle}
+                        >
+                          <button
+                            onClick={() => handleDeleteManualEvent(evt.id)}
+                            className="absolute top-1 right-1 p-0.5 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Excluir evento"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                          <p className={`text-xs font-bold truncate ${isLate ? 'text-red-800' : 'text-slate-800'}`}>
+                            {evt.title}
+                          </p>
+                          <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
+                            {evt.subtitle}
+                          </p>
+                          <span className="inline-block mt-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                            Manual
+                          </span>
+                          {isLate && (
+                            <span className="inline-block ml-1 text-[9px] font-bold text-red-600 bg-white px-1.5 py-0.5 rounded border border-red-200">
+                              Atrasado
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <Link
+                          to={evt.type === 'message' ? '/' : `/tratamento/${evt.treatmentId}`}
+                          className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[90px] overflow-hidden ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
+                          title={evt.subtitle}
+                        >
+                          <p className={`text-xs font-bold truncate ${isLate ? 'text-red-800' : 'text-slate-800'}`}>
+                            {evt.title}
+                          </p>
+                          <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
+                            {evt.subtitle}
+                          </p>
+                          {isLate && (
+                            <span className="inline-block mt-1 text-[9px] font-bold text-red-600 bg-white px-1.5 py-0.5 rounded border border-red-200">
+                              Atrasado
+                            </span>
+                          )}
+                        </Link>
+                      )}
+                    </div>
+                  );
+                })}
+                <div className="min-w-[20px]"></div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-400">
+              <Calendar size={32} className="mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Nenhum evento programado</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1207,6 +1336,97 @@ const PatientDetail: React.FC = () => {
           treatmentId={selectedTreatmentForReport.id}
           protocolName={selectedTreatmentForReport.protocolName}
         />
+      )}
+
+      {/* Manual Event Modal */}
+      {isManualEventModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div className="flex items-center">
+                <Plus size={20} className="mr-2 text-blue-600" />
+                <h3 className="font-bold text-lg text-slate-800">Agendar Novo Evento</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsManualEventModalOpen(false);
+                  setManualEventTitle('');
+                  setManualEventDate('');
+                  setManualEventDescription('');
+                }}
+                className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-200 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualEvent} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Titulo do Evento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={manualEventTitle}
+                  onChange={e => setManualEventTitle(e.target.value)}
+                  placeholder="Ex: Entrega de Laudo, Lembrete de Exame..."
+                  className="w-full border-slate-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Data Programada <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={manualEventDate}
+                  onChange={e => setManualEventDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full border-slate-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Descricao / Notas
+                </label>
+                <textarea
+                  value={manualEventDescription}
+                  onChange={e => setManualEventDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Detalhes sobre o evento programado..."
+                  className="w-full border-slate-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsManualEventModalOpen(false);
+                    setManualEventTitle('');
+                    setManualEventDate('');
+                    setManualEventDescription('');
+                  }}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingManualEvent || !manualEventTitle || !manualEventDate}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isSavingManualEvent ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Calendar size={18} className="mr-2" />}
+                  {isSavingManualEvent ? 'Salvando...' : 'Agendar Evento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

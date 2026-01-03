@@ -755,6 +755,48 @@ export const salesApi = {
   },
 };
 
+// ============== PATIENT EVENTS API ==============
+
+export interface PatientEvent {
+  id: string;
+  patientId: string;
+  title: string;
+  eventDate: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const patientEventsApi = {
+  getByPatient: async (patientId: string, params?: { fromDate?: string; toDate?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.fromDate) searchParams.set('fromDate', params.fromDate);
+    if (params?.toDate) searchParams.set('toDate', params.toDate);
+    const query = searchParams.toString();
+    return apiFetch<PaginatedResponse<PatientEvent>>(`/patients/${patientId}/events${query ? `?${query}` : ''}`);
+  },
+
+  create: async (patientId: string, data: { title: string; eventDate: string; description?: string }) => {
+    return apiFetch<PatientEvent>(`/patients/${patientId}/events`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  update: async (eventId: string, data: { title?: string; eventDate?: string; description?: string }) => {
+    return apiFetch<PatientEvent>(`/patient-events/${eventId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  delete: async (eventId: string) => {
+    return apiFetch<void>(`/patient-events/${eventId}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
 // ============== HEALTH CHECK ==============
 
 export const healthCheck = async () => {
@@ -779,5 +821,6 @@ export default {
   documents: documentsApi,
   dismissedLogs: dismissedLogsApi,
   sales: salesApi,
+  patientEvents: patientEventsApi,
   healthCheck,
 };
