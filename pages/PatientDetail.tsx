@@ -637,6 +637,23 @@ const PatientDetail: React.FC = () => {
     }
   };
 
+  // Handle Delete Treatment
+  const handleDeleteTreatment = async (treatmentId: string, protocolName: string) => {
+    const confirmed = confirm(
+      `Tem certeza que deseja excluir o tratamento "${protocolName}"?\n\nEsta ação não pode ser desfeita e todas as doses associadas serão removidas.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await treatmentsApi.delete(treatmentId);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error deleting treatment:', err);
+      alert('Erro ao excluir tratamento: ' + (err.message || 'Erro desconhecido'));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -1036,13 +1053,22 @@ const PatientDetail: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      <Link
-                        to={`/tratamento/${treatment.id}`}
-                        className="flex items-center text-sm font-medium text-pink-600 hover:text-pink-800"
-                      >
-                        Gerenciar
-                        <ArrowRight size={16} className="ml-1" />
-                      </Link>
+                      <div className="flex flex-col items-end gap-2">
+                        <Link
+                          to={`/tratamento/${treatment.id}`}
+                          className="flex items-center text-sm font-medium text-pink-600 hover:text-pink-800"
+                        >
+                          Gerenciar
+                          <ArrowRight size={16} className="ml-1" />
+                        </Link>
+                        <button
+                          onClick={() => handleDeleteTreatment(treatment.id, getProtocolName(treatment.protocolId))}
+                          className="flex items-center text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                        >
+                          <Trash2 size={14} className="mr-1" />
+                          Excluir
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
