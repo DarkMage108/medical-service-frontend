@@ -860,7 +860,7 @@ const PatientDetail: React.FC = () => {
                 const isEditing = editingEventId === evt.id;
 
                 return (
-                  <div key={evt.id} className="relative z-10 flex flex-col items-center min-w-[160px] text-center flex-shrink-0 group">
+                  <div key={evt.id} className="relative z-10 flex flex-col items-center w-[120px] text-center flex-shrink-0 group">
                     <div className="mb-2 text-xs font-bold text-slate-500">
                       {formatDate(evt.date)}
                     </div>
@@ -873,73 +873,66 @@ const PatientDetail: React.FC = () => {
                       {isDose ? <Syringe size={14} /> : <MessageCircle size={14} />}
                     </div>
 
-                    <div className="w-full p-3 rounded-lg border bg-slate-50 border-slate-100 text-left transition-all hover:shadow-md hover:border-green-200">
-                      <div className="flex items-center gap-1 mb-1">
-                        <p className="text-xs font-bold text-slate-800 truncate flex-1">
-                          {evt.title}
-                        </p>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap ${
-                          evt.status === 'applied' ? 'bg-green-100 text-green-700' :
-                          evt.status === 'not_accepted' ? 'bg-orange-100 text-orange-700' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          {evt.status === 'applied' ? 'Aplicada' :
-                           evt.status === 'not_accepted' ? 'Nao Realizada' : 'Concluido'}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 line-clamp-2" title={evt.subtitle}>
+                    <div
+                      className="w-full p-2 rounded-lg border bg-slate-50 border-slate-100 text-left transition-all hover:shadow-md hover:border-green-200 h-[90px] overflow-hidden relative"
+                      title={evt.subtitle}
+                    >
+                      <p className="text-xs font-bold text-slate-800 truncate">
+                        {evt.title}
+                      </p>
+                      <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
                         {evt.subtitle}
                       </p>
-
-                      {/* Observation Display/Edit */}
-                      {isEditing ? (
-                        <div className="mt-2 space-y-2">
-                          <textarea
-                            value={eventObservation}
-                            onChange={(e) => setEventObservation(e.target.value)}
-                            placeholder="Observacao..."
-                            className="w-full text-[10px] border-slate-300 rounded focus:ring-pink-500 focus:border-pink-500 resize-none p-1.5"
-                            rows={2}
-                            autoFocus
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => handleSaveEventObservation(evt.id, evt.doseId)}
-                              disabled={isSavingObservation}
-                              className="flex-1 flex items-center justify-center px-2 py-1 text-[10px] font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                            >
-                              {isSavingObservation ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingEventId(null);
-                                setEventObservation('');
-                              }}
-                              className="px-2 py-1 text-[10px] font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
-                            >
-                              <X size={10} />
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {evt.observation && (
-                            <div className="mt-2 p-1.5 bg-white rounded border border-slate-200">
-                              <p className="text-[10px] text-slate-600 line-clamp-2">{evt.observation}</p>
-                            </div>
-                          )}
-                          {isDose && (
-                            <button
-                              onClick={() => handleOpenEditObservation(evt.id, evt.observation || '')}
-                              className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-slate-400 hover:text-pink-600 py-1 rounded hover:bg-pink-50 transition-colors"
-                            >
-                              {evt.observation ? <Edit2 size={10} /> : <Plus size={10} />}
-                              {evt.observation ? 'Editar' : 'Obs.'}
-                            </button>
-                          )}
-                        </>
+                      <span className={`inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+                        evt.status === 'applied' ? 'bg-green-100 text-green-700' :
+                        evt.status === 'not_accepted' ? 'bg-orange-100 text-orange-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {evt.status === 'applied' ? 'Aplicada' :
+                         evt.status === 'not_accepted' ? 'Nao Realizada' : 'Concluido'}
+                      </span>
+                      {isDose && (
+                        <button
+                          onClick={() => handleOpenEditObservation(evt.id, evt.observation || '')}
+                          className="absolute bottom-1 right-1 p-0.5 text-slate-400 hover:text-pink-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title={evt.observation ? 'Editar observação' : 'Adicionar observação'}
+                        >
+                          {evt.observation ? <Edit2 size={10} /> : <Plus size={10} />}
+                        </button>
                       )}
                     </div>
+
+                    {/* Observation Edit Modal (appears below card when editing) */}
+                    {isEditing && (
+                      <div className="absolute top-full left-0 right-0 mt-2 p-2 bg-white rounded-lg border border-slate-200 shadow-lg z-20">
+                        <textarea
+                          value={eventObservation}
+                          onChange={(e) => setEventObservation(e.target.value)}
+                          placeholder="Observacao..."
+                          className="w-full text-[10px] border-slate-300 rounded focus:ring-pink-500 focus:border-pink-500 resize-none p-1.5"
+                          rows={2}
+                          autoFocus
+                        />
+                        <div className="flex gap-1 mt-1">
+                          <button
+                            onClick={() => handleSaveEventObservation(evt.id, evt.doseId)}
+                            disabled={isSavingObservation}
+                            className="flex-1 flex items-center justify-center px-2 py-1 text-[10px] font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {isSavingObservation ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingEventId(null);
+                              setEventObservation('');
+                            }}
+                            className="px-2 py-1 text-[10px] font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
