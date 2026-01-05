@@ -380,19 +380,46 @@ const Dashboard: React.FC = () => {
 
   // Overdue Doses
   const overdueDoses = useMemo(() => {
-  const latestDosesMap: Record<string, Dose> = {};
+  const result: Dose[] = [];
+  const seenTreatments = new Set<string>();
+
+  // First: Find PENDING doses with applicationDate in the past (these are directly overdue)
   doses.forEach(dose => {
-    if (dose.status !== DoseStatus.APPLIED) return;
-    const existing = latestDosesMap[dose.treatmentId];
-    if (!existing || new Date(dose.applicationDate) > new Date(existing.applicationDate)) {
-    latestDosesMap[dose.treatmentId] = dose;
+    if (dose.status === DoseStatus.PENDING) {
+      const appDate = new Date(dose.applicationDate);
+      if (diffInDays(appDate, TODAY) < 0) {
+        result.push(dose);
+        seenTreatments.add(dose.treatmentId);
+      }
     }
   });
-  return Object.values(latestDosesMap).filter(d => {
-    const nextDate = new Date(d.calculatedNextDate);
-    return diffInDays(nextDate, TODAY) < 0;
-  }).sort((a, b) => {
-    const diff = new Date(a.calculatedNextDate).getTime() - new Date(b.calculatedNextDate).getTime();
+
+  // Second: Find treatments where last APPLIED dose has calculatedNextDate in the past
+  // (only if not already counted above)
+  const latestAppliedMap: Record<string, Dose> = {};
+  doses.forEach(dose => {
+    if (dose.status !== DoseStatus.APPLIED) return;
+    const existing = latestAppliedMap[dose.treatmentId];
+    if (!existing || new Date(dose.applicationDate) > new Date(existing.applicationDate)) {
+      latestAppliedMap[dose.treatmentId] = dose;
+    }
+  });
+
+  Object.values(latestAppliedMap).forEach(d => {
+    if (seenTreatments.has(d.treatmentId)) return; // Already counted as pending overdue
+    if (d.calculatedNextDate) {
+      const nextDate = new Date(d.calculatedNextDate);
+      if (diffInDays(nextDate, TODAY) < 0) {
+        result.push(d);
+      }
+    }
+  });
+
+  return result.sort((a, b) => {
+    // Sort by the relevant date (applicationDate for PENDING, calculatedNextDate for APPLIED)
+    const dateA = a.status === DoseStatus.PENDING ? new Date(a.applicationDate) : new Date(a.calculatedNextDate);
+    const dateB = b.status === DoseStatus.PENDING ? new Date(b.applicationDate) : new Date(b.calculatedNextDate);
+    const diff = dateA.getTime() - dateB.getTime();
     if (diff !== 0) return overdueSortAsc ? diff : -diff;
     // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
@@ -1175,8 +1202,10 @@ const Dashboard: React.FC = () => {
       ) : (
         paginate(overdueDoses, overduePage).map(dose => {
         const patient = getPatient(dose.treatmentId);
-        const nextDate = new Date(dose.calculatedNextDate);
-        const daysDiff = diffInDays(nextDate, TODAY);
+        // For PENDING doses, use applicationDate; for APPLIED, use calculatedNextDate
+        const isPending = dose.status === DoseStatus.PENDING;
+        const overdueDate = isPending ? new Date(dose.applicationDate) : new Date(dose.calculatedNextDate);
+        const daysDiff = diffInDays(overdueDate, TODAY);
         return (
           <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`)} className="hover:bg-red-50/20 cursor-pointer transition-colors group">
           <td className="px-6 py-4">
@@ -1188,7 +1217,10 @@ const Dashboard: React.FC = () => {
             <div className="text-xs font-mono text-slate-500">{patient?.guardian.phonePrimary}</div>
           </td>
           <td className="px-6 py-4">
-            <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-xs">{Math.abs(daysDiff)} dias</span>
+            <div className="flex flex-col gap-1">
+              <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-xs w-fit">{Math.abs(daysDiff)} dias</span>
+              {isPending && <span className="text-[10px] text-orange-600 font-medium">Dose {dose.cycleNumber} pendente</span>}
+            </div>
           </td>
           <td className="px-6 py-4 text-right">
             <span className="inline-flex items-center text-slate-400 group-hover:text-pink-600 transition-colors">
