@@ -539,6 +539,13 @@ const Dashboard: React.FC = () => {
   const contacts: any[] = [];
   const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
 
+  // Helper to parse ISO date string without timezone shift
+  const parseLocalDate = (dateStr: string) => {
+    const dateOnly = dateStr.split('T')[0];
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   activeTreatments.forEach(t => {
     const proto = protocols.find(p => p.id === t.protocolId);
     if (!proto || !proto.milestones || proto.milestones.length === 0) return;
@@ -548,14 +555,14 @@ const Dashboard: React.FC = () => {
     const treatmentDoses = doses.filter(d => d.treatmentId === t.id && d.status === DoseStatus.APPLIED);
     const lastAppliedDose = treatmentDoses.length > 0
       ? treatmentDoses.reduce((latest, d) =>
-          new Date(d.applicationDate) > new Date(latest.applicationDate) ? d : latest
+          parseLocalDate(d.applicationDate).getTime() > parseLocalDate(latest.applicationDate).getTime() ? d : latest
         )
       : null;
 
     // Use last applied dose date as reference, fallback to treatment startDate
     const referenceDate = lastAppliedDose
-      ? new Date(lastAppliedDose.applicationDate)
-      : new Date(t.startDate);
+      ? parseLocalDate(lastAppliedDose.applicationDate)
+      : parseLocalDate(t.startDate);
 
     proto.milestones.forEach(m => {
     const contactId = `${t.id}_m_${m.day}`;
