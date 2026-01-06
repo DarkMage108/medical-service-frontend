@@ -155,16 +155,25 @@ const Checklist: React.FC = () => {
       if (activeDose) {
         steps.medication = activeDose.status === DoseStatus.PENDING ? 'PENDING' : 'OK';
 
-        const isPaid = activeDose.paymentStatus === PaymentStatus.PAID;
-        const isPaymentDone = isPaid || activeDose.paymentStatus === PaymentStatus.WAITING_DELIVERY;
-        steps.payment = isPaymentDone ? 'OK' : 'PENDING';
+        // Check if there's no purchase (purchased === false)
+        const noPurchase = activeDose.purchased === false;
 
-        if (activeDose.paymentStatus === PaymentStatus.WAITING_DELIVERY) {
-          steps.delivery = 'PENDING';
-        } else if (activeDose.paymentStatus === PaymentStatus.PAID) {
-          steps.delivery = 'OK';
+        if (noPurchase) {
+          // No purchase means payment and delivery are not applicable
+          steps.payment = 'NA';
+          steps.delivery = 'NA';
         } else {
-          steps.delivery = 'PENDING';
+          const isPaid = activeDose.paymentStatus === PaymentStatus.PAID;
+          const isPaymentDone = isPaid || activeDose.paymentStatus === PaymentStatus.WAITING_DELIVERY;
+          steps.payment = isPaymentDone ? 'OK' : 'PENDING';
+
+          if (activeDose.paymentStatus === PaymentStatus.WAITING_DELIVERY) {
+            steps.delivery = 'PENDING';
+          } else if (activeDose.paymentStatus === PaymentStatus.PAID) {
+            steps.delivery = 'OK';
+          } else {
+            steps.delivery = 'PENDING';
+          }
         }
 
         const isApplied = activeDose.status === DoseStatus.APPLIED || activeDose.status === DoseStatus.NOT_ACCEPTED;
