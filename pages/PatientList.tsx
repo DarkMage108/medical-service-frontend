@@ -262,6 +262,34 @@ const PatientList: React.FC = () => {
     }
   };
 
+  const handleQuickUpdateDiagnosis = async (patientId: string, newDiagnosis: string) => {
+    try {
+      const patient = patients.find(p => p.id === patientId);
+      if (!patient) return;
+
+      await patientsApi.update(patientId, {
+        fullName: patient.fullName,
+        birthDate: patient.birthDate,
+        gender: patient.gender,
+        mainDiagnosis: newDiagnosis,
+        clinicalNotes: patient.clinicalNotes,
+        guardian: patient.guardian ? {
+          fullName: patient.guardian.fullName,
+          phonePrimary: patient.guardian.phonePrimary,
+          phoneSecondary: patient.guardian.phoneSecondary,
+          email: patient.guardian.email,
+          relationship: patient.guardian.relationship
+        } : undefined,
+        address: patient.address
+      });
+
+      await loadData(); // Refresh list
+    } catch (err: any) {
+      console.error('Error updating diagnosis:', err);
+      alert('Erro ao atualizar diagnóstico: ' + (err.message || 'Erro desconhecido'));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -395,9 +423,17 @@ const PatientList: React.FC = () => {
                     <div className="text-xs text-slate-500">{patient.guardian?.phonePrimary || '-'}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getDiagnosisColorFromData(patient.mainDiagnosis || '')}`}>
-                      {patient.mainDiagnosis || '-'}
-                    </span>
+                    <select
+                      value={patient.mainDiagnosis || ''}
+                      onChange={(e) => handleQuickUpdateDiagnosis(patient.id, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className={`text-xs px-2.5 py-0.5 rounded-full font-medium border-0 cursor-pointer focus:ring-2 focus:ring-pink-500 ${getDiagnosisColorFromData(patient.mainDiagnosis || '')}`}
+                    >
+                      <option value="">Selecione...</option>
+                      {diagnoses.map(d => (
+                        <option key={d.id} value={d.name}>{d.name}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-full ${
