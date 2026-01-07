@@ -5,19 +5,19 @@ import { addDays, diffInDays } from '../constants';
 // --- MOCK DATABASE WITH LOCAL STORAGE PERSISTENCE ---
 
 const TODAY = new Date();
-// ALTERAÇÃO: Sufixo _v7 para forçar limpeza do cache antigo e carregar novos dados
+// ALTERAÇÃO: Sufixo _v8 para forçar limpeza do cache antigo e carregar novos dados (adição de patientNumber)
 const STORAGE_KEYS = {
-  PATIENTS: 'azevedo_patients_v7',
-  TREATMENTS: 'azevedo_treatments_v7',
-  DOSES: 'azevedo_doses_v7',
-  DOCUMENTS: 'azevedo_documents_v7',
-  PROTOCOLS: 'azevedo_protocols_v7',
-  DIAGNOSES: 'azevedo_diagnoses_v7',
-  DISMISSED_LOGS: 'azevedo_dismissed_logs_v7',
-  INVENTORY: 'azevedo_inventory_v7',
-  DISPENSE_LOGS: 'azevedo_dispense_logs_v7',
-  PURCHASE_REQUESTS: 'azevedo_purchase_requests_v7',
-  MEDICATION_BASE: 'azevedo_medication_base_v7'
+  PATIENTS: 'azevedo_patients_v8',
+  TREATMENTS: 'azevedo_treatments_v8',
+  DOSES: 'azevedo_doses_v8',
+  DOCUMENTS: 'azevedo_documents_v8',
+  PROTOCOLS: 'azevedo_protocols_v8',
+  DIAGNOSES: 'azevedo_diagnoses_v8',
+  DISMISSED_LOGS: 'azevedo_dismissed_logs_v8',
+  INVENTORY: 'azevedo_inventory_v8',
+  DISPENSE_LOGS: 'azevedo_dispense_logs_v8',
+  PURCHASE_REQUESTS: 'azevedo_purchase_requests_v8',
+  MEDICATION_BASE: 'azevedo_medication_base_v8'
 };
 
 // Helper to load or use default
@@ -111,6 +111,7 @@ const SEED_DIAGNOSES: Diagnosis[] = [
 const SEED_PATIENTS: PatientFull[] = [
   {
     id: 'pat_1',
+    patientNumber: 1001,
     fullName: 'Ana Clara Souza',
     birthDate: '2015-05-12',
     gender: 'F',
@@ -136,6 +137,7 @@ const SEED_PATIENTS: PatientFull[] = [
   },
   {
     id: 'pat_2',
+    patientNumber: 1002,
     fullName: 'João Pedro Silva',
     birthDate: '2014-08-20',
     gender: 'M',

@@ -38,6 +38,7 @@ export interface Guardian {
 
 export interface Patient {
   id: string;
+  patientNumber: number;
   fullName: string;
   birthDate?: string;
   gender?: 'M' | 'F' | 'Other';

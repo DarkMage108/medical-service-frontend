@@ -385,7 +385,7 @@ const PatientList: React.FC = () => {
               {filteredPatients.map((patient, index) => (
                 <tr key={patient.id} className="hover:bg-slate-50 transition-colors group">
                   <td className="px-4 py-4 text-center">
-                    <span className="text-sm font-medium text-slate-600">{index + 1}</span>
+                    <span className="text-sm font-bold text-slate-700">#{patient.patientNumber}</span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="font-semibold text-slate-900">{patient.fullName}</div>
@@ -503,7 +503,9 @@ const PatientList: React.FC = () => {
                             key={patient.id}
                             className="px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
                           >
-                            <div className="font-medium text-slate-800">{patient.fullName}</div>
+                            <div className="font-medium text-slate-800">
+                              <span className="text-slate-600 font-bold">#{patient.patientNumber}</span> {patient.fullName}
+                            </div>
                             <div className="text-xs text-slate-500 flex gap-2">
                               {patient.mainDiagnosis && <span>{patient.mainDiagnosis}</span>}
                               {patient.guardian?.phonePrimary && <span>• {patient.guardian.phonePrimary}</span>}
