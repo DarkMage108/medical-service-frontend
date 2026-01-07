@@ -121,8 +121,7 @@ export enum PaymentStatus {
   WAITING_PIX = 'WAITING_PIX',
   WAITING_CARD = 'WAITING_CARD',
   WAITING_BOLETO = 'WAITING_BOLETO',
-  PAID = 'PAID',
-  WAITING_DELIVERY = 'WAITING_DELIVERY'
+  PAID = 'PAID'
 }
 
 export enum SurveyStatus {

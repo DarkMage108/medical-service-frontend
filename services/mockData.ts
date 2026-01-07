@@ -224,7 +224,7 @@ const SEED_DOSES: Dose[] = [
     lotNumber: 'CD456',
     expiryDate: '2024-06-30',
     status: DoseStatus.APPLIED,
-    paymentStatus: PaymentStatus.WAITING_DELIVERY,
+    paymentStatus: PaymentStatus.PAID,
     paymentUpdatedAt: '2023-06-01',
     purchased: true,
     deliveryStatus: 'waiting',

@@ -164,13 +164,13 @@ const Checklist: React.FC = () => {
           steps.delivery = 'NA';
         } else {
           const isPaid = activeDose.paymentStatus === PaymentStatus.PAID;
-          const isPaymentDone = isPaid || activeDose.paymentStatus === PaymentStatus.WAITING_DELIVERY;
-          steps.payment = isPaymentDone ? 'OK' : 'PENDING';
+          steps.payment = isPaid ? 'OK' : 'PENDING';
 
-          if (activeDose.paymentStatus === PaymentStatus.WAITING_DELIVERY) {
-            steps.delivery = 'PENDING';
-          } else if (activeDose.paymentStatus === PaymentStatus.PAID) {
+          // Delivery status now uses the dedicated deliveryStatus field
+          if (activeDose.deliveryStatus === 'delivered') {
             steps.delivery = 'OK';
+          } else if (activeDose.deliveryStatus === 'waiting') {
+            steps.delivery = 'PENDING';
           } else {
             steps.delivery = 'PENDING';
           }
@@ -437,7 +437,6 @@ const Checklist: React.FC = () => {
                     PaymentStatus.WAITING_PIX,
                     PaymentStatus.WAITING_CARD,
                     PaymentStatus.WAITING_BOLETO,
-                    PaymentStatus.WAITING_DELIVERY,
                     PaymentStatus.PAID
                   ].map(st => (
                     <button
