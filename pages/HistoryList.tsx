@@ -390,7 +390,7 @@ const HistoryList: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center">
             <History size={28} className="mr-3 text-pink-600" />
-            Historico de Mensagens
+            Central de Mensagens
           </h1>
           <p className="text-slate-500 mt-1">Registro de todas as acoes e mensagens da regua de contato ja concluidas.</p>
         </div>

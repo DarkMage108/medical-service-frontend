@@ -45,7 +45,7 @@ const MENU_LABELS: Record<string, string> = {
   checklist: 'Checklist',
   nursing: 'Enfermagem',
   patients: 'Pacientes',
-  history: 'Historico',
+  history: 'Central de Mensagens',
   inventory: 'Estoque',
   cashregister: 'CAIXA',
   diagnoses: 'Diagnosticos',
