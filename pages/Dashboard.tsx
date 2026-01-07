@@ -819,7 +819,13 @@ const Dashboard: React.FC = () => {
             {patient?.address && (
               <button
               onClick={(e) => handleViewAddress(e, dose.treatmentId, dose.id)}
-              className="p-1 rounded-full text-pink-600 bg-pink-50 hover:bg-pink-100 transition-colors"
+              className={`p-1 rounded-full transition-colors ${
+                dose.deliveryStatus === 'delivered'
+                  ? 'text-green-600 bg-green-50 hover:bg-green-100'
+                  : dose.deliveryStatus === 'waiting'
+                  ? 'text-orange-600 bg-orange-50 hover:bg-orange-100'
+                  : 'text-pink-600 bg-pink-50 hover:bg-pink-100'
+              }`}
               title="Ver Endereço e Entrega"
               >
               <Bike size={16} />
