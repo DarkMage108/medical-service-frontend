@@ -50,14 +50,27 @@ const Checklist: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [manualComment, setManualComment] = useState<string>('');
+  const [applicationDate, setApplicationDate] = useState<string>('');
 
-  // Reset score and comment when selecting new item
+  // Reset score, comment, and application date when selecting new item
   useEffect(() => {
     if (selectedStepInfo) {
       setManualScore(10);
       setManualComment('');
+
+      // Set application date based on dose's scheduled date
+      if (selectedStepInfo.item.doseId) {
+        const dose = doses.find(d => d.id === selectedStepInfo.item.doseId);
+        if (dose?.applicationDate) {
+          setApplicationDate(new Date(dose.applicationDate).toISOString().split('T')[0]);
+        } else {
+          setApplicationDate(new Date().toISOString().split('T')[0]);
+        }
+      } else {
+        setApplicationDate(new Date().toISOString().split('T')[0]);
+      }
     }
-  }, [selectedStepInfo]);
+  }, [selectedStepInfo, doses]);
 
   // Load data from API
   const loadData = async () => {
@@ -204,6 +217,30 @@ const Checklist: React.FC = () => {
     } catch (err: any) {
       console.error('Error updating dose:', err);
       alert('Erro ao atualizar dose: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsProcessing(false);
+      setSelectedStepInfo(null);
+    }
+  };
+
+  const handleMarkAsApplied = async () => {
+    if (!selectedStepInfo?.item.doseId) return;
+    if (!applicationDate) {
+      alert('Por favor, informe a data de aplicação');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      await dosesApi.update(selectedStepInfo.item.doseId, {
+        status: DoseStatus.APPLIED,
+        applicationDate: new Date(applicationDate).toISOString()
+      });
+      await loadData();
+    } catch (err: any) {
+      console.error('Error marking dose as applied:', err);
+      alert('Erro ao marcar dose como aplicada: ' + (err.message || 'Erro desconhecido'));
     } finally {
       setIsProcessing(false);
       setSelectedStepInfo(null);
@@ -408,16 +445,47 @@ const Checklist: React.FC = () => {
                 Crie uma dose primeiro para registrar a aplicacao.
               </div>
             ) : (
-              <div className="space-y-3">
-                <button onClick={() => handleQuickUpdateDose({ status: DoseStatus.APPLIED })} disabled={isProcessing} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-sm">
-                  Marcar como APLICADA
-                </button>
-                <button onClick={() => handleQuickUpdateDose({ status: DoseStatus.PENDING })} disabled={isProcessing} className="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50">
-                  Marcar como Pendente
-                </button>
-                <button onClick={() => handleQuickUpdateDose({ status: DoseStatus.NOT_ACCEPTED })} disabled={isProcessing} className="w-full py-3 bg-slate-100 text-slate-500 rounded-lg font-medium hover:bg-slate-200">
-                  Dose Nao Realizada
-                </button>
+              <div className="space-y-4">
+                {/* Application Date Field */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <label className="block text-sm font-bold text-slate-700 mb-2">
+                    Data de Aplicacao <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={applicationDate}
+                    onChange={(e) => setApplicationDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 bg-white"
+                  />
+                  <p className="text-xs text-slate-600 mt-2 italic">
+                    Confirme ou ajuste a data real da aplicacao
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-3">
+                  <button
+                    onClick={handleMarkAsApplied}
+                    disabled={isProcessing || !applicationDate}
+                    className="w-full py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? 'Salvando...' : 'Marcar como APLICADA'}
+                  </button>
+                  <button
+                    onClick={() => handleQuickUpdateDose({ status: DoseStatus.PENDING })}
+                    disabled={isProcessing}
+                    className="w-full py-3 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50"
+                  >
+                    Marcar como Pendente
+                  </button>
+                  <button
+                    onClick={() => handleQuickUpdateDose({ status: DoseStatus.NOT_ACCEPTED })}
+                    disabled={isProcessing}
+                    className="w-full py-3 bg-slate-100 text-slate-500 rounded-lg font-medium hover:bg-slate-200"
+                  >
+                    Dose Nao Realizada
+                  </button>
+                </div>
               </div>
             )}
           </div>
