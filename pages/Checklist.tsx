@@ -8,12 +8,12 @@ import {
   ProtocolCategory, TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Treatment, PatientFull, Protocol, Dose, Diagnosis
 } from '../types';
 import {
-  ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, User, Pill, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw
+  ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw
 } from 'lucide-react';
 import { getDiagnosisColor, formatDate, PAYMENT_STATUS_LABELS } from '../constants';
 
 type StepStatus = 'OK' | 'PENDING' | 'NA';
-type StepType = 'registration' | 'medication' | 'consent' | 'payment' | 'delivery' | 'application' | 'survey';
+type StepType = 'consent' | 'payment' | 'delivery' | 'application' | 'survey';
 
 interface ChecklistItem {
   treatmentId: string;
@@ -26,7 +26,6 @@ interface ChecklistItem {
   protocolName: string;
   steps: Record<StepType, StepStatus>;
   isComplete: boolean;
-  missingInfo?: string[];
 }
 
 interface SelectedStepInfo {
@@ -121,8 +120,6 @@ const Checklist: React.FC = () => {
       ) || treatmentDoses[treatmentDoses.length - 1];
 
       const steps: Record<StepType, StepStatus> = {
-        registration: 'PENDING',
-        medication: 'OK',
         consent: 'NA',
         payment: 'PENDING',
         delivery: 'PENDING',
@@ -130,17 +127,7 @@ const Checklist: React.FC = () => {
         survey: 'PENDING'
       };
 
-      const missingInfo: string[] = [];
-
-      // 1. Registration check
-      if (!patient.fullName) missingInfo.push('Nome Completo');
-      if (!patient.guardian?.fullName) missingInfo.push('Nome Responsavel');
-      if (!patient.guardian?.phonePrimary) missingInfo.push('Telefone');
-      if (!patient.address) missingInfo.push('Endereco Completo');
-
-      steps.registration = missingInfo.length === 0 ? 'OK' : 'PENDING';
-
-      // 3. Consent term check - uses diagnosis configuration
+      // 1. Consent term check - uses diagnosis configuration
       const diagnosisConfig = diagnoses.find(d => d.name === patient.mainDiagnosis);
       const requiresConsent = diagnosisConfig?.requiresConsent ?? false;
 
@@ -153,8 +140,6 @@ const Checklist: React.FC = () => {
 
       // Dose Logic
       if (activeDose) {
-        steps.medication = activeDose.status === DoseStatus.PENDING ? 'PENDING' : 'OK';
-
         // Check if there's no purchase (purchased === false)
         const noPurchase = activeDose.purchased === false;
 
@@ -199,8 +184,7 @@ const Checklist: React.FC = () => {
           diagnosis: patient.mainDiagnosis || '',
           protocolName: protocol.name,
           steps,
-          isComplete,
-          missingInfo
+          isComplete
         });
       }
     });
@@ -326,92 +310,6 @@ const Checklist: React.FC = () => {
     );
 
     switch (step) {
-      case 'registration':
-        return (
-          <div>
-            {header}
-            <h3 className="font-bold text-slate-700 mb-3 flex items-center"><User size={18} className="mr-2" /> Dados Cadastrais</h3>
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 mb-4 text-sm space-y-2">
-              {item.missingInfo && item.missingInfo.length > 0 ? (
-                <div className="text-red-600 font-medium">
-                  <p className="mb-1 text-xs uppercase text-slate-400">Campos Faltantes:</p>
-                  <ul className="list-disc pl-4">
-                    {item.missingInfo.map(info => <li key={info}>{info}</li>)}
-                  </ul>
-                </div>
-              ) : (
-                <p className="text-green-600 font-medium flex items-center"><CheckCircle2 size={16} className="mr-2" /> Cadastro Completo</p>
-              )}
-            </div>
-            <button
-              onClick={() => navigate(`/pacientes/${item.patientId}`)}
-              className="w-full flex items-center justify-center bg-slate-800 text-white py-2.5 rounded-lg hover:bg-slate-900 font-medium"
-            >
-              <ExternalLink size={16} className="mr-2" /> Editar Cadastro Completo
-            </button>
-          </div>
-        );
-
-      case 'medication':
-        return (
-          <div>
-            {header}
-            <h3 className="font-bold text-slate-700 mb-3 flex items-center"><Pill size={18} className="mr-2" /> Status da Dose</h3>
-
-            {!item.doseId ? (
-              <div className="text-slate-500 italic text-sm p-4 bg-slate-50 rounded border border-slate-100">
-                Nenhuma dose ativa encontrada para gerenciar.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-slate-500 mb-2">Defina o status atual desta dose:</p>
-
-                <button
-                  onClick={() => handleQuickUpdateDose({ status: DoseStatus.APPLIED })}
-                  disabled={isProcessing}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-slate-200 bg-white hover:bg-green-50 hover:border-green-300 transition-all shadow-sm flex items-center"
-                >
-                  <div className="p-2 bg-green-100 text-green-600 rounded-full mr-3">
-                    <CheckCircle2 size={16} />
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-700 block">Aplicada (OK)</span>
-                    <span className="text-xs text-slate-500">Dose realizada com sucesso</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleQuickUpdateDose({ status: DoseStatus.PENDING })}
-                  disabled={isProcessing}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm flex items-center"
-                >
-                  <div className="p-2 bg-blue-100 text-blue-600 rounded-full mr-3">
-                    <Clock size={16} />
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-700 block">Pendente</span>
-                    <span className="text-xs text-slate-500">Aguardando aplicacao</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleQuickUpdateDose({ status: DoseStatus.NOT_ACCEPTED })}
-                  disabled={isProcessing}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 hover:border-slate-300 transition-all shadow-sm flex items-center"
-                >
-                  <div className="p-2 bg-slate-200 text-slate-600 rounded-full mr-3">
-                    <XCircle size={16} />
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-700 block">Nao Realizada (OK)</span>
-                    <span className="text-xs text-slate-500">Cancelada ou Recusada</span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
-        );
-
       case 'payment':
         return (
           <div>
@@ -666,16 +564,6 @@ const Checklist: React.FC = () => {
               {/* Progress Bar */}
               <div className="p-4 overflow-x-auto">
                 <div className="flex items-center min-w-[600px] gap-1">
-                  <div className="flex-1">
-                    {renderStep(item, 'registration', <User />, 'Cadastro')}
-                  </div>
-                  <Connector status={item.steps.registration} />
-
-                  <div className="flex-1">
-                    {renderStep(item, 'medication', <Pill />, 'Medicamento')}
-                  </div>
-                  <Connector status={item.steps.medication} />
-
                   <div className="flex-1">
                     {renderStep(item, 'consent', <FileText />, 'Termo')}
                   </div>
