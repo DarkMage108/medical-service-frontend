@@ -159,6 +159,8 @@ export interface Dose {
   // Payment
   paymentStatus: PaymentStatus;
   paymentUpdatedAt: string;
+  paymentMethod?: 'PIX' | 'CARD' | 'BOLETO'; // Forma de pagamento (quando PAID)
+  paymentDate?: string; // Data do pagamento - Data oficial da venda (ISO Date)
 
   // New Fields requested
   purchased?: boolean; // Compra de Medicamento (Sim/Não)

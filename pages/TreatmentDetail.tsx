@@ -45,6 +45,8 @@ const TreatmentDetail: React.FC = () => {
 
   const [doseStatus, setDoseStatus] = useState<DoseStatus | ''>('');
   const [dosePayment, setDosePayment] = useState<PaymentStatus | ''>('');
+  const [dosePaymentMethod, setDosePaymentMethod] = useState<'PIX' | 'CARD' | 'BOLETO' | ''>('');
+  const [dosePaymentDate, setDosePaymentDate] = useState('');
 
   const [doseIsLast, setDoseIsLast] = useState(false);
   const [doseConsultDate, setDoseConsultDate] = useState('');
@@ -146,6 +148,8 @@ const TreatmentDetail: React.FC = () => {
     setSelectedInventoryId(dose.inventoryLotId || '');
     setDoseStatus(dose.status);
     setDosePayment(dose.paymentStatus || '');
+    setDosePaymentMethod(dose.paymentMethod || '');
+    setDosePaymentDate(dose.paymentDate ? dose.paymentDate.split('T')[0] : '');
     setDoseIsLast(dose.isLastBeforeConsult || false);
     setDoseConsultDate(dose.consultationDate ? dose.consultationDate.split('T')[0] : '');
 
@@ -181,6 +185,8 @@ const TreatmentDetail: React.FC = () => {
     setSelectedInventoryId('');
     setDoseStatus('');
     setDosePayment('');
+    setDosePaymentMethod('');
+    setDosePaymentDate('');
     setDoseDeliveryStatus('');
     setDosePurchased(true);
     setDoseIsLast(false);
@@ -210,6 +216,14 @@ const TreatmentDetail: React.FC = () => {
 
     if (!doseStatus) { alert("Selecione o Status da Dose"); return; }
     if (dosePurchased && !dosePayment) { alert("Selecione a Situacao do Pagamento"); return; }
+    if (dosePurchased && dosePayment === PaymentStatus.PAID && !dosePaymentMethod) {
+      alert("Selecione a Forma de Pagamento");
+      return;
+    }
+    if (dosePurchased && dosePayment === PaymentStatus.PAID && !dosePaymentDate) {
+      alert("Informe a Data do Pagamento");
+      return;
+    }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
 
     // Only require inventory lot if there are available lots and it's a new dose
@@ -236,6 +250,8 @@ const TreatmentDetail: React.FC = () => {
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
         paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : undefined,
+        paymentMethod: (dosePurchased && dosePayment === PaymentStatus.PAID && dosePaymentMethod) ? dosePaymentMethod : undefined,
+        paymentDate: (dosePurchased && dosePayment === PaymentStatus.PAID && dosePaymentDate) ? new Date(dosePaymentDate).toISOString() : undefined,
         isLastBeforeConsult: doseIsLast,
         consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
         nurse: isNurse,
@@ -640,6 +656,50 @@ const TreatmentDetail: React.FC = () => {
                     <option value={PaymentStatus.PAID}>{PAYMENT_STATUS_LABELS[PaymentStatus.PAID]}</option>
                   </select>
                 </div>
+
+                {dosePayment === PaymentStatus.PAID && (
+                  <>
+                    <div className="lg:col-span-2 bg-green-50 p-4 rounded-lg border border-green-200">
+                      <p className="text-xs font-semibold text-green-700 mb-3 uppercase tracking-wide">Dados Financeiros da Venda</p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Forma de Pagamento <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            required
+                            value={dosePaymentMethod}
+                            onChange={(e) => setDosePaymentMethod(e.target.value as 'PIX' | 'CARD' | 'BOLETO' | '')}
+                            className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                          >
+                            <option value="" disabled>Selecione...</option>
+                            <option value="PIX">PIX</option>
+                            <option value="CARD">Cartão</option>
+                            <option value="BOLETO">Boleto</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Data do Pagamento (Data da Venda) <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            required
+                            value={dosePaymentDate}
+                            onChange={(e) => setDosePaymentDate(e.target.value)}
+                            className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                          />
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 mt-2 italic">
+                        Esta data será registrada como a data oficial da venda para fins financeiros.
+                      </p>
+                    </div>
+                  </>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Entrega</label>
