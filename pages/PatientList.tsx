@@ -405,6 +405,7 @@ const PatientList: React.FC = () => {
                 <th className="px-6 py-4">Responsavel</th>
                 <th className="px-6 py-4">Diagnostico</th>
                 <th className="px-6 py-4">Adesao</th>
+                <th className="px-6 py-4">Data de Inclusao</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Acoes</th>
               </tr>
@@ -449,6 +450,14 @@ const PatientList: React.FC = () => {
                        patient.adherenceLevel === 'ABANDONO' ? 'ABANDONO' :
                        '-'}
                     </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-slate-700">
+                      {patient.createdAt ? new Date(patient.createdAt).toLocaleDateString('pt-BR') : '-'}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {patient.createdAt ? new Date(patient.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${patient.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
