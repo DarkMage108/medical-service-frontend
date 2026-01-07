@@ -840,14 +840,9 @@ const Dashboard: React.FC = () => {
             {getProtocolName(dose.treatmentId)}
           </td>
           <td className="px-6 py-4">
-            <select
-            value={dose.status}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => handleQuickUpdate(dose.id, 'status', e.target.value)}
-            className={`text-xs px-2 py-1 rounded-full border-0 font-semibold cursor-pointer focus:ring-2 focus:ring-amber-500 ${getStatusColor(dose.status)}`}
-            >
-            {Object.values(DoseStatus).map(s => <option key={s} value={s}>{DOSE_STATUS_LABELS[s]}</option>)}
-            </select>
+            <span className={`text-xs px-2 py-1 rounded-full font-semibold inline-block ${getStatusColor(dose.status)}`}>
+              {DOSE_STATUS_LABELS[dose.status]}
+            </span>
           </td>
           <td className="px-6 py-4">
             {dose.purchased === false ? (
