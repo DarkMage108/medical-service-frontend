@@ -38,6 +38,7 @@ const PatientDetail: React.FC = () => {
   // Document Upload State
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [consentStatus, setConsentStatus] = useState<'PENDING' | 'SIGNED' | 'REFUSED'>('PENDING');
 
   // Event Observation State
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -513,10 +514,12 @@ const PatientDetail: React.FC = () => {
         await patientsApi.uploadDocument(id, {
           fileName: file.name,
           fileType: file.name.endsWith('.pdf') ? 'pdf' : 'docx',
-          fileUrl: `/uploads/${id}/${file.name}`
+          fileUrl: `/uploads/${id}/${file.name}`,
+          status: 'SIGNED' // When uploading a file, automatically mark as SIGNED
         });
 
         await loadData();
+        setConsentStatus('PENDING'); // Reset status after upload
       } catch (err: any) {
         console.error('Error uploading document:', err);
         setUploadError('Erro ao enviar documento: ' + (err.message || 'Erro desconhecido'));
@@ -524,6 +527,31 @@ const PatientDetail: React.FC = () => {
         setIsUploading(false);
         e.target.value = '';
       }
+    }
+  };
+
+  const handleSaveConsentStatus = async () => {
+    if (!id) return;
+    if (consentStatus === 'PENDING') {
+      setUploadError('Por favor, selecione ASSINADO ou RECUSADO.');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      await patientsApi.uploadDocument(id, {
+        status: consentStatus
+      });
+
+      await loadData();
+      setConsentStatus('PENDING'); // Reset status after save
+    } catch (err: any) {
+      console.error('Error saving consent status:', err);
+      setUploadError('Erro ao salvar status: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1113,7 +1141,7 @@ const PatientDetail: React.FC = () => {
                 {isUploading && (
                   <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10 rounded-xl">
                     <Loader2 size={32} className="text-pink-600 animate-spin mb-2" />
-                    <p className="text-sm font-semibold text-slate-600">Enviando arquivo...</p>
+                    <p className="text-sm font-semibold text-slate-600">Processando...</p>
                   </div>
                 )}
                 <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer bg-slate-50 transition-all group ${uploadError ? 'border-red-300 bg-red-50/30' : 'border-slate-300 hover:bg-pink-50 hover:border-pink-300'}`}>
@@ -1132,6 +1160,65 @@ const PatientDetail: React.FC = () => {
                 </label>
               </div>
 
+              {/* Status Selection - Alternative to file upload */}
+              <div className="mb-8 border-t border-slate-200 pt-6">
+                <div className="flex items-center justify-center mb-3">
+                  <div className="flex-1 border-t border-slate-200"></div>
+                  <span className="px-4 text-xs text-slate-400 uppercase tracking-wide">Ou marque o status</span>
+                  <div className="flex-1 border-t border-slate-200"></div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <label className={`relative flex items-center justify-center p-4 rounded-lg border-2 cursor-pointer transition-all ${consentStatus === 'SIGNED' ? 'bg-green-50 border-green-500 ring-2 ring-green-500' : 'bg-white border-slate-200 hover:border-green-300'}`}>
+                    <input
+                      type="radio"
+                      name="consentStatus"
+                      value="SIGNED"
+                      checked={consentStatus === 'SIGNED'}
+                      onChange={(e) => setConsentStatus(e.target.value as 'SIGNED')}
+                      className="sr-only"
+                    />
+                    <div className="text-center">
+                      <CheckCircle2 size={24} className={`mx-auto mb-2 ${consentStatus === 'SIGNED' ? 'text-green-600' : 'text-slate-400'}`} />
+                      <span className={`text-sm font-bold ${consentStatus === 'SIGNED' ? 'text-green-700' : 'text-slate-600'}`}>ASSINADO</span>
+                    </div>
+                  </label>
+
+                  <label className={`relative flex items-center justify-center p-4 rounded-lg border-2 cursor-pointer transition-all ${consentStatus === 'REFUSED' ? 'bg-red-50 border-red-500 ring-2 ring-red-500' : 'bg-white border-slate-200 hover:border-red-300'}`}>
+                    <input
+                      type="radio"
+                      name="consentStatus"
+                      value="REFUSED"
+                      checked={consentStatus === 'REFUSED'}
+                      onChange={(e) => setConsentStatus(e.target.value as 'REFUSED')}
+                      className="sr-only"
+                    />
+                    <div className="text-center">
+                      <X size={24} className={`mx-auto mb-2 ${consentStatus === 'REFUSED' ? 'text-red-600' : 'text-slate-400'}`} />
+                      <span className={`text-sm font-bold ${consentStatus === 'REFUSED' ? 'text-red-700' : 'text-slate-600'}`}>RECUSADO</span>
+                    </div>
+                  </label>
+                </div>
+
+                <button
+                  onClick={handleSaveConsentStatus}
+                  disabled={isUploading || consentStatus === 'PENDING'}
+                  className="w-full py-3 bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 size={18} className="mr-2 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} className="mr-2" />
+                      Concluir Termo de Consentimento
+                    </>
+                  )}
+                </button>
+              </div>
+
               <div>
                 <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center">
                   Documentos Arquivados
@@ -1145,12 +1232,29 @@ const PatientDetail: React.FC = () => {
                   ) : (
                     documents.map(doc => (
                       <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg hover:shadow-sm transition-shadow">
-                        <div className="flex items-center overflow-hidden">
+                        <div className="flex items-center overflow-hidden flex-1">
                           <div className="p-2 bg-pink-50 rounded-lg mr-3 flex-shrink-0">
                             <File size={20} className="text-pink-600" />
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">{doc.fileName}</p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-medium text-slate-800 truncate">{doc.fileName || 'Sem arquivo anexado'}</p>
+                              {doc.status === 'SIGNED' && (
+                                <span className="flex items-center text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                                  <CheckCircle2 size={10} className="mr-0.5" /> ASSINADO
+                                </span>
+                              )}
+                              {doc.status === 'REFUSED' && (
+                                <span className="flex items-center text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                                  <X size={10} className="mr-0.5" /> RECUSADO
+                                </span>
+                              )}
+                              {doc.status === 'PENDING' && (
+                                <span className="flex items-center text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold flex-shrink-0">
+                                  <Clock size={10} className="mr-0.5" /> PENDENTE
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-slate-500 flex items-center gap-2">
                               <span>{new Date(doc.uploadDate).toLocaleDateString()}</span>
                               <span>-</span>
@@ -1158,16 +1262,18 @@ const PatientDetail: React.FC = () => {
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 ml-4">
-                          <a
-                            href={doc.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Baixar"
-                          >
-                            <Download size={18} />
-                          </a>
+                        <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                          {doc.url && (
+                            <a
+                              href={doc.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Baixar"
+                            >
+                              <Download size={18} />
+                            </a>
+                          )}
                           <button
                             onClick={() => handleDeleteDocument(doc.id)}
                             className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"

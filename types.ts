@@ -50,11 +50,12 @@ export interface Patient {
 export interface ConsentDocument {
   id: string;
   patientId: string;
-  fileName: string;
-  fileType: 'pdf' | 'doc' | 'docx';
+  fileName?: string;
+  fileType?: 'pdf' | 'doc' | 'docx';
   uploadDate: string;
   uploadedBy: string;
-  url: string; // Mock URL
+  url?: string; // Mock URL
+  status: 'PENDING' | 'SIGNED' | 'REFUSED'; // Status of consent
 }
 
 // Adherence level for patients
