@@ -67,6 +67,7 @@ const NursingList: React.FC = () => {
   const [editStatus, setEditStatus] = useState<DoseStatus>(DoseStatus.PENDING);
   const [editApplicationDate, setEditApplicationDate] = useState('');
   const [editApplicationTime, setEditApplicationTime] = useState('');
+  const [editClinicalObservations, setEditClinicalObservations] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Load data from API
@@ -239,6 +240,8 @@ const NursingList: React.FC = () => {
     // Extract time part (HH:MM)
     const timePart = item.dose.applicationDate.split('T')[1];
     setEditApplicationTime(timePart ? timePart.substring(0, 5) : '08:00');
+    // Set clinical observations
+    setEditClinicalObservations(item.dose.clinicalObservations || '');
     setIsModalOpen(true);
   };
 
@@ -254,12 +257,13 @@ const NursingList: React.FC = () => {
       await dosesApi.update(selectedItem.doseId, {
         status: editStatus,
         applicationDate: applicationDateTime,
+        clinicalObservations: editClinicalObservations || null,
       });
 
       // Update local state
       setDoses(prev => prev.map(d =>
         d.id === selectedItem.doseId
-          ? { ...d, status: editStatus, applicationDate: applicationDateTime }
+          ? { ...d, status: editStatus, applicationDate: applicationDateTime, clinicalObservations: editClinicalObservations || undefined }
           : d
       ));
 
@@ -611,6 +615,20 @@ const NursingList: React.FC = () => {
                   className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                 />
               </div>
+            </div>
+
+            {/* Clinical Observations */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Observacoes Clinicas
+              </label>
+              <textarea
+                value={editClinicalObservations}
+                onChange={(e) => setEditClinicalObservations(e.target.value)}
+                rows={4}
+                placeholder="Registre observacoes sobre a aplicacao..."
+                className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 resize-none"
+              />
             </div>
 
             {/* Actions */}

@@ -167,10 +167,11 @@ export interface Dose {
   deliveryStatus?: 'waiting' | 'delivered'; // Entrega
 
   // Nurse & Satisfaction (Moved from Treatment)
-  nurse: boolean; 
+  nurse: boolean;
   surveyStatus: SurveyStatus;
   surveyScore?: number; // 1-10
   surveyComment?: string;
+  clinicalObservations?: string; // Observações clínicas da aplicação
 
   // Link with Inventory
   inventoryLotId?: string; // ID do lote usado
