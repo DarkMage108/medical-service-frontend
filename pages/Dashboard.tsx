@@ -883,11 +883,9 @@ const Dashboard: React.FC = () => {
               className={`p-1 rounded-full transition-colors ${
                 dose.deliveryStatus === 'delivered'
                   ? 'text-green-600 bg-green-50 hover:bg-green-100'
-                  : dose.deliveryStatus === 'waiting'
-                  ? 'text-orange-600 bg-orange-50 hover:bg-orange-100'
-                  : 'text-pink-600 bg-pink-50 hover:bg-pink-100'
+                  : 'text-red-500 bg-red-50 hover:bg-red-100'
               }`}
-              title="Ver Endereço e Entrega"
+              title={dose.deliveryStatus === 'delivered' ? 'Entrega Concluída' : 'Entrega Pendente'}
               >
               <Bike size={16} />
               </button>
