@@ -177,11 +177,17 @@ const Checklist: React.FC = () => {
         const isApplied = activeDose.status === DoseStatus.APPLIED || activeDose.status === DoseStatus.NOT_ACCEPTED;
         steps.application = isApplied ? 'OK' : 'PENDING';
 
-        const surveyOk =
-          activeDose.surveyStatus === SurveyStatus.ANSWERED ||
-          activeDose.surveyStatus === SurveyStatus.NOT_SENT ||
-          !activeDose.nurse;
-        steps.survey = surveyOk ? 'OK' : 'PENDING';
+        // Survey logic: only applicable if there's a nurse
+        if (!activeDose.nurse) {
+          // Caso A: Sem enfermeira -> Não aplicável
+          steps.survey = 'NA';
+        } else if (activeDose.surveyStatus === SurveyStatus.ANSWERED) {
+          // Caso C: Com enfermeira + resposta registrada -> Concluído/Verde
+          steps.survey = 'OK';
+        } else {
+          // Caso B: Com enfermeira + sem resposta -> Pendente
+          steps.survey = 'PENDING';
+        }
       }
 
       const isComplete = Object.values(steps).every(s => s === 'OK' || s === 'NA');
@@ -491,65 +497,112 @@ const Checklist: React.FC = () => {
           </div>
         );
 
-      case 'survey':
+      case 'survey': {
+        const currentDose = item.doseId ? doses.find(d => d.id === item.doseId) : null;
+        const hasNurse = currentDose?.nurse || false;
+        const isAnswered = currentDose?.surveyStatus === SurveyStatus.ANSWERED;
+
         return (
           <div>
             {header}
             <h3 className="font-bold text-slate-700 mb-3 flex items-center"><MessageCircle size={18} className="mr-2" /> Pesquisa de Satisfacao</h3>
-            <p className="text-xs text-slate-500 mb-4">Registre a avaliacao da enfermeira abaixo:</p>
 
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-bold text-slate-700 flex items-center"><Star size={16} className="text-pink-500 mr-2" /> Nota</span>
-                <span className="text-2xl font-bold text-pink-600 bg-white px-3 py-1 rounded-lg border border-pink-100 shadow-sm">{manualScore}</span>
+            {/* Caso A: Sem enfermeira */}
+            {!hasNurse && (
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-slate-600">
+                <p className="font-medium flex items-center">
+                  <XCircle size={16} className="mr-2" />
+                  Pesquisa nao aplicavel
+                </p>
+                <p className="text-xs mt-2">Esta dose nao teve acompanhamento de enfermeira.</p>
               </div>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value={manualScore}
-                onChange={(e) => setManualScore(Number(e.target.value))}
-                className="w-full accent-pink-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-slate-400 mt-2 font-medium uppercase">
-                <span>1 (Ruim)</span>
-                <span>10 (Excelente)</span>
-              </div>
+            )}
 
-              {/* Comment field */}
-              <div className="mt-4">
-                <label className="text-xs font-bold text-slate-600 mb-1 block">Comentario (opcional)</label>
-                <textarea
-                  value={manualComment}
-                  onChange={(e) => setManualComment(e.target.value)}
-                  placeholder="Observacao sobre o atendimento..."
-                  className="w-full text-sm border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 resize-none"
-                  rows={2}
-                />
+            {/* Caso C: Com enfermeira + resposta registrada */}
+            {hasNurse && isAnswered && (
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <p className="text-green-700 font-bold flex items-center mb-3">
+                  <CheckCircle2 size={18} className="mr-2" />
+                  Resposta Registrada
+                </p>
+                <div className="bg-white p-3 rounded-lg border border-green-100 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-slate-600">Nota:</span>
+                    <span className="text-lg font-bold text-green-600 flex items-center">
+                      <Star size={16} className="mr-1 fill-green-600" />
+                      {currentDose?.surveyScore || '-'}/10
+                    </span>
+                  </div>
+                  {currentDose?.surveyComment && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <span className="text-xs font-medium text-slate-600 block mb-1">Comentário:</span>
+                      <p className="text-sm text-slate-700 italic">{currentDose.surveyComment}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="space-y-3">
-              <button
-                onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.ANSWERED, surveyScore: manualScore, surveyComment: manualComment || undefined })}
-                disabled={isProcessing || !item.doseId}
-                className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm disabled:opacity-50"
-              >
-                Registrar Resposta
-              </button>
+            {/* Caso B: Com enfermeira + sem resposta */}
+            {hasNurse && !isAnswered && (
+              <>
+                <p className="text-xs text-slate-500 mb-4">Registre a avaliacao da enfermeira abaixo:</p>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.SENT })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50 text-xs">
-                  Marcar Enviado
-                </button>
-                <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.NOT_SENT })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-lg font-medium hover:bg-slate-200 disabled:opacity-50 text-xs">
-                  Nao Enviar
-                </button>
-              </div>
-            </div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-bold text-slate-700 flex items-center"><Star size={16} className="text-pink-500 mr-2" /> Nota</span>
+                    <span className="text-2xl font-bold text-pink-600 bg-white px-3 py-1 rounded-lg border border-pink-100 shadow-sm">{manualScore}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={manualScore}
+                    onChange={(e) => setManualScore(Number(e.target.value))}
+                    className="w-full accent-pink-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 mt-2 font-medium uppercase">
+                    <span>1 (Ruim)</span>
+                    <span>10 (Excelente)</span>
+                  </div>
+
+                  {/* Comment field */}
+                  <div className="mt-4">
+                    <label className="text-xs font-bold text-slate-600 mb-1 block">Comentario (opcional)</label>
+                    <textarea
+                      value={manualComment}
+                      onChange={(e) => setManualComment(e.target.value)}
+                      placeholder="Observacao sobre o atendimento..."
+                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <button
+                    onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.ANSWERED, surveyScore: manualScore, surveyComment: manualComment || undefined })}
+                    disabled={isProcessing || !item.doseId}
+                    className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 shadow-sm disabled:opacity-50"
+                  >
+                    Registrar Resposta
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.SENT })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50 text-xs">
+                      Marcar Enviado
+                    </button>
+                    <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.NOT_SENT })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-lg font-medium hover:bg-slate-200 disabled:opacity-50 text-xs">
+                      Nao Enviar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         );
+      }
 
       default:
         return <div className="text-slate-500">Selecione uma acao.</div>;
