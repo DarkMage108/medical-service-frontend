@@ -8,7 +8,7 @@ import {
   ProtocolCategory, TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Treatment, PatientFull, Protocol, Dose, Diagnosis
 } from '../types';
 import {
-  ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw
+  ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw, Pill
 } from 'lucide-react';
 import { getDiagnosisColor, formatDate, PAYMENT_STATUS_LABELS } from '../constants';
 
