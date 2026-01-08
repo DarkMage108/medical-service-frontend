@@ -906,6 +906,10 @@ const Dashboard: React.FC = () => {
           <td className="px-6 py-4">
             {dose.purchased === false ? (
             <span className="text-slate-400 text-xs italic">N/A</span>
+            ) : dose.paymentStatus === PaymentStatus.PAID ? (
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(dose.paymentStatus)}`}>
+              {PAYMENT_STATUS_LABELS[dose.paymentStatus]}
+            </span>
             ) : (
             <select
             value={dose.paymentStatus}
@@ -915,7 +919,7 @@ const Dashboard: React.FC = () => {
             className={`text-xs px-2 py-1 rounded-full border-0 font-medium cursor-pointer focus:ring-2 focus:ring-amber-500 ${getStatusColor(dose.paymentStatus)} ${dose.status === DoseStatus.NOT_ACCEPTED ? 'opacity-40 cursor-not-allowed' : ''}`}
             >
             <option value="" disabled>Selecione...</option>
-            {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
+            {Object.values(PaymentStatus).filter(s => s !== PaymentStatus.PAID).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
             </select>
             )}
           </td>
@@ -1360,10 +1364,15 @@ const Dashboard: React.FC = () => {
         <label className="block text-sm font-medium text-slate-700 mb-1">Situação Pagamento</label>
         {!editPurchased ? (
         <div className="w-full py-2 px-3 bg-slate-100 border border-slate-200 rounded-lg text-slate-400 text-sm italic">N/A (Sem compra)</div>
+        ) : editDosePayment === PaymentStatus.PAID ? (
+        <div className="w-full py-2 px-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm font-medium">
+          {PAYMENT_STATUS_LABELS[PaymentStatus.PAID]}
+          <span className="text-xs text-green-600 ml-2">(Edite na Gestão de Tratamento)</span>
+        </div>
         ) : (
         <select required={editDoseStatus !== DoseStatus.NOT_ACCEPTED} disabled={editDoseStatus === DoseStatus.NOT_ACCEPTED} value={editDosePayment} onChange={(e) => setEditDosePayment(e.target.value as PaymentStatus)} className={`w-full border-slate-300 rounded-lg ${editDoseStatus === DoseStatus.NOT_ACCEPTED ? 'bg-slate-100 opacity-50' : ''}`}>
         <option value="" disabled>Selecione...</option>
-        {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
+        {Object.values(PaymentStatus).filter(s => s !== PaymentStatus.PAID).map(s => <option key={s} value={s}>{PAYMENT_STATUS_LABELS[s]}</option>)}
         </select>
         )}
       </div>

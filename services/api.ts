@@ -209,7 +209,7 @@ export const patientsApi = {
     return apiFetch<{ data: any[] }>(`/patients/${patientId}/documents`);
   },
 
-  uploadDocument: async (patientId: string, data: { fileName: string; fileType: string; fileUrl: string }) => {
+  uploadDocument: async (patientId: string, data: { fileName?: string; fileType?: string; fileUrl?: string; status?: string }) => {
     return apiFetch<any>(`/patients/${patientId}/documents`, {
       method: 'POST',
       body: JSON.stringify(data),

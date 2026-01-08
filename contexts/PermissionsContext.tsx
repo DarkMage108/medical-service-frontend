@@ -36,9 +36,12 @@ export const PermissionsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       // Set default permissions on error
       setPermissions({
         dashboard: true,
+        checklist: true,
+        nursing: true,
         patients: true,
         history: true,
         inventory: false,
+        cashregister: false,
         diagnoses: false,
         protocols: false,
       });

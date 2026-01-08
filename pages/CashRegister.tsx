@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { salesApi } from '../services/api';
-import { Sale, PendingSale, SalesKPI, LotPricing, MonthlyReport, PaymentMethod } from '../types';
+import { Sale, SalesKPI, LotPricing, MonthlyReport } from '../types';
 import {
-  DollarSign, TrendingUp, TrendingDown, ShoppingCart, FileText, Package,
+  DollarSign, TrendingUp, TrendingDown, FileText, Package,
   Loader2, AlertTriangle, Calendar, CreditCard, Receipt, ArrowUp, ArrowDown,
-  Plus, Edit2, Trash2, Check, X, Filter, RefreshCw, PieChart, BarChart3
+  Edit2, Trash2, Check, Filter, RefreshCw, PieChart, BarChart3
 } from 'lucide-react';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
@@ -24,13 +24,12 @@ const PERIOD_LABELS: Record<string, string> = {
 };
 
 const CashRegister: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'pending' | 'pricing' | 'report'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'pricing' | 'report'>('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Data States
   const [kpis, setKpis] = useState<SalesKPI | null>(null);
-  const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
   const [lotPricing, setLotPricing] = useState<LotPricing[]>([]);
   const [monthlyReport, setMonthlyReport] = useState<MonthlyReport | null>(null);
 
@@ -42,8 +41,6 @@ const CashRegister: React.FC = () => {
   const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1);
 
   // Modal States
-  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-  const [selectedPending, setSelectedPending] = useState<PendingSale | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
 
@@ -79,7 +76,6 @@ const CashRegister: React.FC = () => {
     setError(null);
     await Promise.all([
     loadKPIs(),
-    loadPendingSales(),
     loadLotPricing(),
     loadMonthlyReport()
     ]);
@@ -96,15 +92,6 @@ const CashRegister: React.FC = () => {
     setKpis(result);
   } catch (err: any) {
     console.error('Failed to load KPIs:', err);
-  }
-  };
-
-  const loadPendingSales = async () => {
-  try {
-    const result = await salesApi.getPending();
-    setPendingSales(result.data || []);
-  } catch (err: any) {
-    console.error('Failed to load pending sales:', err);
   }
   };
 
@@ -126,64 +113,7 @@ const CashRegister: React.FC = () => {
   }
   };
 
-  // Calculate real-time profit preview
-  const calculatedProfit = useMemo(() => {
-  if (!selectedPending?.defaults) return { gross: 0, net: 0, margin: 0 };
-  const unitCost = selectedPending.defaults.unitCost || 0;
-  const gross = formSalePrice - unitCost;
-  const opex = formCommission + formTax + formDelivery + formOther;
-  const net = gross - opex;
-  const margin = formSalePrice > 0 ? (net / formSalePrice) * 100 : 0;
-  return { gross, net, margin };
-  }, [selectedPending, formSalePrice, formCommission, formTax, formDelivery, formOther]);
-
   // Handlers
-  const handleOpenRegister = (pending: PendingSale) => {
-  setSelectedPending(pending);
-  if (pending.defaults) {
-    setFormSalePrice(pending.defaults.salePrice);
-    setFormCommission(pending.defaults.commission);
-    setFormTax(pending.defaults.tax);
-    setFormDelivery(pending.defaults.delivery);
-    setFormOther(pending.defaults.other);
-  } else {
-    setFormSalePrice(0);
-    setFormCommission(0);
-    setFormTax(0);
-    setFormDelivery(0);
-    setFormOther(0);
-  }
-  setFormPaymentMethod('PIX');
-  setIsRegisterModalOpen(true);
-  };
-
-  const handleRegisterSale = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!selectedPending) return;
-
-  setIsSaving(true);
-  try {
-    await salesApi.create({
-    doseId: selectedPending.doseId,
-    salePrice: formSalePrice,
-    commission: formCommission,
-    tax: formTax,
-    delivery: formDelivery,
-    other: formOther,
-    paymentMethod: formPaymentMethod
-    });
-
-    setIsRegisterModalOpen(false);
-    setSelectedPending(null);
-    await Promise.all([loadPendingSales(), loadKPIs(), loadMonthlyReport()]);
-    alert('Venda registrada com sucesso!');
-  } catch (err: any) {
-    setError(err.message || 'Erro ao registrar venda');
-  } finally {
-    setIsSaving(false);
-  }
-  };
-
   const handleOpenEdit = (sale: Sale) => {
   setSelectedSale(sale);
   setFormSalePrice(sale.salePrice);
@@ -222,11 +152,11 @@ const CashRegister: React.FC = () => {
   };
 
   const handleDeleteSale = async (id: string) => {
-  if (!window.confirm('Excluir este registro de venda? A dose voltará para "Vendas Pendentes".')) return;
+  if (!window.confirm('Excluir este registro de venda?')) return;
 
   try {
     await salesApi.delete(id);
-    await Promise.all([loadPendingSales(), loadKPIs(), loadMonthlyReport()]);
+    await Promise.all([loadKPIs(), loadMonthlyReport()]);
   } catch (err: any) {
     setError(err.message || 'Erro ao excluir venda');
   }
@@ -265,18 +195,6 @@ const CashRegister: React.FC = () => {
       >
       <BarChart3 size={16} className="inline mr-2" />
       Visão Geral
-      </button>
-      <button
-      onClick={() => setActiveTab('pending')}
-      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'pending' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'}`}
-      >
-      <ShoppingCart size={16} className="mr-2" />
-      Vendas Pendentes
-      {pendingSales.length > 0 && (
-        <span className="ml-2 bg-orange-100 text-orange-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
-        {pendingSales.length}
-        </span>
-      )}
       </button>
       <button
       onClick={() => setActiveTab('pricing')}
@@ -438,68 +356,6 @@ const CashRegister: React.FC = () => {
       </div>
       )}
     </div>
-    )}
-
-    {/* Tab: Pending Sales */}
-    {activeTab === 'pending' && (
-    <SectionCard
-      title="Vendas Pendentes"
-      icon={<ShoppingCart size={18} className="text-orange-600" />}
-      headerBg="bg-orange-50/30"
-      badge={pendingSales.length > 0 ? pendingSales.length.toString() : undefined}
-    >
-      <div className="p-4 bg-orange-50/50 text-orange-800 text-sm mb-4 rounded-lg flex items-start mx-4 mt-4">
-      <AlertTriangle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-      <p>Aplicações realizadas e pagas que ainda não foram registradas no CAIXA. Clique em "Registrar Venda" para concluir o lançamento financeiro.</p>
-      </div>
-
-      <table className="w-full text-sm text-left">
-      <thead className="text-xs text-slate-500 uppercase bg-slate-50">
-        <tr>
-        <th className="px-6 py-3">Data Aplicação</th>
-        <th className="px-6 py-3">Paciente</th>
-        <th className="px-6 py-3">Medicação</th>
-        <th className="px-6 py-3">Lote</th>
-        <th className="px-6 py-3">Preço Sugerido</th>
-        <th className="px-6 py-3 text-right">Ação</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {pendingSales.length === 0 ? (
-        <tr>
-          <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
-          Nenhuma venda pendente de registro.
-          </td>
-        </tr>
-        ) : (
-        pendingSales.map(pending => (
-          <tr key={pending.doseId} className="hover:bg-slate-50">
-          <td className="px-6 py-4">{formatDate(pending.applicationDate)}</td>
-          <td className="px-6 py-4 font-medium text-slate-800">{pending.patientName}</td>
-          <td className="px-6 py-4">{pending.inventoryItem?.medicationName || '-'}</td>
-          <td className="px-6 py-4 font-mono text-xs">{pending.inventoryItem?.lotNumber || '-'}</td>
-          <td className="px-6 py-4">
-            {pending.defaults?.salePrice ? (
-            <span className="font-medium text-emerald-700">{formatCurrency(pending.defaults.salePrice)}</span>
-            ) : (
-            <span className="text-slate-400">Não definido</span>
-            )}
-          </td>
-          <td className="px-6 py-4 text-right">
-            <button
-            onClick={() => handleOpenRegister(pending)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center ml-auto"
-            >
-            <Plus size={14} className="mr-1" />
-            Registrar Venda
-            </button>
-          </td>
-          </tr>
-        ))
-        )}
-      </tbody>
-      </table>
-    </SectionCard>
     )}
 
     {/* Tab: Lot Pricing */}
@@ -731,160 +587,6 @@ const CashRegister: React.FC = () => {
       )}
     </div>
     )}
-
-    {/* Register Sale Modal */}
-    <Modal
-    open={isRegisterModalOpen}
-    onClose={() => setIsRegisterModalOpen(false)}
-    title="Registrar Venda"
-    icon={<DollarSign size={20} className="text-emerald-600" />}
-    >
-    {selectedPending && (
-      <form onSubmit={handleRegisterSale} className="space-y-4">
-      {/* Patient & Medication Info */}
-      <div className="bg-slate-50 rounded-lg p-4 space-y-2">
-        <div className="flex justify-between text-sm">
-        <span className="text-slate-500">Paciente:</span>
-        <span className="font-medium text-slate-800">{selectedPending.patientName}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-        <span className="text-slate-500">Medicação:</span>
-        <span className="font-medium">{selectedPending.inventoryItem?.medicationName || '-'}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-        <span className="text-slate-500">Data Aplicação:</span>
-        <span>{formatDate(selectedPending.applicationDate)}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-        <span className="text-slate-500">Custo Unitário:</span>
-        <span className="font-medium text-orange-600">{formatCurrency(selectedPending.defaults?.unitCost || 0)}</span>
-        </div>
-      </div>
-
-      {!selectedPending.defaults?.salePrice && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-        <AlertTriangle size={14} className="inline mr-1" />
-        Este lote não possui preço padrão. Preencha os valores manualmente.
-        </div>
-      )}
-
-      {/* Form Fields */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-        <label className="block text-sm font-medium text-slate-700 mb-1">Preço de Venda (R$)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          required
-          className="w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-          value={formSalePrice || ''}
-          onChange={e => setFormSalePrice(Number(e.target.value))}
-        />
-        </div>
-        <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Comissão (R$)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          className="w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-          value={formCommission || ''}
-          onChange={e => setFormCommission(Number(e.target.value))}
-        />
-        </div>
-        <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Impostos (R$)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          className="w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-          value={formTax || ''}
-          onChange={e => setFormTax(Number(e.target.value))}
-        />
-        </div>
-        <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Entrega (R$)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          className="w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-          value={formDelivery || ''}
-          onChange={e => setFormDelivery(Number(e.target.value))}
-        />
-        </div>
-        <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Outros (R$)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0"
-          className="w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-          value={formOther || ''}
-          onChange={e => setFormOther(Number(e.target.value))}
-        />
-        </div>
-        <div className="col-span-2">
-        <label className="block text-sm font-medium text-slate-700 mb-1">Forma de Pagamento</label>
-        <select
-          required
-          className="w-full border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
-          value={formPaymentMethod}
-          onChange={e => setFormPaymentMethod(e.target.value)}
-        >
-          <option value="PIX">PIX</option>
-          <option value="CARD">Cartão</option>
-          <option value="BOLETO">Boleto</option>
-        </select>
-        </div>
-      </div>
-
-      {/* Real-time Profit Preview */}
-      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-        <h4 className="text-sm font-bold text-emerald-700 mb-2">Cálculo em Tempo Real</h4>
-        <div className="space-y-1 text-sm">
-        <div className="flex justify-between">
-          <span className="text-emerald-600">Lucro Bruto:</span>
-          <span className="font-medium">{formatCurrency(calculatedProfit.gross)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-emerald-600">Lucro Líquido:</span>
-          <span className={`font-bold ${calculatedProfit.net >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-          {formatCurrency(calculatedProfit.net)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-emerald-600">Margem Líquida:</span>
-          <span className={`font-bold ${calculatedProfit.margin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-          {calculatedProfit.margin.toFixed(1)}%
-          </span>
-        </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex justify-end gap-2 pt-4">
-        <button
-        type="button"
-        onClick={() => setIsRegisterModalOpen(false)}
-        className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-        >
-        Cancelar
-        </button>
-        <button
-        type="submit"
-        disabled={isSaving || formSalePrice <= 0}
-        className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
-        >
-        {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Check size={18} className="mr-2" />}
-        Registrar Venda
-        </button>
-      </div>
-      </form>
-    )}
-    </Modal>
 
     {/* Edit Sale Modal */}
     <Modal

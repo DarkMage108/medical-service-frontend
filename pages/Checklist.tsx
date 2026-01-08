@@ -8,7 +8,7 @@ import {
   ProtocolCategory, TreatmentStatus, DoseStatus, PaymentStatus, SurveyStatus, ConsentDocument, Treatment, PatientFull, Protocol, Dose, Diagnosis
 } from '../types';
 import {
-  ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw, Pill
+  ListTodo, CheckCircle2, AlertCircle, XCircle, ArrowRight, FileText, CreditCard, Truck, Syringe, MessageCircle, X, Save, UploadCloud, Loader2, ExternalLink, Star, Clock, RefreshCw, Pill, Check
 } from 'lucide-react';
 import { getDiagnosisColor, formatDate, PAYMENT_STATUS_LABELS } from '../constants';
 
@@ -51,12 +51,18 @@ const Checklist: React.FC = () => {
 
   const [manualComment, setManualComment] = useState<string>('');
   const [applicationDate, setApplicationDate] = useState<string>('');
+  const [consentStatus, setConsentStatus] = useState<'PENDING' | 'SIGNED' | 'REFUSED'>('PENDING');
+  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'CARD' | 'BOLETO' | ''>('');
+  const [paymentDate, setPaymentDate] = useState<string>('');
 
-  // Reset score, comment, and application date when selecting new item
+  // Reset score, comment, application date, consent status, and payment fields when selecting new item
   useEffect(() => {
     if (selectedStepInfo) {
       setManualScore(10);
       setManualComment('');
+      setConsentStatus('PENDING');
+      setPaymentMethod('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
 
       // Set application date based on dose's scheduled date
       if (selectedStepInfo.item.doseId) {
@@ -278,7 +284,8 @@ const Checklist: React.FC = () => {
         await patientsApi.uploadDocument(selectedStepInfo.item.patientId, {
           fileName: file.name,
           fileType: file.name.endsWith('.pdf') ? 'pdf' : 'docx',
-          fileUrl: `/uploads/${selectedStepInfo.item.patientId}/${file.name}`
+          fileUrl: `/uploads/${selectedStepInfo.item.patientId}/${file.name}`,
+          status: 'SIGNED'
         });
         await loadData();
       } catch (err: any) {
@@ -288,6 +295,49 @@ const Checklist: React.FC = () => {
         setIsProcessing(false);
         setSelectedStepInfo(null);
       }
+    }
+  };
+
+  const handleSaveConsentStatus = async () => {
+    if (!selectedStepInfo || consentStatus === 'PENDING') return;
+
+    setIsProcessing(true);
+
+    try {
+      await patientsApi.uploadDocument(selectedStepInfo.item.patientId, {
+        status: consentStatus
+      });
+      await loadData();
+    } catch (err: any) {
+      console.error('Error saving consent status:', err);
+      alert('Erro ao salvar status: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsProcessing(false);
+      setSelectedStepInfo(null);
+    }
+  };
+
+  const handleSavePayment = async () => {
+    if (!selectedStepInfo?.item.doseId || !paymentMethod || !paymentDate) {
+      alert('Por favor, preencha a Forma de Pagamento e a Data do Pagamento.');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      await dosesApi.update(selectedStepInfo.item.doseId, {
+        paymentStatus: PaymentStatus.PAID,
+        paymentMethod: paymentMethod,
+        paymentDate: new Date(paymentDate).toISOString()
+      });
+      await loadData();
+    } catch (err: any) {
+      console.error('Error saving payment:', err);
+      alert('Erro ao salvar pagamento: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsProcessing(false);
+      setSelectedStepInfo(null);
     }
   };
 
@@ -372,24 +422,87 @@ const Checklist: React.FC = () => {
               </div>
             ) : (
               <>
-                <p className="text-sm text-slate-500 mb-4">Atualize a situacao do pagamento da dose atual.</p>
-                <div className="grid grid-cols-1 gap-2">
+                {/* Quick Status Buttons */}
+                <p className="text-sm text-slate-500 mb-3">Atualize rapidamente o status:</p>
+                <div className="grid grid-cols-2 gap-2 mb-6">
                   {[
                     PaymentStatus.WAITING_PIX,
                     PaymentStatus.WAITING_CARD,
-                    PaymentStatus.WAITING_BOLETO,
-                    PaymentStatus.PAID
+                    PaymentStatus.WAITING_BOLETO
                   ].map(st => (
                     <button
                       key={st}
                       onClick={() => handleQuickUpdateDose({ paymentStatus: st })}
                       disabled={isProcessing}
-                      className="text-left px-4 py-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-pink-300 text-slate-700 font-medium text-sm transition-all shadow-sm"
+                      className="text-left px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-pink-300 text-slate-700 font-medium text-xs transition-all shadow-sm"
                     >
                       {PAYMENT_STATUS_LABELS[st]}
                     </button>
                   ))}
                 </div>
+
+                {/* Separator */}
+                <div className="flex items-center justify-center mb-4">
+                  <div className="flex-1 border-t border-slate-200"></div>
+                  <span className="px-4 text-xs text-slate-400 uppercase tracking-wide">Ou registre o pagamento</span>
+                  <div className="flex-1 border-t border-slate-200"></div>
+                </div>
+
+                {/* Payment Form */}
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200 space-y-4">
+                  <p className="text-xs font-bold text-green-800 uppercase tracking-wide">Dados Financeiros da Venda</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        Forma de Pagamento <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value as 'PIX' | 'CARD' | 'BOLETO')}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white text-sm"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="PIX">PIX</option>
+                        <option value="CARD">Cartao</option>
+                        <option value="BOLETO">Boleto</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        Data do Pagamento <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={paymentDate}
+                        onChange={(e) => setPaymentDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 italic">
+                    Esta data sera registrada como a data oficial da venda para fins financeiros.
+                  </p>
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  onClick={handleSavePayment}
+                  disabled={isProcessing || !paymentMethod || !paymentDate}
+                  className="w-full mt-4 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-md shadow-green-200"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 size={18} className="mr-2 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} className="mr-2" />
+                      Confirmar Pagamento (PAGO)
+                    </>
+                  )}
+                </button>
               </>
             )}
           </div>
@@ -425,17 +538,88 @@ const Checklist: React.FC = () => {
                 <CheckCircle2 size={20} className="mr-2" /> Termo ja anexado.
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer bg-slate-50 hover:bg-pink-50 hover:border-pink-300 transition-all">
-                {isProcessing ? (
-                  <Loader2 className="animate-spin text-pink-600" />
-                ) : (
-                  <>
-                    <UploadCloud className="w-8 h-8 mb-2 text-slate-400" />
-                    <p className="text-sm text-slate-600 font-medium">Clique para enviar PDF</p>
-                  </>
-                )}
-                <input type="file" className="hidden" accept=".pdf" onChange={handleUploadTerm} disabled={isProcessing} />
-              </label>
+              <>
+                {/* Upload Area */}
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer bg-slate-50 hover:bg-pink-50 hover:border-pink-300 transition-all mb-6">
+                  {isProcessing ? (
+                    <Loader2 className="animate-spin text-pink-600" />
+                  ) : (
+                    <>
+                      <UploadCloud className="w-8 h-8 mb-2 text-slate-400" />
+                      <p className="text-sm text-slate-600 font-medium">Clique para enviar <span className="text-pink-600">PDF ou Word</span></p>
+                      <p className="text-xs text-slate-400 mt-1">Max. 5MB</p>
+                    </>
+                  )}
+                  <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleUploadTerm} disabled={isProcessing} />
+                </label>
+
+                {/* Separator */}
+                <div className="flex items-center justify-center mb-4">
+                  <div className="flex-1 border-t border-slate-200"></div>
+                  <span className="px-4 text-xs text-slate-400 uppercase tracking-wide">Ou marque o status</span>
+                  <div className="flex-1 border-t border-slate-200"></div>
+                </div>
+
+                {/* Status Selection */}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <label className={`relative flex items-center justify-center p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                    consentStatus === 'SIGNED'
+                      ? 'bg-green-50 border-green-500 ring-2 ring-green-500'
+                      : 'bg-white border-slate-200 hover:border-green-300'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="consentStatus"
+                      value="SIGNED"
+                      checked={consentStatus === 'SIGNED'}
+                      onChange={(e) => setConsentStatus(e.target.value as 'SIGNED')}
+                      className="sr-only"
+                    />
+                    <div className="text-center">
+                      <CheckCircle2 size={24} className={`mx-auto mb-2 ${consentStatus === 'SIGNED' ? 'text-green-600' : 'text-slate-400'}`} />
+                      <span className={`text-sm font-bold ${consentStatus === 'SIGNED' ? 'text-green-700' : 'text-slate-600'}`}>ASSINADO</span>
+                    </div>
+                  </label>
+
+                  <label className={`relative flex items-center justify-center p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                    consentStatus === 'REFUSED'
+                      ? 'bg-red-50 border-red-500 ring-2 ring-red-500'
+                      : 'bg-white border-slate-200 hover:border-red-300'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="consentStatus"
+                      value="REFUSED"
+                      checked={consentStatus === 'REFUSED'}
+                      onChange={(e) => setConsentStatus(e.target.value as 'REFUSED')}
+                      className="sr-only"
+                    />
+                    <div className="text-center">
+                      <X size={24} className={`mx-auto mb-2 ${consentStatus === 'REFUSED' ? 'text-red-600' : 'text-slate-400'}`} />
+                      <span className={`text-sm font-bold ${consentStatus === 'REFUSED' ? 'text-red-700' : 'text-slate-600'}`}>RECUSADO</span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  onClick={handleSaveConsentStatus}
+                  disabled={isProcessing || consentStatus === 'PENDING'}
+                  className="w-full py-3 bg-slate-900 text-white rounded-lg font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 size={18} className="mr-2 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} className="mr-2" />
+                      Concluir Termo de Consentimento
+                    </>
+                  )}
+                </button>
+              </>
             )}
           </div>
         );

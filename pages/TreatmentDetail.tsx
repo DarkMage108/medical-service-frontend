@@ -34,6 +34,7 @@ const TreatmentDetail: React.FC = () => {
 
   // Dose Form States
   const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
+  const [editingCycleNumber, setEditingCycleNumber] = useState<number | null>(null);
   const [isSavingDose, setIsSavingDose] = useState(false);
 
   const [doseDate, setDoseDate] = useState(new Date().toISOString().split('T')[0]);
@@ -143,6 +144,7 @@ const TreatmentDetail: React.FC = () => {
 
   const handleOpenEditDose = (dose: Dose) => {
     setEditingDoseId(dose.id);
+    setEditingCycleNumber(dose.cycleNumber || null);
     setDoseDate(dose.applicationDate.split('T')[0]);
     setDoseLot(dose.lotNumber || '');
     setSelectedInventoryId(dose.inventoryLotId || '');
@@ -180,6 +182,7 @@ const TreatmentDetail: React.FC = () => {
 
   const resetDoseForm = () => {
     setEditingDoseId(null);
+    setEditingCycleNumber(null);
     setDoseDate(new Date().toISOString().split('T')[0]);
     setDoseLot('');
     setSelectedInventoryId('');
@@ -197,17 +200,59 @@ const TreatmentDetail: React.FC = () => {
     setDoseSurveyComment('');
   };
 
-  const handleOpenNewDose = () => {
+  const handleOpenNewDose = (cycleNumber?: number, scheduledDate?: Date) => {
     resetDoseForm();
 
     if (treatment) {
-      const nextCycleNumber = doses.length + 1;
-      if (nextCycleNumber === treatment.plannedDosesBeforeConsult) {
+      const targetCycleNumber = cycleNumber || (doses.length + 1);
+
+      // Store the cycle number for saving
+      setEditingCycleNumber(targetCycleNumber);
+
+      // Set application date from scheduled date if provided
+      if (scheduledDate) {
+        setDoseDate(scheduledDate.toISOString().split('T')[0]);
+      }
+
+      // Mark as last dose if this is the last planned dose
+      if (targetCycleNumber === treatment.plannedDosesBeforeConsult) {
         setDoseIsLast(true);
+        // Auto-fill consultation date if available
+        if (treatment.nextConsultationDate) {
+          setDoseConsultDate(treatment.nextConsultationDate.split('T')[0]);
+        }
       }
     }
 
     setShowDoseForm(true);
+
+    // Scroll to form after it renders
+    setTimeout(() => {
+      document.getElementById('dose-form-container')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  // Handle click on scheduled dose card
+  const handleScheduledDoseClick = async (scheduledDose: { cycleNumber: number; scheduledDate: Date; isCreated: boolean; doseId?: string }) => {
+    if (scheduledDose.isCreated && scheduledDose.doseId) {
+      // Dose already exists - open editor
+      const existingDose = doses.find(d => d.id === scheduledDose.doseId);
+      if (existingDose) {
+        handleOpenEditDose(existingDose);
+      }
+    } else {
+      // Dose doesn't exist - check if there's already a dose for this cycle (prevent duplicates)
+      const existingDoseForCycle = doses.find(d => d.cycleNumber === scheduledDose.cycleNumber);
+      if (existingDoseForCycle) {
+        // Already exists, open it
+        handleOpenEditDose(existingDoseForCycle);
+      } else {
+        // Create new dose with scheduled date and pending status
+        handleOpenNewDose(scheduledDose.cycleNumber, scheduledDose.scheduledDate);
+        // Pre-set status to PENDING
+        setDoseStatus(DoseStatus.PENDING);
+      }
+    }
   };
 
   const handleSaveDose = async (e: React.FormEvent) => {
@@ -238,7 +283,18 @@ const TreatmentDetail: React.FC = () => {
       const isNurse = doseNurseSelection === 'yes';
       const finalSurveyStatus = !isNurse ? SurveyStatus.NOT_SENT : (doseSurveyStatus as SurveyStatus || SurveyStatus.NOT_SENT);
 
-      const cycleNumber = doses.length + 1;
+      // Use editingCycleNumber if set, otherwise calculate next cycle
+      const cycleNumber = editingCycleNumber || (doses.length + 1);
+
+      // Check for duplicate cycle number (only for new doses)
+      if (!editingDoseId) {
+        const existingDoseForCycle = doses.find(d => d.cycleNumber === cycleNumber);
+        if (existingDoseForCycle) {
+          alert(`Ja existe uma dose registrada para o ciclo ${cycleNumber}. Edite a dose existente.`);
+          setIsSavingDose(false);
+          return;
+        }
+      }
 
       const doseData = {
         treatmentId: id,
@@ -352,7 +408,8 @@ const TreatmentDetail: React.FC = () => {
     if (!treatment || !protocol || treatment.plannedDosesBeforeConsult === 0) return [];
 
     const scheduled: { cycleNumber: number; scheduledDate: Date; isCreated: boolean; doseId?: string }[] = [];
-    const startDate = new Date(treatment.startDate);
+    // Use addDays with 0 to normalize the start date (avoid timezone issues)
+    const startDate = addDays(treatment.startDate, 0);
     const frequencyDays = protocol.frequencyDays || 28;
 
     // Generate all planned doses
@@ -363,28 +420,27 @@ const TreatmentDetail: React.FC = () => {
       const existingDose = doses.find(d => d.cycleNumber === cycleNumber);
 
       if (existingDose) {
-        // Use the actual application date from created dose
+        // Use the actual application date from created dose (normalized)
         scheduled.push({
           cycleNumber,
-          scheduledDate: new Date(existingDose.applicationDate),
+          scheduledDate: addDays(existingDose.applicationDate, 0),
           isCreated: true,
           doseId: existingDose.id
         });
       } else {
         // Calculate based on the last created dose or start date
         let baseDate = startDate;
-        let daysToAdd = frequencyDays * i;
 
         // If there are previous doses, calculate from the last one
         if (i > 0) {
           const previousScheduled = scheduled[i - 1];
           if (previousScheduled) {
             baseDate = previousScheduled.scheduledDate;
-            daysToAdd = frequencyDays;
           }
         }
 
-        const scheduledDate = addDays(baseDate, daysToAdd);
+        // Add frequencyDays to the base date
+        const scheduledDate = addDays(baseDate, frequencyDays);
         scheduled.push({
           cycleNumber,
           scheduledDate,
@@ -642,20 +698,31 @@ const TreatmentDetail: React.FC = () => {
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {scheduledDoses.map((scheduledDose) => {
-                const isOverdue = !scheduledDose.isCreated && scheduledDose.scheduledDate < new Date();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const isOverdue = !scheduledDose.isCreated && scheduledDose.scheduledDate < today;
                 const actualDose = scheduledDose.doseId ? doses.find(d => d.id === scheduledDose.doseId) : null;
 
+                // Determine status: APLICADA, PENDENTE, or PROGRAMADA
+                let status: 'APLICADA' | 'PENDENTE' | 'PROGRAMADA';
+                if (scheduledDose.isCreated && actualDose) {
+                  status = actualDose.status === DoseStatus.APPLIED ? 'APLICADA' : 'PENDENTE';
+                } else {
+                  status = 'PROGRAMADA';
+                }
+
                 return (
-                  <div
+                  <button
                     key={scheduledDose.cycleNumber}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      scheduledDose.isCreated
-                        ? actualDose?.status === DoseStatus.APPLIED
-                          ? 'bg-green-50 border-green-200'
-                          : 'bg-blue-50 border-blue-200'
+                    onClick={() => handleScheduledDoseClick(scheduledDose)}
+                    className={`p-4 rounded-lg border-2 transition-all text-left w-full hover:shadow-md cursor-pointer ${
+                      status === 'APLICADA'
+                        ? 'bg-green-50 border-green-200 hover:border-green-400'
+                        : status === 'PENDENTE'
+                        ? 'bg-blue-50 border-blue-200 hover:border-blue-400'
                         : isOverdue
-                        ? 'bg-red-50 border-red-300'
-                        : 'bg-slate-50 border-slate-200'
+                        ? 'bg-red-50 border-red-300 hover:border-red-500'
+                        : 'bg-slate-50 border-slate-200 hover:border-pink-300'
                     }`}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -664,10 +731,10 @@ const TreatmentDetail: React.FC = () => {
                           Dose {scheduledDose.cycleNumber}
                         </span>
                         <p className={`font-bold text-sm mt-1 ${
-                          scheduledDose.isCreated
-                            ? actualDose?.status === DoseStatus.APPLIED
-                              ? 'text-green-700'
-                              : 'text-blue-700'
+                          status === 'APLICADA'
+                            ? 'text-green-700'
+                            : status === 'PENDENTE'
+                            ? 'text-blue-700'
                             : isOverdue
                             ? 'text-red-700'
                             : 'text-slate-700'
@@ -676,20 +743,17 @@ const TreatmentDetail: React.FC = () => {
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        {scheduledDose.isCreated ? (
-                          <>
-                            {actualDose?.status === DoseStatus.APPLIED && (
-                              <span className="flex items-center text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">
-                                <Check size={10} className="mr-0.5" /> APLICADA
-                              </span>
-                            )}
-                            {actualDose?.status === DoseStatus.PENDING && (
-                              <span className="flex items-center text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
-                                <Calendar size={10} className="mr-0.5" /> AGENDADA
-                              </span>
-                            )}
-                          </>
-                        ) : (
+                        {status === 'APLICADA' && (
+                          <span className="flex items-center text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">
+                            <Check size={10} className="mr-0.5" /> APLICADA
+                          </span>
+                        )}
+                        {status === 'PENDENTE' && (
+                          <span className="flex items-center text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
+                            <Calendar size={10} className="mr-0.5" /> PENDENTE
+                          </span>
+                        )}
+                        {status === 'PROGRAMADA' && (
                           <>
                             {isOverdue ? (
                               <span className="flex items-center text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
@@ -712,7 +776,13 @@ const TreatmentDetail: React.FC = () => {
                         </p>
                       </div>
                     )}
-                  </div>
+
+                    {/* Click hint */}
+                    <div className="mt-2 text-[10px] text-slate-400 flex items-center">
+                      <Edit size={10} className="mr-1" />
+                      {status === 'PROGRAMADA' ? 'Clique para registrar aplicação' : 'Clique para editar'}
+                    </div>
+                  </button>
                 );
               })}
             </div>
@@ -739,6 +809,11 @@ const TreatmentDetail: React.FC = () => {
           <h3 className="font-bold text-slate-800 mb-4 flex items-center">
             {editingDoseId ? <Edit size={18} className="mr-2 text-pink-600" /> : <Plus size={18} className="mr-2 text-pink-600" />}
             {editingDoseId ? 'Editar Dose' : 'Nova Aplicacao'}
+            {editingCycleNumber && (
+              <span className="ml-2 bg-pink-100 text-pink-700 text-xs font-bold px-2 py-1 rounded-full">
+                Dose {editingCycleNumber}
+              </span>
+            )}
           </h3>
           <form onSubmit={handleSaveDose} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
@@ -1030,9 +1105,19 @@ const TreatmentDetail: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {doses.map((dose) => (
+              {doses
+                .slice()
+                .sort((a, b) => (a.cycleNumber || 0) - (b.cycleNumber || 0))
+                .map((dose) => (
                 <tr key={dose.id} className="hover:bg-slate-50 group">
-                  <td className="px-6 py-4 font-medium text-slate-900">{formatDate(dose.applicationDate)}</td>
+                  <td className="px-6 py-4 font-medium text-slate-900">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                        D{dose.cycleNumber || '-'}
+                      </span>
+                      {formatDate(dose.applicationDate)}
+                    </div>
+                  </td>
                   <td className="px-6 py-4">
                     {dose.purchased ? (
                       <>
