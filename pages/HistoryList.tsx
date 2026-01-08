@@ -21,6 +21,7 @@ interface DismissedLog {
 
 const HistoryList: React.FC = () => {
   const [filterDays, setFilterDays] = useState<number | 'all'>(30);
+  const [medicalResponseFilter, setMedicalResponseFilter] = useState<'all' | 'yes' | 'no'>('all');
 
   // Data states
   const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
@@ -208,8 +209,19 @@ const HistoryList: React.FC = () => {
       });
     });
 
-    return items.sort((a: any, b: any) => b.dismissedAt.getTime() - a.dismissedAt.getTime());
-  }, [filterDays, dismissedLogs, treatments, protocols, patients]);
+    // Apply medical response filter
+    let filteredItems = items;
+    if (medicalResponseFilter === 'yes') {
+      filteredItems = items.filter(item => item.feedback?.needsMedicalResponse === true);
+    } else if (medicalResponseFilter === 'no') {
+      filteredItems = items.filter(item =>
+        item.feedback?.needsMedicalResponse === false ||
+        !item.feedback?.needsMedicalResponse
+      );
+    }
+
+    return filteredItems.sort((a: any, b: any) => b.dismissedAt.getTime() - a.dismissedAt.getTime());
+  }, [filterDays, medicalResponseFilter, dismissedLogs, treatments, protocols, patients]);
 
   // Handlers
   const handleOpenFeedback = (item: any, editMode = false) => {
@@ -426,6 +438,21 @@ const HistoryList: React.FC = () => {
               <option value="30">Ultimos 30 dias</option>
               <option value="60">Ultimos 60 dias</option>
               <option value="all">Todo o periodo</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+            <div className="pl-2 pr-1 text-slate-400">
+              <Stethoscope size={18} />
+            </div>
+            <select
+              value={medicalResponseFilter}
+              onChange={(e) => setMedicalResponseFilter(e.target.value as 'all' | 'yes' | 'no')}
+              className="bg-transparent border-none text-sm font-medium text-slate-700 focus:ring-0 cursor-pointer py-1.5 pr-8 pl-1"
+            >
+              <option value="all">Resposta Medica: Todos</option>
+              <option value="yes">Resposta Medica: Sim</option>
+              <option value="no">Resposta Medica: Nao</option>
             </select>
           </div>
         </div>
