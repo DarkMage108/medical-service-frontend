@@ -293,6 +293,21 @@ const TreatmentDetail: React.FC = () => {
       };
 
       await treatmentsApi.update(id, updates);
+
+      // If nextConsultationDate is set and plannedDoses > 0, update the last planned dose
+      if (editNextConsult && editPlannedDoses > 0) {
+        const lastCycleNumber = editPlannedDoses;
+        const lastDose = doses.find(d => d.cycleNumber === lastCycleNumber);
+
+        if (lastDose) {
+          // Update existing last dose with consultation date and mark as last
+          await dosesApi.update(lastDose.id, {
+            isLastBeforeConsult: true,
+            consultationDate: new Date(editNextConsult).toISOString()
+          });
+        }
+      }
+
       await loadData();
       setIsEditing(false);
     } catch (err: any) {
@@ -884,7 +899,15 @@ const TreatmentDetail: React.FC = () => {
                   id="isLast"
                   type="checkbox"
                   checked={doseIsLast}
-                  onChange={(e) => setDoseIsLast(e.target.checked)}
+                  onChange={(e) => {
+                    const isChecked = e.target.checked;
+                    setDoseIsLast(isChecked);
+
+                    // Auto-fill with treatment's next consultation date if available
+                    if (isChecked && treatment?.nextConsultationDate && !doseConsultDate) {
+                      setDoseConsultDate(treatment.nextConsultationDate.split('T')[0]);
+                    }
+                  }}
                   className="w-4 h-4 text-pink-600 border-slate-300 rounded focus:ring-pink-500"
                 />
                 <label htmlFor="isLast" className="ml-2 text-sm font-medium text-slate-900">Esta e a ultima dose antes da consulta?</label>
