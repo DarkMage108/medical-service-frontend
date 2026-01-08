@@ -332,6 +332,66 @@ const TreatmentDetail: React.FC = () => {
 
   const previewNextDate = protocol ? addDays(new Date(doseDate), protocol.frequencyDays || 30) : new Date();
 
+  // Calculate scheduled doses based on protocol, start date, and planned doses
+  const scheduledDoses = useMemo(() => {
+    if (!treatment || !protocol || treatment.plannedDosesBeforeConsult === 0) return [];
+
+    const scheduled: { cycleNumber: number; scheduledDate: Date; isCreated: boolean; doseId?: string }[] = [];
+    const startDate = new Date(treatment.startDate);
+    const frequencyDays = protocol.frequencyDays || 28;
+
+    // Generate all planned doses
+    for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
+      const cycleNumber = i + 1;
+
+      // Find if this dose was already created
+      const existingDose = doses.find(d => d.cycleNumber === cycleNumber);
+
+      if (existingDose) {
+        // Use the actual application date from created dose
+        scheduled.push({
+          cycleNumber,
+          scheduledDate: new Date(existingDose.applicationDate),
+          isCreated: true,
+          doseId: existingDose.id
+        });
+      } else {
+        // Calculate based on the last created dose or start date
+        let baseDate = startDate;
+        let daysToAdd = frequencyDays * i;
+
+        // If there are previous doses, calculate from the last one
+        if (i > 0) {
+          const previousScheduled = scheduled[i - 1];
+          if (previousScheduled) {
+            baseDate = previousScheduled.scheduledDate;
+            daysToAdd = frequencyDays;
+          }
+        }
+
+        const scheduledDate = addDays(baseDate, daysToAdd);
+        scheduled.push({
+          cycleNumber,
+          scheduledDate,
+          isCreated: false
+        });
+      }
+    }
+
+    return scheduled;
+  }, [treatment, protocol, doses]);
+
+  // Separate scheduled doses into created and future
+  const createdDoses = scheduledDoses.filter(d => d.isCreated);
+  const futureDoses = scheduledDoses.filter(d => !d.isCreated);
+
+  // Check for overdue doses (future doses with date in the past)
+  const overdueDoses = futureDoses.filter(d => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d.scheduledDate < today;
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -542,6 +602,108 @@ const TreatmentDetail: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Scheduled Doses Section */}
+      {scheduledDoses.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-700 flex items-center">
+                <Calendar size={18} className="mr-2 text-pink-600" />
+                Doses Programadas
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Baseado no Protocolo ({protocol?.name}) + Data de Início + Doses Planejadas ({treatment?.plannedDosesBeforeConsult})
+              </p>
+            </div>
+            {overdueDoses.length > 0 && (
+              <span className="flex items-center text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold">
+                <AlertTriangle size={14} className="mr-1" />
+                {overdueDoses.length} dose{overdueDoses.length > 1 ? 's' : ''} em atraso
+              </span>
+            )}
+          </div>
+
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {scheduledDoses.map((scheduledDose) => {
+                const isOverdue = !scheduledDose.isCreated && scheduledDose.scheduledDate < new Date();
+                const actualDose = scheduledDose.doseId ? doses.find(d => d.id === scheduledDose.doseId) : null;
+
+                return (
+                  <div
+                    key={scheduledDose.cycleNumber}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      scheduledDose.isCreated
+                        ? actualDose?.status === DoseStatus.APPLIED
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-blue-50 border-blue-200'
+                        : isOverdue
+                        ? 'bg-red-50 border-red-300'
+                        : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">
+                          Dose {scheduledDose.cycleNumber}
+                        </span>
+                        <p className={`font-bold text-sm mt-1 ${
+                          scheduledDose.isCreated
+                            ? actualDose?.status === DoseStatus.APPLIED
+                              ? 'text-green-700'
+                              : 'text-blue-700'
+                            : isOverdue
+                            ? 'text-red-700'
+                            : 'text-slate-700'
+                        }`}>
+                          {formatDate(scheduledDose.scheduledDate.toISOString())}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        {scheduledDose.isCreated ? (
+                          <>
+                            {actualDose?.status === DoseStatus.APPLIED && (
+                              <span className="flex items-center text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">
+                                <Check size={10} className="mr-0.5" /> APLICADA
+                              </span>
+                            )}
+                            {actualDose?.status === DoseStatus.PENDING && (
+                              <span className="flex items-center text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
+                                <Calendar size={10} className="mr-0.5" /> AGENDADA
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {isOverdue ? (
+                              <span className="flex items-center text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
+                                <AlertTriangle size={10} className="mr-0.5" /> ATRASADA
+                              </span>
+                            ) : (
+                              <span className="flex items-center text-[10px] bg-slate-400 text-white px-2 py-0.5 rounded-full font-bold">
+                                PROGRAMADA
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {actualDose && actualDose.lotNumber && (
+                      <div className="mt-2 pt-2 border-t border-slate-200/50">
+                        <p className="text-xs text-slate-600">
+                          Lote: <span className="font-mono font-medium">{actualDose.lotNumber}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex justify-end">
