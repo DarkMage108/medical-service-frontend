@@ -26,8 +26,11 @@ const KpiCard: React.FC<KpiCardProps> = ({
   accentColor = 'green',
   onClick,
 }) => {
-  const accent = accentMap[accentColor];
-  const borderClass = accent.split(' ')[2]; // Extract border color for bottom bar
+  const accent = accentMap[accentColor] || accentMap.green;
+  const accentParts = accent.split(' ');
+  const bgClass = accentParts[0] || 'bg-green-50';
+  const textClass = accentParts[1] || 'text-green-600';
+  const borderClass = accentParts[2] || 'border-green-500';
 
   return (
     <div
@@ -38,7 +41,7 @@ const KpiCard: React.FC<KpiCardProps> = ({
         <h3 className="text-sm font-medium text-slate-500 group-hover:text-slate-800 transition-colors">
           {title}
         </h3>
-        <div className={`p-2 rounded-lg ${accent.split(' ')[0]} ${accent.split(' ')[1]}`}>
+        <div className={`p-2 rounded-lg ${bgClass} ${textClass}`}>
           {icon}
         </div>
       </div>
