@@ -1,6 +1,6 @@
 ﻿import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, purchaseRequestsApi, dismissedLogsApi } from '../services/api';
+import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, purchaseRequestsApi, dismissedLogsApi, patientEventsApi, PatientEventWithPatient } from '../services/api';
 import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, Treatment, Protocol } from '../types';
 import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS } from '../constants';
 import { UserCheck, MessageSquare, Phone, ExternalLink, Activity, ShoppingCart } from 'lucide-react';
@@ -27,6 +27,7 @@ const Dashboard: React.FC = () => {
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [documents, setDocuments] = useState<ConsentDocument[]>([]);
   const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
+  const [manualEvents, setManualEvents] = useState<PatientEventWithPatient[]>([]);
   const [pendingPurchases, setPendingPurchases] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +81,7 @@ const Dashboard: React.FC = () => {
   const [consentPage, setConsentPage] = useState(1);
   const [consultsPage, setConsultsPage] = useState(1);
   const [overduePage, setOverduePage] = useState(1);
+  const [upcomingDosesPage, setUpcomingDosesPage] = useState(1);
 
   // Sort direction states (true = ascending/closest first, false = descending/farthest first)
   const [activitySortAsc, setActivitySortAsc] = useState(true);
@@ -87,6 +89,7 @@ const Dashboard: React.FC = () => {
   const [surveysSortAsc, setSurveysSortAsc] = useState(true);
   const [consultsSortAsc, setConsultsSortAsc] = useState(true);
   const [overdueSortAsc, setOverdueSortAsc] = useState(true);
+  const [upcomingDosesSortAsc, setUpcomingDosesSortAsc] = useState(true);
 
   // Load data from API
   const loadData = useCallback(async () => {
@@ -101,7 +104,8 @@ const Dashboard: React.FC = () => {
     protocolsRes,
     documentsRes,
     purchaseRes,
-    dismissedRes
+    dismissedRes,
+    manualEventsRes
     ] = await Promise.all([
     dosesApi.getAll({ limit: 500 }),
     patientsApi.getAll({ limit: 500 }),
@@ -109,7 +113,8 @@ const Dashboard: React.FC = () => {
     protocolsApi.getAll(),
     documentsApi.getAll(),
     purchaseRequestsApi.getAll(),
-    dismissedLogsApi.getAll()
+    dismissedLogsApi.getAll(),
+    patientEventsApi.getAll()
     ]);
 
     setDoses(dosesRes.data || []);
@@ -118,6 +123,7 @@ const Dashboard: React.FC = () => {
     setProtocols(protocolsRes.data || []);
     setDocuments(documentsRes.data || []);
     setDismissedLogs(dismissedRes.data || []);
+    setManualEvents(manualEventsRes.data || []);
     setPendingPurchases((purchaseRes.data || []).filter((r: any) => r.status === 'PENDING').length);
   } catch (err: any) {
     setError(err.message || 'Erro ao carregar dados');
@@ -132,7 +138,7 @@ const Dashboard: React.FC = () => {
   }, [loadData]);
 
   // Quick Update Handler
-  const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus' | 'deliveryStatus', value: string) => {
+  const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus' | 'deliveryStatus' | 'surveyStatus', value: string) => {
     try {
       const updates = { [field]: value };
       const updated = await dosesApi.update(doseId, updates);
@@ -371,12 +377,18 @@ const Dashboard: React.FC = () => {
   // Data Logic
   const TODAY = new Date();
 
-  // Stats
+  // Stats - Active patients are those with ongoing treatments (scheduled events)
   const patientStats = useMemo(() => {
   const total = patients.length;
-  const active = patients.filter(p => p.active).length;
+  // Get patient IDs that have ongoing treatments
+  const patientsWithOngoingTreatments = new Set(
+    treatments
+      .filter(t => t.status === TreatmentStatus.ONGOING)
+      .map(t => t.patientId)
+  );
+  const active = patientsWithOngoingTreatments.size;
   return { active, inactive: total - active };
-  }, [patients]);
+  }, [patients, treatments]);
 
   // Overdue Doses (includes scheduled doses that haven't been created yet)
   const overdueDoses = useMemo(() => {
@@ -386,7 +398,7 @@ const Dashboard: React.FC = () => {
   // First: Find PENDING doses with applicationDate in the past (these are directly overdue)
   doses.forEach(dose => {
     if (dose.status === DoseStatus.PENDING) {
-      const appDate = new Date(dose.applicationDate);
+      const appDate = addDays(dose.applicationDate, 0); // Normalize date
       if (diffInDays(appDate, TODAY) < 0) {
         result.push(dose);
         seenTreatments.add(dose.treatmentId);
@@ -408,9 +420,10 @@ const Dashboard: React.FC = () => {
   Object.values(latestAppliedMap).forEach(d => {
     if (seenTreatments.has(d.treatmentId)) return; // Already counted as pending overdue
     if (d.calculatedNextDate) {
-      const nextDate = new Date(d.calculatedNextDate);
+      const nextDate = addDays(d.calculatedNextDate, 0); // Normalize date
       if (diffInDays(nextDate, TODAY) < 0) {
         result.push(d);
+        seenTreatments.add(d.treatmentId); // Mark as seen to avoid duplicates in section 3
       }
     }
   });
@@ -418,19 +431,22 @@ const Dashboard: React.FC = () => {
   // Third: Check for scheduled doses (based on treatment plan) that are overdue but haven't been created yet
   const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
   activeTreatments.forEach(treatment => {
+    // Skip if already counted
+    if (seenTreatments.has(treatment.id)) return;
+
     const protocol = protocols.find(p => p.id === treatment.protocolId);
     if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || treatment.plannedDosesBeforeConsult === 0) return;
 
     const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
     const createdCycles = new Set(treatmentDoses.map(d => d.cycleNumber));
-    const startDate = new Date(treatment.startDate);
+    const startDate = addDays(treatment.startDate, 0); // Normalize date
     const frequencyDays = protocol.frequencyDays || 28;
 
     // Check each planned dose
     for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
       const cycleNumber = i + 1;
 
-      // Skip if dose already created
+      // Skip if dose already created (APPLIED or PENDING - these are handled above)
       if (createdCycles.has(cycleNumber)) continue;
 
       // Calculate scheduled date for this uncreated dose
@@ -439,25 +455,21 @@ const Dashboard: React.FC = () => {
 
       // If there are previous doses, calculate from the last one
       if (i > 0) {
-        const previousCycle = i;
-        let previousDate = startDate;
-
-        // Find the actual date of the previous dose (created or calculated)
-        for (let j = previousCycle; j >= 1; j--) {
-          const previousDose = treatmentDoses.find(d => d.cycleNumber === j);
+        // Find the last created dose before this cycle
+        for (let j = i - 1; j >= 0; j--) {
+          const previousDose = treatmentDoses.find(d => d.cycleNumber === j + 1);
           if (previousDose) {
-            previousDate = new Date(previousDose.applicationDate);
+            scheduledDate = addDays(previousDose.applicationDate, 0); // Normalize date
             daysToAdd = frequencyDays * (i - j);
             break;
           }
         }
-        scheduledDate = previousDate;
       }
 
       const calculatedDate = addDays(scheduledDate, daysToAdd);
 
       // Check if this scheduled dose is overdue
-      if (diffInDays(calculatedDate, TODAY) < 0 && !seenTreatments.has(treatment.id)) {
+      if (diffInDays(calculatedDate, TODAY) < 0) {
         // Create a virtual dose object to represent the overdue scheduled dose
         const virtualDose: any = {
           id: `virtual-${treatment.id}-${cycleNumber}`,
@@ -478,8 +490,8 @@ const Dashboard: React.FC = () => {
 
   return result.sort((a, b) => {
     // Sort by the relevant date (applicationDate for PENDING, calculatedNextDate for APPLIED)
-    const dateA = a.status === DoseStatus.PENDING ? new Date(a.applicationDate) : new Date(a.calculatedNextDate);
-    const dateB = b.status === DoseStatus.PENDING ? new Date(b.applicationDate) : new Date(b.calculatedNextDate);
+    const dateA = a.status === DoseStatus.PENDING ? addDays(a.applicationDate, 0) : addDays(a.calculatedNextDate, 0);
+    const dateB = b.status === DoseStatus.PENDING ? addDays(b.applicationDate, 0) : addDays(b.calculatedNextDate, 0);
     const diff = dateA.getTime() - dateB.getTime();
     if (diff !== 0) return overdueSortAsc ? diff : -diff;
     // Secondary sort by patient name when dates are equal
@@ -489,12 +501,102 @@ const Dashboard: React.FC = () => {
   });
   }, [doses, overdueSortAsc, treatments, patients, protocols]);
 
-  // Pending Surveys
+  // Upcoming Scheduled Doses (future doses not yet applied)
+  const upcomingScheduledDoses = useMemo(() => {
+  const result: Array<{
+    treatmentId: string;
+    cycleNumber: number;
+    scheduledDate: Date;
+    daysUntil: number;
+    patientName: string;
+    guardianName: string;
+    protocolName: string;
+    isCreated: boolean;
+    doseId?: string;
+  }> = [];
+
+  const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
+
+  activeTreatments.forEach(treatment => {
+    const protocol = protocols.find(p => p.id === treatment.protocolId);
+    if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || treatment.plannedDosesBeforeConsult === 0) return;
+
+    const patient = patients.find(p => p.id === treatment.patientId);
+    if (!patient) return;
+
+    const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
+    const startDate = addDays(treatment.startDate, 0); // Normalize date
+    const frequencyDays = protocol.frequencyDays || 28;
+
+    // Build scheduled doses for this treatment
+    for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
+      const cycleNumber = i + 1;
+      const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
+
+      let scheduledDate: Date;
+
+      if (existingDose) {
+        // If dose exists and is APPLIED, skip it
+        if (existingDose.status === DoseStatus.APPLIED) continue;
+        // If dose exists but is PENDING, use its date
+        scheduledDate = addDays(existingDose.applicationDate, 0);
+      } else {
+        // Calculate from previous doses
+        let baseDate = startDate;
+        if (i > 0) {
+          // Find the last scheduled/created date
+          for (let j = i - 1; j >= 0; j--) {
+            const prevDose = treatmentDoses.find(d => d.cycleNumber === j + 1);
+            if (prevDose) {
+              baseDate = addDays(prevDose.applicationDate, 0);
+              scheduledDate = addDays(baseDate, frequencyDays * (i - j));
+              break;
+            }
+          }
+          if (!scheduledDate!) {
+            scheduledDate = addDays(startDate, frequencyDays * i);
+          }
+        } else {
+          scheduledDate = addDays(startDate, frequencyDays);
+        }
+      }
+
+      const daysUntil = diffInDays(scheduledDate!, TODAY);
+
+      // Only include future doses (not overdue)
+      if (daysUntil >= 0) {
+        result.push({
+          treatmentId: treatment.id,
+          cycleNumber,
+          scheduledDate: scheduledDate!,
+          daysUntil,
+          patientName: patient.fullName,
+          guardianName: patient.guardian.fullName,
+          protocolName: protocol.name,
+          isCreated: !!existingDose,
+          doseId: existingDose?.id
+        });
+      }
+    }
+  });
+
+  // Sort by date (closest first or farthest first based on sort direction)
+  return result.sort((a, b) => {
+    const diff = a.scheduledDate.getTime() - b.scheduledDate.getTime();
+    if (diff !== 0) return upcomingDosesSortAsc ? diff : -diff;
+    return a.patientName.localeCompare(b.patientName);
+  });
+  }, [treatments, protocols, patients, doses, upcomingDosesSortAsc]);
+
+  // Pending Surveys (excludes WAITING status - only NOT_SENT and SENT are valid)
   const pendingSurveys = useMemo(() => {
   return doses.filter(d => {
     if (!d.nurse) return false;
-    const isPendingStatus = d.surveyStatus === SurveyStatus.WAITING || d.surveyStatus === SurveyStatus.SENT || d.surveyStatus === SurveyStatus.NOT_SENT;
+    // Only include NOT_SENT and SENT status (WAITING is deprecated, ANSWERED means completed)
+    const isPendingStatus = d.surveyStatus === SurveyStatus.SENT || d.surveyStatus === SurveyStatus.NOT_SENT || !d.surveyStatus;
     const isZeroScore = !d.surveyScore || d.surveyScore === 0;
+    // Exclude if already answered with score
+    if (d.surveyStatus === SurveyStatus.ANSWERED && d.surveyScore && d.surveyScore > 0) return false;
     return isPendingStatus || isZeroScore;
   }).sort((a, b) => {
     const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
@@ -542,27 +644,38 @@ const Dashboard: React.FC = () => {
   return { score: nps, total: total };
   }, [doses]);
 
-  // Patients by Diagnosis
+  // Get patient IDs with ongoing treatments (for filtering active patients)
+  const patientsWithOngoingTreatmentsSet = useMemo(() => {
+  return new Set(
+    treatments
+      .filter(t => t.status === TreatmentStatus.ONGOING)
+      .map(t => t.patientId)
+  );
+  }, [treatments]);
+
+  // Patients by Diagnosis (only those with ongoing treatments)
   const patientsByDiagnosis = useMemo(() => {
   const counts: Record<string, number> = {};
-  patients.filter(p => p.active).forEach(p => {
-    const diag = p.mainDiagnosis || 'Não Informado';
-    counts[diag] = (counts[diag] || 0) + 1;
-  });
+  patients
+    .filter(p => patientsWithOngoingTreatmentsSet.has(p.id))
+    .forEach(p => {
+      const diag = p.mainDiagnosis || 'Não Informado';
+      counts[diag] = (counts[diag] || 0) + 1;
+    });
   return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [patients]);
+  }, [patients, patientsWithOngoingTreatmentsSet]);
 
-  // Consent Missing
+  // Consent Missing (only for patients with ongoing treatments)
   const patientsMissingConsent = useMemo(() => {
   return patients.filter(p => {
-    if (!p.active) return false;
+    if (!patientsWithOngoingTreatmentsSet.has(p.id)) return false;
     const diag = (p.mainDiagnosis || '').toLowerCase();
     const isTarget = diag.includes('puberdade precoce') || diag.includes('baixa estatura');
     if (!isTarget) return false;
     const hasDoc = documents.some(doc => doc.patientId === p.id);
     return !hasDoc;
   });
-  }, [patients, documents]);
+  }, [patients, documents, patientsWithOngoingTreatmentsSet]);
 
   // Activity Window
   const highActivityDoses = useMemo(() => {
@@ -607,6 +720,7 @@ const Dashboard: React.FC = () => {
     return new Date(year, month - 1, day);
   };
 
+  // Add protocol milestones from active treatments
   activeTreatments.forEach(t => {
     const proto = protocols.find(p => p.id === t.protocolId);
     if (!proto || !proto.milestones || proto.milestones.length === 0) return;
@@ -646,19 +760,49 @@ const Dashboard: React.FC = () => {
         message: m.message,
         date: contactDate,
         diffDays: diff,
-        isMonitoring: proto.category === ProtocolCategory.MONITORING
+        isMonitoring: proto.category === ProtocolCategory.MONITORING,
+        isManual: false
       });
       }
     }
     });
   });
+
+  // Add manual events from patients
+  manualEvents.forEach(event => {
+    const contactId = `manual_${event.id}`;
+
+    if (dismissedLogs.some(log => log.contactId === contactId)) return;
+
+    const eventDate = parseLocalDate(event.eventDate);
+    const diff = diffInDays(eventDate, TODAY);
+
+    // Show events from 60 days ago to future
+    if (diff >= -60) {
+      contacts.push({
+        id: contactId,
+        eventId: event.id,
+        patientId: event.patientId,
+        patientName: event.patient.fullName,
+        patientGuardian: event.patient.guardian.fullName,
+        patientPhone: event.patient.guardian.phonePrimary,
+        protocolName: 'Manual',
+        message: event.title + (event.description ? `: ${event.description}` : ''),
+        date: eventDate,
+        diffDays: diff,
+        isMonitoring: false,
+        isManual: true
+      });
+    }
+  });
+
   return contacts.sort((a, b) => {
     const diff = a.date.getTime() - b.date.getTime();
     if (diff !== 0) return messagesSortAsc ? diff : -diff;
     // Secondary sort by patient name when dates are equal
     return a.patientName.localeCompare(b.patientName);
   });
-  }, [treatments, protocols, patients, dismissedLogs, doses, messagesSortAsc]);
+  }, [treatments, protocols, patients, dismissedLogs, doses, manualEvents, messagesSortAsc]);
 
   const scrollToSection = (id: string) => {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -813,6 +957,11 @@ const Dashboard: React.FC = () => {
       title="Enviar Pesquisa" subtitle="Status: Enviado" value={pendingSurveys.length}
       icon={<MessageCircle size={20} className="text-blue-600" />} accentColor="blue"
       onClick={() => scrollToSection('section-surveys')}
+    />
+    <KpiCard
+      title="Próximas Doses" subtitle="Doses futuras programadas" value={upcomingScheduledDoses.length}
+      icon={<Syringe size={20} className="text-teal-600" />} accentColor="teal"
+      onClick={() => scrollToSection('section-upcoming-doses')}
     />
 
     {/* NPS Card */}
@@ -1005,7 +1154,9 @@ const Dashboard: React.FC = () => {
           </div>
           </td>
           <td className="px-6 py-4">
-          {contact.isMonitoring ? (
+          {contact.isManual ? (
+            <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded border border-amber-200">Manual</span>
+          ) : contact.isMonitoring ? (
             <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded border border-blue-200">{contact.protocolName}</span>
           ) : (
             <span className="text-slate-600">{contact.protocolName}</span>
@@ -1063,7 +1214,7 @@ const Dashboard: React.FC = () => {
           <span className="font-bold text-slate-900">{item.value}</span>
         </div>
         <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-          <div className={`h-2.5 rounded-full`} style={{ width: `${(item.value / patients.filter(p => p.active).length) * 100}%` }}>
+          <div className={`h-2.5 rounded-full`} style={{ width: `${(item.value / patientsWithOngoingTreatmentsSet.size) * 100}%` }}>
           <div className={`h-full w-full ${getDiagnosisColor(item.name).split(' ')[0]}`}></div>
           </div>
         </div>
@@ -1086,12 +1237,13 @@ const Dashboard: React.FC = () => {
           </th>
           <th className="px-6 py-3">Paciente</th>
           <th className="px-6 py-3">Responsável</th>
+          <th className="px-6 py-3">Status</th>
           <th className="px-6 py-3 text-right">Ação</th>
         </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
         {pendingSurveys.length === 0 ? (
-          <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Nenhuma pesquisa pendente.</td></tr>
+          <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma pesquisa pendente.</td></tr>
         ) : (
           paginate(pendingSurveys, surveysPage).map(dose => {
           const patient = getPatientByTreatmentId(dose.treatmentId);
@@ -1102,6 +1254,21 @@ const Dashboard: React.FC = () => {
             <td className="px-6 py-3 text-slate-600">
               <div>{patient?.guardian.fullName}</div>
               <div className="text-xs text-slate-400">{patient?.guardian.phonePrimary}</div>
+            </td>
+            <td className="px-6 py-3">
+              <select
+              value={dose.surveyStatus || SurveyStatus.NOT_SENT}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => handleQuickUpdate(dose.id, 'surveyStatus', e.target.value)}
+              className={`text-xs px-2 py-1 rounded-full border-0 font-medium cursor-pointer focus:ring-2 focus:ring-blue-500 ${
+                dose.surveyStatus === SurveyStatus.SENT
+                ? 'bg-blue-100 text-blue-700'
+                : 'bg-slate-100 text-slate-600'
+              }`}
+              >
+              <option value={SurveyStatus.NOT_SENT}>{SURVEY_STATUS_LABELS[SurveyStatus.NOT_SENT]}</option>
+              <option value={SurveyStatus.SENT}>{SURVEY_STATUS_LABELS[SurveyStatus.SENT]}</option>
+              </select>
             </td>
             <td className="px-6 py-3 text-right">
               <span className="text-blue-600 text-xs font-bold hover:underline">Registrar Resposta</span>
@@ -1248,6 +1415,69 @@ const Dashboard: React.FC = () => {
       currentPage={consultsPage}
       totalPages={getTotalPages(approachingConsults.length)}
       onPageChange={setConsultsPage}
+    />
+    </SectionCard>
+
+    {/* Upcoming Scheduled Doses */}
+    <SectionCard id="section-upcoming-doses" title="Próximas Doses" icon={<Syringe size={18} className="text-teal-600" />} countBadge={upcomingScheduledDoses.length} badgeColor="bg-teal-100 text-teal-800" headerBg="bg-teal-50/30">
+    <table className="w-full text-sm text-left">
+      <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+      <tr>
+        <th className="px-6 py-3">
+          <div className="flex items-center gap-1">
+            Data Programada
+            <SortButton isAsc={upcomingDosesSortAsc} onToggle={() => { setUpcomingDosesSortAsc(!upcomingDosesSortAsc); setUpcomingDosesPage(1); }} />
+          </div>
+        </th>
+        <th className="px-6 py-3">Faltam</th>
+        <th className="px-6 py-3">Paciente</th>
+        <th className="px-6 py-3">Responsável</th>
+        <th className="px-6 py-3">Protocolo</th>
+        <th className="px-6 py-3 text-right">Ação</th>
+      </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+      {upcomingScheduledDoses.length === 0 ? (
+        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhuma dose futura programada.</td></tr>
+      ) : (
+        paginate(upcomingScheduledDoses, upcomingDosesPage).map((dose, idx) => (
+        <tr
+          key={`${dose.treatmentId}-${dose.cycleNumber}`}
+          onClick={() => navigate(`/tratamento/${dose.treatmentId}`)}
+          className="hover:bg-teal-50/20 cursor-pointer transition-colors group"
+        >
+          <td className="px-6 py-4 font-bold text-teal-800">
+          {formatDate(dose.scheduledDate.toISOString())}
+          </td>
+          <td className="px-6 py-4">
+          <span className={`flex items-center text-xs font-bold px-2 py-1 rounded w-fit ${
+            dose.daysUntil === 0 ? 'bg-orange-100 text-orange-700' :
+            dose.daysUntil <= 7 ? 'bg-amber-100 text-amber-700' :
+            'bg-teal-100 text-teal-700'
+          }`}>
+            <Clock size={12} className="mr-1" />
+            {dose.daysUntil === 0 ? 'Hoje' : `${dose.daysUntil} dias`}
+          </span>
+          </td>
+          <td className="px-6 py-4 font-medium text-slate-900">{dose.patientName}</td>
+          <td className="px-6 py-4 text-slate-600">{dose.guardianName}</td>
+          <td className="px-6 py-4 text-xs text-slate-600 max-w-[150px] truncate" title={dose.protocolName}>
+          {dose.protocolName}
+          </td>
+          <td className="px-6 py-4 text-right">
+          <span className="inline-flex items-center text-slate-400 group-hover:text-teal-600 transition-colors">
+            Abrir <ChevronRight size={16} className="ml-1" />
+          </span>
+          </td>
+        </tr>
+        ))
+      )}
+      </tbody>
+    </table>
+    <Pagination
+      currentPage={upcomingDosesPage}
+      totalPages={getTotalPages(upcomingScheduledDoses.length)}
+      onPageChange={setUpcomingDosesPage}
     />
     </SectionCard>
 

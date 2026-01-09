@@ -767,7 +767,26 @@ export interface PatientEvent {
   updatedAt: string;
 }
 
+export interface PatientEventWithPatient extends PatientEvent {
+  patient: {
+    id: string;
+    fullName: string;
+    guardian: {
+      fullName: string;
+      phonePrimary: string;
+    };
+  };
+}
+
 export const patientEventsApi = {
+  getAll: async (params?: { fromDate?: string; toDate?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.fromDate) searchParams.set('fromDate', params.fromDate);
+    if (params?.toDate) searchParams.set('toDate', params.toDate);
+    const query = searchParams.toString();
+    return apiFetch<PaginatedResponse<PatientEventWithPatient>>(`/patient-events${query ? `?${query}` : ''}`);
+  },
+
   getByPatient: async (patientId: string, params?: { fromDate?: string; toDate?: string }) => {
     const searchParams = new URLSearchParams();
     if (params?.fromDate) searchParams.set('fromDate', params.fromDate);

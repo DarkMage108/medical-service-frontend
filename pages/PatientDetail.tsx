@@ -66,6 +66,9 @@ const PatientDetail: React.FC = () => {
   // Address Edit fields
   const [editStreet, setEditStreet] = useState('');
   const [editNumber, setEditNumber] = useState('');
+  const [editComplement, setEditComplement] = useState('');
+  const [editCondominium, setEditCondominium] = useState('');
+  const [editReferencePoint, setEditReferencePoint] = useState('');
   const [editCity, setEditCity] = useState('');
   const [editNeighborhood, setEditNeighborhood] = useState('');
   const [editState, setEditState] = useState('');
@@ -310,65 +313,52 @@ const PatientDetail: React.FC = () => {
     return events.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [treatments, patient, protocols, doses, dismissedLogs]);
 
-  // Calculate patient adherence level
+  // Calculate patient adherence level based on scheduled doses
+  // Rules: Sem atraso = BOA, <30 dias de atraso = ATRASADO, >30 dias de atraso = ABANDONO
   const patientAdherenceLevel = useMemo(() => {
     if (!patient || treatments.length === 0) return null;
 
     const today = new Date();
-    let totalMissed = 0;
-    let totalSignificantDelays = 0;
-    let maxDaysSinceLast = 0;
+    today.setHours(0, 0, 0, 0);
+
+    let maxDelayDays = 0;
     let hasOngoingTreatment = false;
 
     treatments.forEach(t => {
       if (t.status !== TreatmentStatus.ONGOING) return;
       hasOngoingTreatment = true;
 
-      const proto = protocols.find(p => p.id === t.protocolId);
-      const frequencyDays = proto?.frequencyDays || 28;
-      const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
+      const treatmentDoses = doses
+        .filter(d => d.treatmentId === t.id)
+        .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
 
-      let lastApplicationDate: Date | null = null;
+      // Find the first PENDING dose (next scheduled dose)
+      const firstPendingDose = treatmentDoses.find(d => d.status === DoseStatus.PENDING);
 
-      treatmentDoses.forEach((dose, index) => {
-        if (dose.status === DoseStatus.NOT_ACCEPTED) {
-          totalMissed++;
-        }
+      if (firstPendingDose) {
+        // Parse scheduled date correctly to avoid timezone issues
+        const dateStr = firstPendingDose.applicationDate;
+        const dateOnly = dateStr.split('T')[0];
+        const [year, month, day] = dateOnly.split('-').map(Number);
+        const scheduledDate = new Date(year, month - 1, day);
 
-        if (dose.status === DoseStatus.APPLIED && index > 0) {
-          const prevDose = treatmentDoses[index - 1];
-          if (prevDose.status === DoseStatus.APPLIED) {
-            const prevDate = new Date(prevDose.applicationDate);
-            const expectedDate = new Date(prevDate);
-            expectedDate.setDate(expectedDate.getDate() + frequencyDays);
-            const actualDate = new Date(dose.applicationDate);
-            const delayDays = Math.max(0, Math.floor((actualDate.getTime() - expectedDate.getTime()) / (1000 * 60 * 60 * 24)));
-            if (delayDays > 3) {
-              totalSignificantDelays++;
-            }
-          }
-        }
+        // Calculate delay: positive if past scheduled date, negative/zero if not yet due
+        const delayDays = Math.floor((today.getTime() - scheduledDate.getTime()) / (1000 * 60 * 60 * 24));
 
-        if (dose.status === DoseStatus.APPLIED) {
-          lastApplicationDate = new Date(dose.applicationDate);
-        }
-      });
-
-      if (lastApplicationDate) {
-        const daysSinceLast = Math.floor((today.getTime() - lastApplicationDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (daysSinceLast > maxDaysSinceLast) {
-          maxDaysSinceLast = daysSinceLast;
+        // Only count positive delays (when scheduled date has passed)
+        if (delayDays > maxDelayDays) {
+          maxDelayDays = delayDays;
         }
       }
     });
 
     if (!hasOngoingTreatment) return null;
 
-    if (maxDaysSinceLast > 30) return 'ABANDONO';
-    if (totalMissed > 3 || totalSignificantDelays > 3) return 'BAIXA';
-    if (totalSignificantDelays > 0 || totalMissed > 0) return 'MODERADA';
+    // Apply classification rules based on delay from scheduled doses
+    if (maxDelayDays > 30) return 'ABANDONO';
+    if (maxDelayDays > 0) return 'ATRASADO';
     return 'BOA';
-  }, [patient, treatments, protocols, doses]);
+  }, [patient, treatments, doses]);
 
   const getProtocolName = (pid: string) => {
     return protocols.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
@@ -411,6 +401,9 @@ const PatientDetail: React.FC = () => {
 
     setEditStreet(patient.address?.street || '');
     setEditNumber(patient.address?.number || '');
+    setEditComplement(patient.address?.complement || '');
+    setEditCondominium(patient.address?.condominium || '');
+    setEditReferencePoint(patient.address?.referencePoint || '');
     setEditCity(patient.address?.city || '');
     setEditNeighborhood(patient.address?.neighborhood || '');
     setEditState(patient.address?.state || '');
@@ -468,6 +461,9 @@ const PatientDetail: React.FC = () => {
         await patientsApi.upsertAddress(id, {
           street: editStreet,
           number: editNumber,
+          complement: editComplement || undefined,
+          condominium: editCondominium || undefined,
+          referencePoint: editReferencePoint || undefined,
           city: editCity,
           neighborhood: editNeighborhood,
           state: editState,
@@ -618,8 +614,9 @@ const PatientDetail: React.FC = () => {
     e.preventDefault();
     if (!id || !manualEventTitle || !manualEventDate) return;
 
-    // Validate date is not in the past
-    const eventDateObj = new Date(manualEventDate);
+    // Validate date is not in the past - parse date without timezone shift
+    const [year, month, day] = manualEventDate.split('-').map(Number);
+    const eventDateObj = new Date(year, month - 1, day);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -631,9 +628,10 @@ const PatientDetail: React.FC = () => {
     setIsSavingManualEvent(true);
 
     try {
+      // Send date with noon time to avoid timezone issues
       await patientEventsApi.create(id, {
         title: manualEventTitle,
-        eventDate: new Date(manualEventDate).toISOString(),
+        eventDate: `${manualEventDate}T12:00:00.000Z`,
         description: manualEventDescription || undefined,
       });
 
@@ -983,13 +981,11 @@ const PatientDetail: React.FC = () => {
               {patientAdherenceLevel && (
                 <span className={`px-3 py-1 text-xs font-bold rounded-full border ${
                   patientAdherenceLevel === 'BOA' ? 'bg-green-100 text-green-700 border-green-200' :
-                  patientAdherenceLevel === 'MODERADA' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                  patientAdherenceLevel === 'BAIXA' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                  patientAdherenceLevel === 'ATRASADO' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
                   'bg-red-100 text-red-700 border-red-200'
                 }`}>
                   {patientAdherenceLevel === 'BOA' ? 'BOA ADESAO' :
-                   patientAdherenceLevel === 'MODERADA' ? 'MODERADA' :
-                   patientAdherenceLevel === 'BAIXA' ? 'BAIXA ADESAO' :
+                   patientAdherenceLevel === 'ATRASADO' ? 'ATRASADO' :
                    'ABANDONO'}
                 </span>
               )}
@@ -1020,9 +1016,12 @@ const PatientDetail: React.FC = () => {
             {patient.address ? (
               <div className="text-sm text-slate-600 space-y-1">
                 <p>{patient.address.street}, {patient.address.number}</p>
+                {patient.address.complement && <p>{patient.address.complement}</p>}
+                {patient.address.condominium && <p>Condominio: {patient.address.condominium}</p>}
                 <p>{patient.address.neighborhood}</p>
                 <p>{patient.address.city} - {patient.address.state}</p>
                 <p>{patient.address.zipCode}</p>
+                {patient.address.referencePoint && <p className="text-slate-500 italic">Ref: {patient.address.referencePoint}</p>}
               </div>
             ) : (
               <p className="text-sm text-slate-400 italic">Endereco nao cadastrado.</p>
@@ -1420,6 +1419,18 @@ const PatientDetail: React.FC = () => {
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">Bairro</label>
                     <input type="text" value={editNeighborhood} onChange={e => setEditNeighborhood(e.target.value)} className="w-full border-slate-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Complemento <span className="text-slate-400">(opcional)</span></label>
+                    <input type="text" value={editComplement} onChange={e => setEditComplement(e.target.value)} className="w-full border-slate-300 rounded-lg" placeholder="Apto, Bloco, etc." />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Condominio <span className="text-slate-400">(opcional)</span></label>
+                    <input type="text" value={editCondominium} onChange={e => setEditCondominium(e.target.value)} className="w-full border-slate-300 rounded-lg" placeholder="Nome do condominio" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Ponto de Referencia <span className="text-slate-400">(opcional)</span></label>
+                    <input type="text" value={editReferencePoint} onChange={e => setEditReferencePoint(e.target.value)} className="w-full border-slate-300 rounded-lg" placeholder="Proximo a..." />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">Cidade</label>

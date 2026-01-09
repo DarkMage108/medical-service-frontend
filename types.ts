@@ -20,6 +20,8 @@ export interface Address {
   street: string;
   number: string;
   complement?: string;
+  condominium?: string;
+  referencePoint?: string;
   neighborhood: string;
   city: string;
   state: string;
@@ -59,7 +61,8 @@ export interface ConsentDocument {
 }
 
 // Adherence level for patients
-export type AdherenceLevel = 'BOA' | 'MODERADA' | 'BAIXA' | 'ABANDONO' | null;
+// Rules: Sem atraso = BOA, <30 dias de atraso = ATRASADO, >30 dias de atraso = ABANDONO
+export type AdherenceLevel = 'BOA' | 'ATRASADO' | 'ABANDONO' | null;
 
 // Composite type for UI lists
 export interface PatientFull extends Patient {

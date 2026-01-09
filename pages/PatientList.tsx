@@ -28,6 +28,8 @@ const PatientList: React.FC = () => {
   const [street, setStreet] = useState('');
   const [number, setNumber] = useState('');
   const [complement, setComplement] = useState('');
+  const [condominium, setCondominium] = useState('');
+  const [referencePoint, setReferencePoint] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
@@ -140,6 +142,8 @@ const PatientList: React.FC = () => {
     setStreet('');
     setNumber('');
     setComplement('');
+    setCondominium('');
+    setReferencePoint('');
     setNeighborhood('');
     setCity('');
     setState('');
@@ -230,6 +234,8 @@ const PatientList: React.FC = () => {
           street,
           number: number || undefined,
           complement: complement || undefined,
+          condominium: condominium || undefined,
+          referencePoint: referencePoint || undefined,
           neighborhood: neighborhood || undefined,
           city: city || undefined,
           state: state || undefined,
@@ -439,14 +445,12 @@ const PatientList: React.FC = () => {
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-full ${
                       patient.adherenceLevel === 'BOA' ? 'bg-green-100 text-green-700' :
-                      patient.adherenceLevel === 'MODERADA' ? 'bg-yellow-100 text-yellow-700' :
-                      patient.adherenceLevel === 'BAIXA' ? 'bg-orange-100 text-orange-700' :
+                      patient.adherenceLevel === 'ATRASADO' ? 'bg-yellow-100 text-yellow-700' :
                       patient.adherenceLevel === 'ABANDONO' ? 'bg-red-100 text-red-700' :
                       'bg-slate-100 text-slate-500'
                     }`}>
                       {patient.adherenceLevel === 'BOA' ? 'BOA ADESAO' :
-                       patient.adherenceLevel === 'MODERADA' ? 'MODERADA' :
-                       patient.adherenceLevel === 'BAIXA' ? 'BAIXA' :
+                       patient.adherenceLevel === 'ATRASADO' ? 'ATRASADO' :
                        patient.adherenceLevel === 'ABANDONO' ? 'ABANDONO' :
                        '-'}
                     </span>
@@ -732,14 +736,34 @@ const PatientList: React.FC = () => {
                       maxLength={2}
                     />
                   </div>
-                  <div className="md:col-span-6">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Complemento</label>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Complemento <span className="text-slate-400 text-xs">(opcional)</span></label>
                     <input
                       type="text"
                       value={complement}
                       onChange={e => setComplement(e.target.value)}
                       className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                       placeholder="Apto, Bloco..."
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Condominio <span className="text-slate-400 text-xs">(opcional)</span></label>
+                    <input
+                      type="text"
+                      value={condominium}
+                      onChange={e => setCondominium(e.target.value)}
+                      className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                      placeholder="Nome do condominio"
+                    />
+                  </div>
+                  <div className="md:col-span-4">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Ponto de Referencia <span className="text-slate-400 text-xs">(opcional)</span></label>
+                    <input
+                      type="text"
+                      value={referencePoint}
+                      onChange={e => setReferencePoint(e.target.value)}
+                      className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                      placeholder="Proximo a..."
                     />
                   </div>
                 </div>
