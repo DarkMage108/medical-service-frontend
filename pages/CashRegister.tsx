@@ -502,7 +502,7 @@ const CashRegister: React.FC = () => {
         <div className="mt-6 pt-6 border-t border-slate-100">
           <h4 className="text-sm font-bold text-slate-700 mb-3">Por Forma de Pagamento</h4>
           <div className="grid grid-cols-3 gap-4">
-          {Object.entries(monthlyReport.byPaymentMethod).map(([method, data]) => (
+          {Object.entries(monthlyReport.byPaymentMethod).map(([method, data]: [string, { count: number; total: number }]) => (
             <div key={method} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
             <div>
               <span className="text-sm font-medium text-slate-700">{PAYMENT_METHOD_LABELS[method] || method}</span>

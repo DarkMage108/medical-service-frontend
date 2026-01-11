@@ -40,6 +40,7 @@ const isApiAvailable = () => !!getAuthToken();
 // Helper to convert backend data to frontend format
 const convertPatient = (data: any): PatientFull => ({
   id: data.id,
+  patientNumber: data.patientNumber ?? 0,
   fullName: data.fullName,
   birthDate: data.birthDate,
   gender: data.gender,

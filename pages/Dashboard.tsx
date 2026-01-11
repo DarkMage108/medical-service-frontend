@@ -1,7 +1,7 @@
 ﻿import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, purchaseRequestsApi, dismissedLogsApi, patientEventsApi, PatientEventWithPatient } from '../services/api';
-import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, Treatment, Protocol } from '../types';
+import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, PatientFull, Treatment, Protocol } from '../types';
 import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS } from '../constants';
 import { UserCheck, MessageSquare, Phone, ExternalLink, Activity, ShoppingCart } from 'lucide-react';
 import KpiCard from '../components/ui/KpiCard';
@@ -17,12 +17,42 @@ import {
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
+// Type for contact items in upcoming messages
+type ContactItem = {
+  id: string;
+  treatmentId?: string;
+  eventId?: string;
+  patientId?: string;
+  patientName: string;
+  patientGuardian: string;
+  patientPhone: string;
+  protocolName: string;
+  message: string;
+  date: Date;
+  diffDays: number;
+  isMonitoring: boolean;
+  isManual: boolean;
+};
+
+// Type for scheduled doses
+type ScheduledDoseItem = {
+  treatmentId: string;
+  cycleNumber: number;
+  scheduledDate: Date;
+  daysUntil: number;
+  patientName: string;
+  guardianName: string;
+  protocolName: string;
+  isCreated: boolean;
+  doseId?: string;
+};
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   // Data States
   const [doses, setDoses] = useState<Dose[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
+  const [patients, setPatients] = useState<PatientFull[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [documents, setDocuments] = useState<ConsentDocument[]>([]);
@@ -506,17 +536,7 @@ const Dashboard: React.FC = () => {
 
   // Upcoming Scheduled Doses (future doses not yet applied)
   const upcomingScheduledDoses = useMemo(() => {
-  const result: Array<{
-    treatmentId: string;
-    cycleNumber: number;
-    scheduledDate: Date;
-    daysUntil: number;
-    patientName: string;
-    guardianName: string;
-    protocolName: string;
-    isCreated: boolean;
-    doseId?: string;
-  }> = [];
+  const result: ScheduledDoseItem[] = [];
 
   const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
 
@@ -701,7 +721,7 @@ const Dashboard: React.FC = () => {
 
   // Upcoming Contacts
   const upcomingContacts = useMemo(() => {
-  const contacts: any[] = [];
+  const contacts: ContactItem[] = [];
   const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
 
   // Helper to parse ISO date string without timezone shift
@@ -987,7 +1007,7 @@ const Dashboard: React.FC = () => {
       {highActivityDoses.length === 0 ? (
         <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-400">Nenhuma pendência operacional para a semana.</td></tr>
       ) : (
-        paginate(highActivityDoses, activityPage).map((dose) => {
+        paginate(highActivityDoses, activityPage).map((dose: Dose) => {
         const patient = getPatientByTreatmentId(dose.treatmentId);
         return (
           <tr key={dose.id} className="hover:bg-amber-50/20 transition-colors" onClick={() => navigate(`/tratamento/${dose.treatmentId}`)}>
@@ -1103,7 +1123,7 @@ const Dashboard: React.FC = () => {
       {upcomingContacts.length === 0 ? (
         <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-400">Nenhum ponto de contato próximo.</td></tr>
       ) : (
-        paginate(upcomingContacts, messagesPage).map(contact => (
+        paginate(upcomingContacts, messagesPage).map((contact: ContactItem) => (
         <tr
           key={contact.id}
           onClick={() => handleOpenMessageModal(contact)}
@@ -1216,7 +1236,7 @@ const Dashboard: React.FC = () => {
         {pendingSurveys.length === 0 ? (
           <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma pesquisa pendente.</td></tr>
         ) : (
-          paginate(pendingSurveys, surveysPage).map(dose => {
+          paginate(pendingSurveys, surveysPage).map((dose: Dose) => {
           const patient = getPatientByTreatmentId(dose.treatmentId);
           return (
             <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`, { state: { editDoseId: dose.id } })} className="hover:bg-blue-50/30 cursor-pointer transition-colors">
@@ -1274,7 +1294,7 @@ const Dashboard: React.FC = () => {
       {patientsMissingConsent.length === 0 ? (
         <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Todos os pacientes possuem termo anexado.</td></tr>
       ) : (
-        paginate(patientsMissingConsent, consentPage).map(patient => (
+        paginate(patientsMissingConsent, consentPage).map((patient: PatientFull) => (
         <tr key={patient.id} onClick={() => navigate(`/pacientes/${patient.id}`)} className="hover:bg-cyan-50/20 cursor-pointer transition-colors">
           <td className="px-6 py-4 font-medium text-slate-800">{patient.fullName}</td>
           <td className="px-6 py-4">
@@ -1333,7 +1353,7 @@ const Dashboard: React.FC = () => {
       {approachingConsults.length === 0 ? (
         <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma consulta próxima agendada.</td></tr>
       ) : (
-        paginate(approachingConsults, consultsPage).map(dose => {
+        paginate(approachingConsults, consultsPage).map((dose: Dose) => {
         const patient = getPatient(dose.treatmentId);
         const hasDate = !!dose.consultationDate;
         let daysLeft = 0;
@@ -1411,7 +1431,7 @@ const Dashboard: React.FC = () => {
       {upcomingScheduledDoses.length === 0 ? (
         <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhuma dose futura programada.</td></tr>
       ) : (
-        paginate(upcomingScheduledDoses, upcomingDosesPage).map((dose, idx) => (
+        paginate(upcomingScheduledDoses, upcomingDosesPage).map((dose: ScheduledDoseItem, idx) => (
         <tr
           key={`${dose.treatmentId}-${dose.cycleNumber}`}
           onClick={() => navigate(`/tratamento/${dose.treatmentId}`)}
@@ -1472,7 +1492,7 @@ const Dashboard: React.FC = () => {
       {overdueDoses.length === 0 ? (
         <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Nenhuma dose atrasada.</td></tr>
       ) : (
-        paginate(overdueDoses, overduePage).map(dose => {
+        paginate(overdueDoses, overduePage).map((dose: Dose) => {
         const patient = getPatient(dose.treatmentId);
         // For PENDING doses, use applicationDate; for APPLIED, use calculatedNextDate
         const isPending = dose.status === DoseStatus.PENDING;
