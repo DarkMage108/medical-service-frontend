@@ -54,8 +54,18 @@ const toDate = (value: string | Date): Date => {
 };
 
 // Cria uma data "limpa" sem componente de hora (meia-noite local)
+// Extrai apenas YYYY-MM-DD para evitar problemas de timezone
 const toDateOnly = (value: string | Date): Date => {
-  const d = toDate(value);
+  if (typeof value === 'string') {
+    // Extract just the date part to avoid timezone conversion issues
+    const dateOnly = value.split('T')[0];
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    if (year && month && day) {
+      return new Date(year, month - 1, day);
+    }
+  }
+  // For Date objects, extract components in local timezone
+  const d = value instanceof Date ? value : new Date(value);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
 

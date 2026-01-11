@@ -147,31 +147,38 @@ const PatientDetail: React.FC = () => {
         });
 
         if (pendingDoses.length === 0) {
-          const lastDose = treatmentDoses
-            .filter(d => d.status === DoseStatus.APPLIED)
-            .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
+          // Check if all planned doses have been applied
+          const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+          const plannedCount = t.plannedDosesBeforeConsult || 0;
 
-          let nextDate: Date;
-          let nextCycle = 1;
+          // Only project next dose if there are more doses to be done
+          if (plannedCount === 0 || appliedCount < plannedCount) {
+            const lastDose = treatmentDoses
+              .filter(d => d.status === DoseStatus.APPLIED)
+              .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
 
-          if (lastDose) {
-            nextDate = parseLocalDate(lastDose.applicationDate);
-            nextDate.setDate(nextDate.getDate() + (proto.frequencyDays || 30));
-            nextCycle = lastDose.cycleNumber + 1;
-          } else {
-            nextDate = parseLocalDate(t.startDate);
-          }
+            let nextDate: Date;
+            let nextCycle = 1;
 
-          if (diffInDays(nextDate, TODAY) > -60) {
-            events.push({
-              id: `proj_${t.id}`,
-              date: nextDate,
-              type: 'dose',
-              title: `Dose ${nextCycle} (Prevista)`,
-              subtitle: proto.medicationType,
-              status: diffInDays(nextDate, TODAY) < 0 ? 'late' : 'projected',
-              treatmentId: t.id
-            });
+            if (lastDose) {
+              nextDate = parseLocalDate(lastDose.applicationDate);
+              nextDate.setDate(nextDate.getDate() + (proto.frequencyDays || 30));
+              nextCycle = lastDose.cycleNumber + 1;
+            } else {
+              nextDate = parseLocalDate(t.startDate);
+            }
+
+            if (diffInDays(nextDate, TODAY) > -60) {
+              events.push({
+                id: `proj_${t.id}`,
+                date: nextDate,
+                type: 'dose',
+                title: `Dose ${nextCycle} (Prevista)`,
+                subtitle: proto.medicationType,
+                status: diffInDays(nextDate, TODAY) < 0 ? 'late' : 'projected',
+                treatmentId: t.id
+              });
+            }
           }
         }
       }
@@ -323,6 +330,7 @@ const PatientDetail: React.FC = () => {
 
     let maxDelayDays = 0;
     let hasOngoingTreatment = false;
+    let hasPendingDose = false;
 
     treatments.forEach(t => {
       if (t.status !== TreatmentStatus.ONGOING) return;
@@ -332,10 +340,20 @@ const PatientDetail: React.FC = () => {
         .filter(d => d.treatmentId === t.id)
         .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
 
+      // Count applied doses vs planned doses
+      const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+      const plannedCount = t.plannedDosesBeforeConsult || 0;
+
+      // If all planned doses are applied, treatment is complete - no delay
+      if (plannedCount > 0 && appliedCount >= plannedCount) {
+        return; // This treatment is complete, skip delay calculation
+      }
+
       // Find the first PENDING dose (next scheduled dose)
       const firstPendingDose = treatmentDoses.find(d => d.status === DoseStatus.PENDING);
 
       if (firstPendingDose) {
+        hasPendingDose = true;
         // Parse scheduled date correctly to avoid timezone issues
         const dateStr = firstPendingDose.applicationDate;
         const dateOnly = dateStr.split('T')[0];
@@ -353,6 +371,9 @@ const PatientDetail: React.FC = () => {
     });
 
     if (!hasOngoingTreatment) return null;
+
+    // If no pending doses and all treatments have completed their planned doses, it's good adherence
+    if (!hasPendingDose) return 'BOA';
 
     // Apply classification rules based on delay from scheduled doses
     if (maxDelayDays > 30) return 'ABANDONO';
@@ -1325,6 +1346,8 @@ const PatientDetail: React.FC = () => {
                   <input
                     type="date"
                     required
+                    min="2020-01-01"
+                    max="2030-12-31"
                     value={newStartDate}
                     onChange={e => setNewStartDate(e.target.value)}
                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"

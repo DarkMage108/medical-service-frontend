@@ -10,7 +10,7 @@ import Modal from '../components/ui/Modal';
 import {
   AlertCircle, CheckCircle2, UserX, MessageCircle, ChevronRight, ChevronLeft,
   Calendar, Clock, FileWarning, UploadCloud, Edit, CalendarRange,
-  Syringe, Bike, Copy, Check, Stethoscope, Save, Loader2, Trophy, User, X,
+  Syringe, Bike, Copy, Check, Stethoscope, Save, Loader2, User, X,
   ArrowUp, ArrowDown
 } from 'lucide-react';
 
@@ -374,8 +374,11 @@ const Dashboard: React.FC = () => {
   }
   };
 
-  // Data Logic
-  const TODAY = new Date();
+  // Data Logic - Normalize TODAY to midnight local time to avoid timezone issues in date comparisons
+  const TODAY = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }, []);
 
   // Stats - Active patients are those with ongoing treatments (scheduled events)
   const patientStats = useMemo(() => {
@@ -541,23 +544,27 @@ const Dashboard: React.FC = () => {
         // If dose exists but is PENDING, use its date
         scheduledDate = addDays(existingDose.applicationDate, 0);
       } else {
-        // Calculate from previous doses
-        let baseDate = startDate;
-        if (i > 0) {
-          // Find the last scheduled/created date
+        // Calculate scheduled date based on cycle number
+        if (i === 0) {
+          // Dose 1 is always at the start date
+          scheduledDate = addDays(startDate, 0);
+        } else {
+          // Find the last existing dose to calculate from
+          let foundBase = false;
           for (let j = i - 1; j >= 0; j--) {
             const prevDose = treatmentDoses.find(d => d.cycleNumber === j + 1);
             if (prevDose) {
-              baseDate = addDays(prevDose.applicationDate, 0);
+              const baseDate = addDays(prevDose.applicationDate, 0);
               scheduledDate = addDays(baseDate, frequencyDays * (i - j));
+              foundBase = true;
               break;
             }
           }
-          if (!scheduledDate!) {
+          if (!foundBase) {
+            // No previous doses exist, calculate from start date
+            // Dose 2 = startDate + frequencyDays, Dose 3 = startDate + 2*frequencyDays, etc.
             scheduledDate = addDays(startDate, frequencyDays * i);
           }
-        } else {
-          scheduledDate = addDays(startDate, frequencyDays);
         }
       }
 
@@ -627,22 +634,6 @@ const Dashboard: React.FC = () => {
     return patientA.localeCompare(patientB);
   });
   }, [doses, consultsSortAsc, treatments, patients]);
-
-  // NPS
-  const npsMetrics = useMemo(() => {
-  const answeredDoses = doses.filter(d => d.surveyScore !== undefined && d.surveyScore > 0 && d.surveyStatus === SurveyStatus.ANSWERED);
-  const total = answeredDoses.length;
-  if (total === 0) return { score: 0, total: 0 };
-  let promoters = 0;
-  let detractors = 0;
-  answeredDoses.forEach(d => {
-    const s = d.surveyScore || 0;
-    if (s >= 9) promoters++;
-    else if (s <= 6) detractors++;
-  });
-  const nps = Math.round(((promoters - detractors) / total) * 100);
-  return { score: nps, total: total };
-  }, [doses]);
 
   // Get patient IDs with ongoing treatments (for filtering active patients)
   const patientsWithOngoingTreatmentsSet = useMemo(() => {
@@ -923,7 +914,7 @@ const Dashboard: React.FC = () => {
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
     <KpiCard
-      title="Reposição de Estoque" subtitle="Pedidos Automáticos" value={pendingPurchases}
+      title="Reposição de Estoque" value={pendingPurchases}
       icon={<ShoppingCart size={20} className={pendingPurchases > 0 ? "text-red-600 animate-pulse" : "text-emerald-600"} />}
       accentColor={pendingPurchases > 0 ? "red" : "green"}
       onClick={() => navigate('/estoque', { state: { activeTab: 'orders' } })}
@@ -939,50 +930,30 @@ const Dashboard: React.FC = () => {
       onClick={() => navigate('/pacientes', { state: { statusFilter: 'inactive' } })}
     />
     <KpiCard
-      title="Termo Pendente" subtitle="Requer upload" value={patientsMissingConsent.length}
+      title="Termos Pendentes" value={patientsMissingConsent.length}
       icon={<FileWarning size={20} className="text-cyan-600" />} accentColor="cyan"
       onClick={() => scrollToSection('section-consent')}
     />
     <KpiCard
-      title="Doses em Atraso" subtitle="Requer atenção" value={overdueDoses.length}
+      title="Doses em Atraso" value={overdueDoses.length}
       icon={<AlertCircle size={20} className="text-red-600" />} accentColor="red"
       onClick={() => scrollToSection('section-overdue')}
     />
     <KpiCard
-      title="Agendar Consulta" subtitle="Consultas agendadas" value={approachingConsults.length}
+      title="Agendar Consulta" value={approachingConsults.length}
       icon={<Calendar size={20} className="text-purple-600" />} accentColor="purple"
       onClick={() => scrollToSection('section-consults')}
     />
     <KpiCard
-      title="Enviar Pesquisa" subtitle="Status: Enviado" value={pendingSurveys.length}
+      title="Pesquisa Enfermeira" value={pendingSurveys.length}
       icon={<MessageCircle size={20} className="text-blue-600" />} accentColor="blue"
       onClick={() => scrollToSection('section-surveys')}
     />
     <KpiCard
-      title="Próximas Doses" subtitle="Doses futuras programadas" value={upcomingScheduledDoses.length}
+      title="Próximas Doses" subtitle="Doses Programadas" value={upcomingScheduledDoses.length}
       icon={<Syringe size={20} className="text-teal-600" />} accentColor="teal"
       onClick={() => scrollToSection('section-upcoming-doses')}
     />
-
-    {/* NPS Card */}
-    <div
-      onClick={() => scrollToSection('section-surveys')}
-      className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] group"
-    >
-      <div className="flex items-center justify-between mb-3">
-      <h3 className="text-sm font-medium text-slate-500 group-hover:text-emerald-800 transition-colors">NPS Enfermagem</h3>
-      <div className="p-2 bg-emerald-50 rounded-lg">
-        <Trophy className="text-emerald-600" size={20} />
-      </div>
-      </div>
-      <div className="flex items-end justify-between">
-      <p className="text-3xl font-bold text-slate-800">{npsMetrics.score}</p>
-      <div className="text-right">
-        <p className="text-xs font-bold text-emerald-600">NPS</p>
-        <p className="text-[10px] text-slate-400 mt-0.5">Base: {npsMetrics.total} respostas</p>
-      </div>
-      </div>
-    </div>
     </div>
 
     {/* Activity Window */}
@@ -1505,7 +1476,8 @@ const Dashboard: React.FC = () => {
         const patient = getPatient(dose.treatmentId);
         // For PENDING doses, use applicationDate; for APPLIED, use calculatedNextDate
         const isPending = dose.status === DoseStatus.PENDING;
-        const overdueDate = isPending ? new Date(dose.applicationDate) : new Date(dose.calculatedNextDate);
+        // Use addDays to normalize dates and avoid timezone issues
+        const overdueDate = isPending ? addDays(dose.applicationDate, 0) : addDays(dose.calculatedNextDate, 0);
         const daysDiff = diffInDays(overdueDate, TODAY);
         return (
           <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`)} className="hover:bg-red-50/20 cursor-pointer transition-colors group">

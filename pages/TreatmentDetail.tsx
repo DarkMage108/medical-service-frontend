@@ -261,11 +261,12 @@ const TreatmentDetail: React.FC = () => {
 
     if (!doseStatus) { alert("Selecione o Status da Dose"); return; }
     if (dosePurchased && !dosePayment) { alert("Selecione a Situacao do Pagamento"); return; }
-    if (dosePurchased && dosePayment === PaymentStatus.PAID && !dosePaymentMethod) {
+    // Dados financeiros são sempre obrigatórios
+    if (!dosePaymentMethod) {
       alert("Selecione a Forma de Pagamento");
       return;
     }
-    if (dosePurchased && dosePayment === PaymentStatus.PAID && !dosePaymentDate) {
+    if (!dosePaymentDate) {
       alert("Informe a Data do Pagamento");
       return;
     }
@@ -306,8 +307,9 @@ const TreatmentDetail: React.FC = () => {
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
         paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : undefined,
-        paymentMethod: (dosePurchased && dosePayment === PaymentStatus.PAID && dosePaymentMethod) ? dosePaymentMethod : undefined,
-        paymentDate: (dosePurchased && dosePayment === PaymentStatus.PAID && dosePaymentDate) ? new Date(dosePaymentDate).toISOString() : undefined,
+        // Dados financeiros sempre enviados (obrigatórios para CAIXA)
+        paymentMethod: dosePaymentMethod || undefined,
+        paymentDate: dosePaymentDate ? new Date(dosePaymentDate).toISOString() : undefined,
         isLastBeforeConsult: doseIsLast,
         consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
         nurse: isNurse,
@@ -428,19 +430,22 @@ const TreatmentDetail: React.FC = () => {
           doseId: existingDose.id
         });
       } else {
-        // Calculate based on the last created dose or start date
-        let baseDate = startDate;
+        // Calculate scheduled date
+        let scheduledDate: Date;
 
-        // If there are previous doses, calculate from the last one
-        if (i > 0) {
+        if (i === 0) {
+          // Dose 1 is always at the start date
+          scheduledDate = startDate;
+        } else {
+          // Subsequent doses: add frequencyDays from previous dose
           const previousScheduled = scheduled[i - 1];
           if (previousScheduled) {
-            baseDate = previousScheduled.scheduledDate;
+            scheduledDate = addDays(previousScheduled.scheduledDate, frequencyDays);
+          } else {
+            scheduledDate = addDays(startDate, i * frequencyDays);
           }
         }
 
-        // Add frequencyDays to the base date
-        const scheduledDate = addDays(baseDate, frequencyDays);
         scheduled.push({
           cycleNumber,
           scheduledDate,
@@ -909,49 +914,47 @@ const TreatmentDetail: React.FC = () => {
                   </select>
                 </div>
 
-                {dosePayment === PaymentStatus.PAID && (
-                  <>
-                    <div className="lg:col-span-2 bg-green-50 p-4 rounded-lg border border-green-200">
-                      <p className="text-xs font-semibold text-green-700 mb-3 uppercase tracking-wide">Dados Financeiros da Venda</p>
+                <div className="lg:col-span-2 bg-green-50 p-4 rounded-lg border border-green-200">
+                  <p className="text-xs font-semibold text-green-700 mb-3 uppercase tracking-wide">Dados Financeiros da Venda</p>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">
-                            Forma de Pagamento <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            required
-                            value={dosePaymentMethod}
-                            onChange={(e) => setDosePaymentMethod(e.target.value as 'PIX' | 'CARD' | 'BOLETO' | '')}
-                            className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
-                          >
-                            <option value="" disabled>Selecione...</option>
-                            <option value="PIX">PIX</option>
-                            <option value="CARD">Cartão</option>
-                            <option value="BOLETO">Boleto</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">
-                            Data do Pagamento (Data da Venda) <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="date"
-                            required
-                            value={dosePaymentDate}
-                            onChange={(e) => setDosePaymentDate(e.target.value)}
-                            className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
-                          />
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-slate-600 mt-2 italic">
-                        Esta data será registrada como a data oficial da venda para fins financeiros.
-                      </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Forma de Pagamento <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={dosePaymentMethod}
+                        onChange={(e) => setDosePaymentMethod(e.target.value as 'PIX' | 'CARD' | 'BOLETO' | '')}
+                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                      >
+                        <option value="" disabled>Selecione...</option>
+                        <option value="PIX">PIX</option>
+                        <option value="CARD">Cartao</option>
+                        <option value="BOLETO">Boleto</option>
+                      </select>
                     </div>
-                  </>
-                )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Data do Pagamento (Data da Venda) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        min="2020-01-01"
+                        max="2030-12-31"
+                        value={dosePaymentDate}
+                        onChange={(e) => setDosePaymentDate(e.target.value)}
+                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 mt-2 italic">
+                    Esta data sera registrada como a data oficial da venda para fins financeiros.
+                  </p>
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Entrega</label>
