@@ -261,14 +261,16 @@ const TreatmentDetail: React.FC = () => {
 
     if (!doseStatus) { alert("Selecione o Status da Dose"); return; }
     if (dosePurchased && !dosePayment) { alert("Selecione a Situacao do Pagamento"); return; }
-    // Dados financeiros são sempre obrigatórios
-    if (!dosePaymentMethod) {
-      alert("Selecione a Forma de Pagamento");
-      return;
-    }
-    if (!dosePaymentDate) {
-      alert("Informe a Data do Pagamento");
-      return;
+    // Dados financeiros são obrigatórios apenas quando há compra de medicamento
+    if (dosePurchased) {
+      if (!dosePaymentMethod) {
+        alert("Selecione a Forma de Pagamento");
+        return;
+      }
+      if (!dosePaymentDate) {
+        alert("Informe a Data do Pagamento");
+        return;
+      }
     }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
 

@@ -423,100 +423,71 @@ const Dashboard: React.FC = () => {
   return { active, inactive: total - active };
   }, [patients, treatments]);
 
-  // Overdue Doses (includes scheduled doses that haven't been created yet)
+  // Overdue Doses - based on SCHEDULED dates from protocol, not added dose dates
+  // A dose is overdue if its SCHEDULED date (startDate + frequencyDays * cycleNumber) is in the past
+  // and it hasn't been applied yet
   const overdueDoses = useMemo(() => {
   const result: Dose[] = [];
   const seenTreatments = new Set<string>();
 
-  // First: Find PENDING doses with applicationDate in the past (these are directly overdue)
-  doses.forEach(dose => {
-    if (dose.status === DoseStatus.PENDING) {
-      const appDate = addDays(dose.applicationDate, 0); // Normalize date
-      if (diffInDays(appDate, TODAY) < 0) {
-        result.push(dose);
-        seenTreatments.add(dose.treatmentId);
-      }
-    }
-  });
-
-  // Second: Find treatments where last APPLIED dose has calculatedNextDate in the past
-  // (only if not already counted above)
-  const latestAppliedMap: Record<string, Dose> = {};
-  doses.forEach(dose => {
-    if (dose.status !== DoseStatus.APPLIED) return;
-    const existing = latestAppliedMap[dose.treatmentId];
-    if (!existing || new Date(dose.applicationDate) > new Date(existing.applicationDate)) {
-      latestAppliedMap[dose.treatmentId] = dose;
-    }
-  });
-
-  Object.values(latestAppliedMap).forEach(d => {
-    if (seenTreatments.has(d.treatmentId)) return; // Already counted as pending overdue
-    if (d.calculatedNextDate) {
-      const nextDate = addDays(d.calculatedNextDate, 0); // Normalize date
-      if (diffInDays(nextDate, TODAY) < 0) {
-        result.push(d);
-        seenTreatments.add(d.treatmentId); // Mark as seen to avoid duplicates in section 3
-      }
-    }
-  });
-
-  // Third: Check for scheduled doses (based on treatment plan) that are overdue but haven't been created yet
   const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
-  activeTreatments.forEach(treatment => {
-    // Skip if already counted
-    if (seenTreatments.has(treatment.id)) return;
 
+  activeTreatments.forEach(treatment => {
     const protocol = protocols.find(p => p.id === treatment.protocolId);
     if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || treatment.plannedDosesBeforeConsult === 0) return;
 
     const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
-    const createdCycles = new Set(treatmentDoses.map(d => d.cycleNumber));
     const startDate = addDays(treatment.startDate, 0); // Normalize date
     const frequencyDays = protocol.frequencyDays || 28;
 
-    // Check each planned dose
+    // Count applied doses
+    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+
+    // If all planned doses are applied, treatment is complete - no overdue
+    if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
+
+    // Check each planned dose based on SCHEDULED date
     for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
       const cycleNumber = i + 1;
 
-      // Skip if dose already created (APPLIED or PENDING - these are handled above)
-      if (createdCycles.has(cycleNumber)) continue;
-
-      // Calculate scheduled date for this uncreated dose
-      let scheduledDate = startDate;
-      let daysToAdd = frequencyDays * i;
-
-      // If there are previous doses, calculate from the last one
-      if (i > 0) {
-        // Find the last created dose before this cycle
-        for (let j = i - 1; j >= 0; j--) {
-          const previousDose = treatmentDoses.find(d => d.cycleNumber === j + 1);
-          if (previousDose) {
-            scheduledDate = addDays(previousDose.applicationDate, 0); // Normalize date
-            daysToAdd = frequencyDays * (i - j);
-            break;
-          }
-        }
+      // Calculate SCHEDULED date for this dose (based on protocol, not when dose was added)
+      // Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
+      let scheduledDate: Date;
+      if (i === 0) {
+        scheduledDate = startDate;
+      } else {
+        scheduledDate = addDays(startDate, frequencyDays * i);
       }
 
-      const calculatedDate = addDays(scheduledDate, daysToAdd);
+      // Check if this scheduled date is in the past
+      const daysUntilScheduled = diffInDays(scheduledDate, TODAY);
 
-      // Check if this scheduled dose is overdue
-      if (diffInDays(calculatedDate, TODAY) < 0) {
-        // Create a virtual dose object to represent the overdue scheduled dose
-        const virtualDose: any = {
-          id: `virtual-${treatment.id}-${cycleNumber}`,
-          treatmentId: treatment.id,
-          cycleNumber,
-          applicationDate: calculatedDate.toISOString(),
-          status: DoseStatus.PENDING,
-          paymentStatus: PaymentStatus.WAITING_PIX,
-          isVirtual: true, // Flag to indicate this is a calculated dose, not a real one
-          calculatedNextDate: calculatedDate.toISOString()
-        };
-        result.push(virtualDose);
-        seenTreatments.add(treatment.id); // Only add one overdue per treatment
-        break; // Only report the first overdue dose per treatment
+      if (daysUntilScheduled < 0) {
+        // This dose's scheduled date has passed - check if it was applied
+        const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
+
+        if (!existingDose || existingDose.status !== DoseStatus.APPLIED) {
+          // Dose is overdue (either not created or created but not applied)
+          if (existingDose) {
+            // Use the existing dose record
+            result.push(existingDose);
+          } else {
+            // Create a virtual dose to represent the overdue scheduled dose
+            const virtualDose: any = {
+              id: `virtual-${treatment.id}-${cycleNumber}`,
+              treatmentId: treatment.id,
+              cycleNumber,
+              applicationDate: scheduledDate.toISOString(),
+              status: DoseStatus.PENDING,
+              paymentStatus: PaymentStatus.WAITING_PIX,
+              isVirtual: true,
+              calculatedNextDate: scheduledDate.toISOString()
+            };
+            result.push(virtualDose);
+          }
+          seenTreatments.add(treatment.id);
+          break; // Only report the first overdue dose per treatment
+        }
       }
     }
   });
@@ -535,6 +506,8 @@ const Dashboard: React.FC = () => {
   }, [doses, overdueSortAsc, treatments, patients, protocols]);
 
   // Upcoming Scheduled Doses (future doses not yet applied)
+  // IMPORTANT: Uses SCHEDULED dates from protocol (startDate + frequencyDays * cycleNumber)
+  // NOT the dates when doses were added in the system
   const upcomingScheduledDoses = useMemo(() => {
   const result: ScheduledDoseItem[] = [];
 
@@ -551,51 +524,37 @@ const Dashboard: React.FC = () => {
     const startDate = addDays(treatment.startDate, 0); // Normalize date
     const frequencyDays = protocol.frequencyDays || 28;
 
-    // Build scheduled doses for this treatment
+    // Count applied doses
+    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+
+    // If all planned doses are applied, treatment is complete
+    if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
+
+    // Build scheduled doses for this treatment based on PROTOCOL schedule
     for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
       const cycleNumber = i + 1;
       const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
 
-      let scheduledDate: Date;
+      // If dose exists and is APPLIED, skip it
+      if (existingDose && existingDose.status === DoseStatus.APPLIED) continue;
 
-      if (existingDose) {
-        // If dose exists and is APPLIED, skip it
-        if (existingDose.status === DoseStatus.APPLIED) continue;
-        // If dose exists but is PENDING, use its date
-        scheduledDate = addDays(existingDose.applicationDate, 0);
+      // Calculate SCHEDULED date based on protocol (not when dose was added)
+      // Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
+      let scheduledDate: Date;
+      if (i === 0) {
+        scheduledDate = addDays(startDate, 0);
       } else {
-        // Calculate scheduled date based on cycle number
-        if (i === 0) {
-          // Dose 1 is always at the start date
-          scheduledDate = addDays(startDate, 0);
-        } else {
-          // Find the last existing dose to calculate from
-          let foundBase = false;
-          for (let j = i - 1; j >= 0; j--) {
-            const prevDose = treatmentDoses.find(d => d.cycleNumber === j + 1);
-            if (prevDose) {
-              const baseDate = addDays(prevDose.applicationDate, 0);
-              scheduledDate = addDays(baseDate, frequencyDays * (i - j));
-              foundBase = true;
-              break;
-            }
-          }
-          if (!foundBase) {
-            // No previous doses exist, calculate from start date
-            // Dose 2 = startDate + frequencyDays, Dose 3 = startDate + 2*frequencyDays, etc.
-            scheduledDate = addDays(startDate, frequencyDays * i);
-          }
-        }
+        scheduledDate = addDays(startDate, frequencyDays * i);
       }
 
-      const daysUntil = diffInDays(scheduledDate!, TODAY);
+      const daysUntil = diffInDays(scheduledDate, TODAY);
 
-      // Only include future doses (not overdue)
+      // Only include future doses (daysUntil >= 0 means today or future)
       if (daysUntil >= 0) {
         result.push({
           treatmentId: treatment.id,
           cycleNumber,
-          scheduledDate: scheduledDate!,
+          scheduledDate,
           daysUntil,
           patientName: patient.fullName,
           guardianName: patient.guardian.fullName,

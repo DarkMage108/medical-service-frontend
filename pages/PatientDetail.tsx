@@ -320,8 +320,10 @@ const PatientDetail: React.FC = () => {
     return events.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [treatments, patient, protocols, doses, dismissedLogs]);
 
-  // Calculate patient adherence level based on scheduled doses
+  // Calculate patient adherence level based on SCHEDULED doses from protocol
   // Rules: Sem atraso = BOA, <30 dias de atraso = ATRASADO, >30 dias de atraso = ABANDONO
+  // IMPORTANT: Delay is calculated from SCHEDULED date (startDate + frequencyDays * cycleNumber)
+  // NOT from the date the dose was added in the system
   const patientAdherenceLevel = useMemo(() => {
     if (!patient || treatments.length === 0) return null;
 
@@ -330,15 +332,22 @@ const PatientDetail: React.FC = () => {
 
     let maxDelayDays = 0;
     let hasOngoingTreatment = false;
-    let hasPendingDose = false;
+    let hasOverdueDose = false;
 
     treatments.forEach(t => {
       if (t.status !== TreatmentStatus.ONGOING) return;
       hasOngoingTreatment = true;
 
-      const treatmentDoses = doses
-        .filter(d => d.treatmentId === t.id)
-        .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
+      const protocol = protocols.find(p => p.id === t.protocolId);
+      if (!protocol) return;
+
+      const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
+      const frequencyDays = protocol.frequencyDays || 28;
+
+      // Parse start date correctly to avoid timezone issues
+      const startDateStr = t.startDate.split('T')[0];
+      const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
+      const startDate = new Date(startYear, startMonth - 1, startDay);
 
       // Count applied doses vs planned doses
       const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
@@ -349,37 +358,47 @@ const PatientDetail: React.FC = () => {
         return; // This treatment is complete, skip delay calculation
       }
 
-      // Find the first PENDING dose (next scheduled dose)
-      const firstPendingDose = treatmentDoses.find(d => d.status === DoseStatus.PENDING);
+      // Check each planned dose based on SCHEDULED date from protocol
+      for (let i = 0; i < plannedCount; i++) {
+        const cycleNumber = i + 1;
 
-      if (firstPendingDose) {
-        hasPendingDose = true;
-        // Parse scheduled date correctly to avoid timezone issues
-        const dateStr = firstPendingDose.applicationDate;
-        const dateOnly = dateStr.split('T')[0];
-        const [year, month, day] = dateOnly.split('-').map(Number);
-        const scheduledDate = new Date(year, month - 1, day);
+        // Calculate SCHEDULED date: Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
+        const scheduledDate = new Date(startDate);
+        if (i > 0) {
+          scheduledDate.setDate(scheduledDate.getDate() + frequencyDays * i);
+        }
 
-        // Calculate delay: positive if past scheduled date, negative/zero if not yet due
-        const delayDays = Math.floor((today.getTime() - scheduledDate.getTime()) / (1000 * 60 * 60 * 24));
+        // Check if scheduled date has passed
+        const daysUntilScheduled = Math.floor((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-        // Only count positive delays (when scheduled date has passed)
-        if (delayDays > maxDelayDays) {
-          maxDelayDays = delayDays;
+        if (daysUntilScheduled < 0) {
+          // Scheduled date has passed - check if dose was applied
+          const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
+
+          if (!existingDose || existingDose.status !== DoseStatus.APPLIED) {
+            // This dose is overdue
+            hasOverdueDose = true;
+            const delayDays = Math.abs(daysUntilScheduled);
+
+            if (delayDays > maxDelayDays) {
+              maxDelayDays = delayDays;
+            }
+            break; // Only count the first overdue dose per treatment
+          }
         }
       }
     });
 
     if (!hasOngoingTreatment) return null;
 
-    // If no pending doses and all treatments have completed their planned doses, it's good adherence
-    if (!hasPendingDose) return 'BOA';
+    // If no overdue doses, adherence is good
+    if (!hasOverdueDose) return 'BOA';
 
-    // Apply classification rules based on delay from scheduled doses
+    // Apply classification rules based on delay from SCHEDULED doses
     if (maxDelayDays > 30) return 'ABANDONO';
     if (maxDelayDays > 0) return 'ATRASADO';
     return 'BOA';
-  }, [patient, treatments, doses]);
+  }, [patient, treatments, doses, protocols]);
 
   const getProtocolName = (pid: string) => {
     return protocols.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
@@ -684,6 +703,19 @@ const PatientDetail: React.FC = () => {
     }
   };
 
+  // Handle Remove Protocol Message from Flow (marks as dismissed without feedback)
+  const handleRemoveMessageFromFlow = async (contactId: string) => {
+    if (!confirm('Tem certeza que deseja remover esta mensagem do fluxo?')) return;
+
+    try {
+      await dismissedLogsApi.dismiss(contactId);
+      await loadData();
+    } catch (err: any) {
+      console.error('Error removing message from flow:', err);
+      alert('Erro ao remover mensagem: ' + (err.message || 'Erro desconhecido'));
+    }
+  };
+
   // Handle Delete Treatment
   const handleDeleteTreatment = async (treatmentId: string, protocolName: string) => {
     const confirmed = confirm(
@@ -858,9 +890,33 @@ const PatientDetail: React.FC = () => {
                             </span>
                           )}
                         </div>
+                      ) : evt.type === 'message' ? (
+                        <div
+                          className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[90px] overflow-hidden relative ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
+                          title={evt.subtitle}
+                        >
+                          <button
+                            onClick={() => handleRemoveMessageFromFlow(evt.id)}
+                            className="absolute top-1 right-1 p-0.5 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Remover do fluxo"
+                          >
+                            <X size={12} />
+                          </button>
+                          <p className={`text-xs font-bold truncate ${isLate ? 'text-red-800' : 'text-slate-800'}`}>
+                            {evt.title}
+                          </p>
+                          <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">
+                            {evt.subtitle}
+                          </p>
+                          {isLate && (
+                            <span className="inline-block mt-1 text-[9px] font-bold text-red-600 bg-white px-1.5 py-0.5 rounded border border-red-200">
+                              Atrasado
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <Link
-                          to={evt.type === 'message' ? '/' : `/tratamento/${evt.treatmentId}`}
+                          to={`/tratamento/${evt.treatmentId}`}
                           className={`w-full p-2 rounded-lg border text-left transition-all hover:shadow-md h-[90px] overflow-hidden ${isLate ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100 hover:border-blue-200'}`}
                           title={evt.subtitle}
                         >
