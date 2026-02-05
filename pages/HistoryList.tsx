@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { dismissedLogsApi, treatmentsApi, protocolsApi, patientsApi } from '../services/api';
 import { TreatmentStatus, ProtocolCategory, PatientFeedback, Treatment, Protocol, PatientFull } from '../types';
-import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone, X } from 'lucide-react';
+import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDate } from '../constants';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
@@ -19,9 +19,12 @@ interface DismissedLog {
   manualMessage?: string;
 }
 
+const ITEMS_PER_PAGE = 20;
+
 const HistoryList: React.FC = () => {
   const [filterDays, setFilterDays] = useState<number | 'all'>(30);
   const [medicalResponseFilter, setMedicalResponseFilter] = useState<'all' | 'yes' | 'no'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Data states
   const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
@@ -222,6 +225,64 @@ const HistoryList: React.FC = () => {
 
     return filteredItems.sort((a: any, b: any) => b.dismissedAt.getTime() - a.dismissedAt.getTime());
   }, [filterDays, medicalResponseFilter, dismissedLogs, treatments, protocols, patients]);
+
+  // Reset page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filterDays, medicalResponseFilter]);
+
+  // Pagination helpers
+  const paginate = <T,>(items: T[], page: number): T[] => {
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    return items.slice(start, start + ITEMS_PER_PAGE);
+  };
+
+  const getTotalPages = (total: number): number => Math.ceil(total / ITEMS_PER_PAGE);
+
+  // Pagination Component
+  const Pagination = ({
+    currentPage,
+    totalPages,
+    onPageChange
+  }: {
+    currentPage: number;
+    totalPages: number;
+    onPageChange: (page: number) => void;
+  }) => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <div className="flex items-center justify-center gap-1 py-3 border-t border-slate-100 bg-slate-50/50">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="p-1.5 rounded hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+          <button
+            key={page}
+            onClick={() => onPageChange(page)}
+            className={`w-7 h-7 rounded text-xs font-medium transition-colors ${
+              currentPage === page
+                ? 'bg-pink-600 text-white'
+                : 'hover:bg-slate-200 text-slate-600'
+            }`}
+          >
+            {page}
+          </button>
+        ))}
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="p-1.5 rounded hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    );
+  };
 
   // Handlers
   const handleOpenFeedback = (item: any, editMode = false) => {
@@ -483,7 +544,7 @@ const HistoryList: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                historyItems.map((item) => {
+                paginate(historyItems, currentPage).map((item) => {
                   const fb = item.feedback as PatientFeedback | undefined;
                   const isResolved = fb?.status === 'resolved';
 
@@ -594,6 +655,11 @@ const HistoryList: React.FC = () => {
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={getTotalPages(historyItems.length)}
+            onPageChange={setCurrentPage}
+          />
         </div>
       </SectionCard>
 

@@ -28,7 +28,8 @@ export const SURVEY_STATUS_LABELS: Record<SurveyStatus, string> = {
   [SurveyStatus.WAITING]: 'Aguardando',
   [SurveyStatus.SENT]: 'Enviado',
   [SurveyStatus.ANSWERED]: 'Respondido',
-  [SurveyStatus.NOT_SENT]: 'Não Enviado'
+  [SurveyStatus.NOT_SENT]: 'Não Enviado',
+  [SurveyStatus.NOT_ANSWERED]: 'Não Respondido'
 };
 
 export const TREATMENT_STATUS_LABELS: Record<TreatmentStatus, string> = {

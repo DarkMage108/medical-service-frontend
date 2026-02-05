@@ -357,7 +357,8 @@ const Dashboard: React.FC = () => {
 
   try {
     const updates: Partial<Dose> = {
-    consultationDate: new Date(consultDateInput).toISOString()
+    consultationDate: new Date(consultDateInput).toISOString(),
+    consultationScheduled: true // Mark as completed when scheduling
     };
 
     const updated = await dosesApi.update(selectedConsultDoseId, updates);
@@ -367,6 +368,19 @@ const Dashboard: React.FC = () => {
     setError(err.message || 'Erro ao salvar consulta');
   } finally {
     setIsSavingDose(false);
+  }
+  };
+
+  // Handler to mark consultation as completed directly (without setting date)
+  const handleMarkConsultCompleted = async (doseId: string) => {
+  try {
+    const updates: Partial<Dose> = {
+    consultationScheduled: true
+    };
+    const updated = await dosesApi.update(doseId, updates);
+    setDoses(prev => prev.map(d => d.id === doseId ? updated : d));
+  } catch (err: any) {
+    setError(err.message || 'Erro ao concluir agendamento');
   }
   };
 
@@ -434,7 +448,9 @@ const Dashboard: React.FC = () => {
 
   activeTreatments.forEach(treatment => {
     const protocol = protocols.find(p => p.id === treatment.protocolId);
-    if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || treatment.plannedDosesBeforeConsult === 0) return;
+    // Note: protocol.category from backend is 'MEDICATION' or 'MONITORING' (not the display label)
+    const isMedication = protocol?.category === 'MEDICATION' || protocol?.category === ProtocolCategory.MEDICATION;
+    if (!protocol || !isMedication || treatment.plannedDosesBeforeConsult === 0) return;
 
     const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
     const startDate = addDays(treatment.startDate, 0); // Normalize date
@@ -503,7 +519,7 @@ const Dashboard: React.FC = () => {
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, overdueSortAsc, treatments, patients, protocols]);
+  }, [doses, overdueSortAsc, treatments, patients, protocols, TODAY]);
 
   // Upcoming Scheduled Doses (future doses not yet applied)
   // IMPORTANT: Uses SCHEDULED dates from protocol (startDate + frequencyDays * cycleNumber)
@@ -515,7 +531,9 @@ const Dashboard: React.FC = () => {
 
   activeTreatments.forEach(treatment => {
     const protocol = protocols.find(p => p.id === treatment.protocolId);
-    if (!protocol || protocol.category !== ProtocolCategory.MEDICATION || treatment.plannedDosesBeforeConsult === 0) return;
+    // Note: protocol.category from backend is 'MEDICATION' or 'MONITORING' (not the display label)
+    const isMedication = protocol?.category === 'MEDICATION' || protocol?.category === ProtocolCategory.MEDICATION;
+    if (!protocol || !isMedication || treatment.plannedDosesBeforeConsult === 0) return;
 
     const patient = patients.find(p => p.id === treatment.patientId);
     if (!patient) return;
@@ -572,18 +590,18 @@ const Dashboard: React.FC = () => {
     if (diff !== 0) return upcomingDosesSortAsc ? diff : -diff;
     return a.patientName.localeCompare(b.patientName);
   });
-  }, [treatments, protocols, patients, doses, upcomingDosesSortAsc]);
+  }, [treatments, protocols, patients, doses, upcomingDosesSortAsc, TODAY]);
 
   // Pending Surveys (excludes WAITING status - only NOT_SENT and SENT are valid)
   const pendingSurveys = useMemo(() => {
   return doses.filter(d => {
     if (!d.nurse) return false;
-    // Only include NOT_SENT and SENT status (WAITING is deprecated, ANSWERED means completed)
+    // Exclude if already answered or marked as not answered (these are "closed" states)
+    if (d.surveyStatus === SurveyStatus.ANSWERED) return false;
+    if (d.surveyStatus === SurveyStatus.NOT_ANSWERED) return false;
+    // Only include NOT_SENT and SENT status (WAITING is deprecated)
     const isPendingStatus = d.surveyStatus === SurveyStatus.SENT || d.surveyStatus === SurveyStatus.NOT_SENT || !d.surveyStatus;
-    const isZeroScore = !d.surveyScore || d.surveyScore === 0;
-    // Exclude if already answered with score
-    if (d.surveyStatus === SurveyStatus.ANSWERED && d.surveyScore && d.surveyScore > 0) return false;
-    return isPendingStatus || isZeroScore;
+    return isPendingStatus;
   }).sort((a, b) => {
     const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
     if (diff !== 0) return surveysSortAsc ? diff : -diff;
@@ -598,6 +616,8 @@ const Dashboard: React.FC = () => {
   const approachingConsults = useMemo(() => {
   return doses.filter(d => {
     if (!d.isLastBeforeConsult) return false;
+    // Exclude if consultation scheduling is marked as completed
+    if (d.consultationScheduled) return false;
     if (!d.consultationDate) return true;
     const consultDate = new Date(d.consultationDate);
     const diff = diffInDays(consultDate, TODAY);
@@ -1213,11 +1233,17 @@ const Dashboard: React.FC = () => {
               className={`text-xs px-2 py-1 rounded-full border-0 font-medium cursor-pointer focus:ring-2 focus:ring-blue-500 ${
                 dose.surveyStatus === SurveyStatus.SENT
                 ? 'bg-blue-100 text-blue-700'
+                : dose.surveyStatus === SurveyStatus.ANSWERED
+                ? 'bg-emerald-100 text-emerald-700'
+                : dose.surveyStatus === SurveyStatus.NOT_ANSWERED
+                ? 'bg-amber-100 text-amber-700'
                 : 'bg-slate-100 text-slate-600'
               }`}
               >
               <option value={SurveyStatus.NOT_SENT}>{SURVEY_STATUS_LABELS[SurveyStatus.NOT_SENT]}</option>
               <option value={SurveyStatus.SENT}>{SURVEY_STATUS_LABELS[SurveyStatus.SENT]}</option>
+              <option value={SurveyStatus.ANSWERED}>{SURVEY_STATUS_LABELS[SurveyStatus.ANSWERED]}</option>
+              <option value={SurveyStatus.NOT_ANSWERED}>{SURVEY_STATUS_LABELS[SurveyStatus.NOT_ANSWERED]}</option>
               </select>
             </td>
             <td className="px-6 py-3 text-right">
@@ -1342,18 +1368,25 @@ const Dashboard: React.FC = () => {
           <td className="px-6 py-4 font-medium text-slate-800">{patient?.fullName}</td>
           <td className="px-6 py-4 text-slate-600">{patient?.guardian.fullName}</td>
           <td className="px-6 py-4 text-right">
-            {hasDate ? (
-            <span className="inline-flex items-center text-slate-400 hover:text-pink-600 transition-colors">
-              Ver <ChevronRight size={16} className="ml-1" />
-            </span>
-            ) : (
-            <button
+            <div className="flex items-center justify-end gap-2">
+            {!hasDate && (
+              <button
               onClick={(e) => handleOpenConsultModal(e, dose)}
               className="inline-flex items-center text-purple-600 hover:text-purple-800 font-bold text-xs"
-            >
+              >
               <Calendar size={14} className="mr-1" /> Agendar Agora
-            </button>
+              </button>
             )}
+            <button
+              onClick={(e) => {
+              e.stopPropagation();
+              handleMarkConsultCompleted(dose.id);
+              }}
+              className="inline-flex items-center text-emerald-600 hover:text-emerald-800 font-bold text-xs bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded transition-colors"
+            >
+              <CheckCircle2 size={14} className="mr-1" /> Concluir
+            </button>
+            </div>
           </td>
           </tr>
         )

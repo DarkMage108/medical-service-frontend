@@ -133,7 +133,8 @@ export enum SurveyStatus {
   WAITING = 'WAITING',
   SENT = 'SENT',
   ANSWERED = 'ANSWERED',
-  NOT_SENT = 'NOT_SENT'
+  NOT_SENT = 'NOT_SENT',
+  NOT_ANSWERED = 'NOT_ANSWERED'
 }
 
 export enum TreatmentStatus {
@@ -159,7 +160,8 @@ export interface Dose {
   // Logic
   isLastBeforeConsult: boolean;
   consultationDate?: string;
-  
+  consultationScheduled?: boolean; // Agendamento de consulta concluído
+
   // Payment
   paymentStatus: PaymentStatus;
   paymentUpdatedAt: string;
