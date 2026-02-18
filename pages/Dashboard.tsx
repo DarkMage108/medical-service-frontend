@@ -715,19 +715,33 @@ const Dashboard: React.FC = () => {
     const proto = protocols.find(p => p.id === t.protocolId);
     if (!proto || !proto.milestones || proto.milestones.length === 0) return;
 
-    // Find the last applied dose for this treatment to use as reference date
-    // The contact timeline (régua) should be based on the last applied dose, not startDate
-    const treatmentDoses = doses.filter(d => d.treatmentId === t.id && d.status === DoseStatus.APPLIED);
-    const lastAppliedDose = treatmentDoses.length > 0
-      ? treatmentDoses.reduce((latest, d) =>
-          parseLocalDate(d.applicationDate).getTime() > parseLocalDate(latest.applicationDate).getTime() ? d : latest
-        )
-      : null;
+    const isMedication = proto.category === 'MEDICATION' || proto.category === ProtocolCategory.MEDICATION;
 
-    // Use last applied dose date as reference, fallback to treatment startDate
-    const referenceDate = lastAppliedDose
-      ? parseLocalDate(lastAppliedDose.applicationDate)
-      : parseLocalDate(t.startDate);
+    let referenceDate: Date;
+
+    if (isMedication) {
+      // MEDICATION protocols: messages are based on actual dose application date
+      // If there are overdue pending doses → BLOCK all messages (pause the flow)
+      const allTreatmentDoses = doses.filter(d => d.treatmentId === t.id);
+      const overduePendingDoses = allTreatmentDoses.filter(d =>
+        d.status === DoseStatus.PENDING && diffInDays(parseLocalDate(d.applicationDate), TODAY) < 0
+      );
+      const appliedDoses = allTreatmentDoses.filter(d => d.status === DoseStatus.APPLIED);
+      const lastAppliedDose = appliedDoses.length > 0
+        ? appliedDoses.reduce((latest, d) =>
+            parseLocalDate(d.applicationDate).getTime() > parseLocalDate(latest.applicationDate).getTime() ? d : latest
+          )
+        : null;
+
+      // Block: no applied dose yet, or there are overdue pending doses
+      if (!lastAppliedDose || overduePendingDoses.length > 0) return;
+
+      // Use last applied dose date as reference
+      referenceDate = parseLocalDate(lastAppliedDose.applicationDate);
+    } else {
+      // NON-MEDICATION protocols: messages based on treatment start date
+      referenceDate = parseLocalDate(t.startDate);
+    }
 
     proto.milestones.forEach(m => {
     const contactId = `${t.id}_m_${m.day}`;

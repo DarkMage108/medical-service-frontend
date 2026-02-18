@@ -135,7 +135,7 @@ const Checklist: React.FC = () => {
       const activeDose = treatmentDoses.find(d =>
         d.status !== DoseStatus.APPLIED ||
         d.paymentStatus !== PaymentStatus.PAID ||
-        (d.nurse && d.surveyStatus !== SurveyStatus.ANSWERED && d.surveyStatus !== SurveyStatus.NOT_SENT)
+        (d.nurse && d.surveyStatus !== SurveyStatus.ANSWERED && d.surveyStatus !== SurveyStatus.NOT_ANSWERED && d.surveyStatus !== SurveyStatus.NOT_SENT)
       ) || treatmentDoses[treatmentDoses.length - 1];
 
       const steps: Record<StepType, StepStatus> = {
@@ -187,8 +187,8 @@ const Checklist: React.FC = () => {
         if (!activeDose.nurse) {
           // Caso A: Sem enfermeira -> Não aplicável
           steps.survey = 'NA';
-        } else if (activeDose.surveyStatus === SurveyStatus.ANSWERED) {
-          // Caso C: Com enfermeira + resposta registrada -> Concluído/Verde
+        } else if (activeDose.surveyStatus === SurveyStatus.ANSWERED || activeDose.surveyStatus === SurveyStatus.NOT_ANSWERED) {
+          // Caso C: Com enfermeira + resposta registrada ou não respondido -> Concluído/Verde
           steps.survey = 'OK';
         } else {
           // Caso B: Com enfermeira + sem resposta -> Pendente
@@ -684,7 +684,7 @@ const Checklist: React.FC = () => {
       case 'survey': {
         const currentDose = item.doseId ? doses.find(d => d.id === item.doseId) : null;
         const hasNurse = currentDose?.nurse || false;
-        const isAnswered = currentDose?.surveyStatus === SurveyStatus.ANSWERED;
+        const isAnswered = currentDose?.surveyStatus === SurveyStatus.ANSWERED || currentDose?.surveyStatus === SurveyStatus.NOT_ANSWERED;
 
         return (
           <div>
@@ -702,8 +702,8 @@ const Checklist: React.FC = () => {
               </div>
             )}
 
-            {/* Caso C: Com enfermeira + resposta registrada */}
-            {hasNurse && isAnswered && (
+            {/* Caso C: Com enfermeira + resposta registrada ou não respondido */}
+            {hasNurse && isAnswered && currentDose?.surveyStatus === SurveyStatus.ANSWERED && (
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                 <p className="text-green-700 font-bold flex items-center mb-3">
                   <CheckCircle2 size={18} className="mr-2" />
@@ -724,6 +724,17 @@ const Checklist: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Caso C2: Com enfermeira + não respondido */}
+            {hasNurse && isAnswered && currentDose?.surveyStatus === SurveyStatus.NOT_ANSWERED && (
+              <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                <p className="text-amber-700 font-bold flex items-center">
+                  <CheckCircle2 size={18} className="mr-2" />
+                  Pesquisa finalizada - Nao Respondido
+                </p>
+                <p className="text-xs text-amber-600 mt-2">O paciente nao respondeu a pesquisa de satisfacao.</p>
               </div>
             )}
 
@@ -773,9 +784,12 @@ const Checklist: React.FC = () => {
                     Registrar Resposta
                   </button>
 
-                  <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="grid grid-cols-3 gap-3 pt-2">
                     <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.SENT })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-white text-blue-700 border border-blue-200 rounded-lg font-medium hover:bg-blue-50 disabled:opacity-50 text-xs">
                       Marcar Enviado
+                    </button>
+                    <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.NOT_ANSWERED })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg font-medium hover:bg-amber-100 disabled:opacity-50 text-xs">
+                      Nao Respondido
                     </button>
                     <button onClick={() => handleQuickUpdateDose({ surveyStatus: SurveyStatus.NOT_SENT })} disabled={isProcessing || !item.doseId} className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-lg font-medium hover:bg-slate-200 disabled:opacity-50 text-xs">
                       Nao Enviar

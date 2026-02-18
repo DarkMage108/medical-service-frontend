@@ -184,57 +184,64 @@ const PatientDetail: React.FC = () => {
       }
 
       if (proto.milestones) {
-        // Use last applied dose date as reference (D0)
-        // If no applied dose, use the first pending dose date as reference
-        // Fallback to startDate only if no doses exist
-        const treatmentDosesForMilestones = doses.filter(d => d.treatmentId === t.id);
-        const lastAppliedDose = treatmentDosesForMilestones
-          .filter(d => d.status === DoseStatus.APPLIED)
-          .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
-
-        const firstPendingDose = treatmentDosesForMilestones
-          .filter(d => d.status === DoseStatus.PENDING)
-          .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime())[0];
-
-        // Priority: last applied dose > first pending dose > treatment startDate
-        // Parse date string correctly to avoid timezone issues
         const getLocalDate = (dateStr: string) => {
           const dateOnly = dateStr.split('T')[0];
           const [year, month, day] = dateOnly.split('-').map(Number);
           return new Date(year, month - 1, day);
         };
 
-        const referenceDate = lastAppliedDose
-          ? getLocalDate(lastAppliedDose.applicationDate)
-          : firstPendingDose
-            ? getLocalDate(firstPendingDose.applicationDate)
-            : getLocalDate(t.startDate);
+        const isMedication = proto.category === 'MEDICATION' || proto.category === ProtocolCategory.MEDICATION;
 
-        proto.milestones.forEach((m: any) => {
-          // Add days manually to avoid timezone issues
-          const contactDate = new Date(referenceDate);
-          contactDate.setDate(contactDate.getDate() + m.day);
+        let milestoneReferenceDate: Date | null = null;
 
-          const contactId = `${t.id}_m_${m.day}`;
+        if (isMedication) {
+          // MEDICATION protocols: messages based on actual dose application
+          // Block if there are overdue pending doses
+          const allTreatmentDoses = doses.filter(d => d.treatmentId === t.id);
+          const overduePendingDoses = allTreatmentDoses.filter(d =>
+            d.status === DoseStatus.PENDING && diffInDays(getLocalDate(d.applicationDate), TODAY) < 0
+          );
+          const appliedDoses = allTreatmentDoses.filter(d => d.status === DoseStatus.APPLIED);
+          const lastAppliedDose = appliedDoses
+            .sort((a, b) => getLocalDate(b.applicationDate).getTime() - getLocalDate(a.applicationDate).getTime())[0];
 
-          const isDone = dismissedLogs.some(log => log.contactId === contactId);
-
-          if (!isDone) {
-            const diff = diffInDays(contactDate, TODAY);
-            // Show events from 10 days ago up to 365 days in the future (covers D+84 and beyond)
-            if (diff > -10 && diff < 365) {
-              events.push({
-                id: contactId,
-                date: contactDate,
-                type: 'message',
-                title: `Contato dia ${m.day}`,
-                subtitle: m.message,
-                status: diff < 0 ? 'late' : 'pending',
-                treatmentId: t.id
-              });
-            }
+          // Block: no applied dose or overdue pending doses
+          if (!lastAppliedDose || overduePendingDoses.length > 0) {
+            milestoneReferenceDate = null; // blocked
+          } else {
+            milestoneReferenceDate = getLocalDate(lastAppliedDose.applicationDate);
           }
-        });
+        } else {
+          // NON-MEDICATION protocols: messages based on treatment start date
+          milestoneReferenceDate = getLocalDate(t.startDate);
+        }
+
+        if (milestoneReferenceDate) {
+          proto.milestones.forEach((m: any) => {
+            const contactDate = new Date(milestoneReferenceDate!);
+            contactDate.setDate(contactDate.getDate() + m.day);
+
+            const contactId = `${t.id}_m_${m.day}`;
+
+            const isDone = dismissedLogs.some(log => log.contactId === contactId);
+
+            if (!isDone) {
+              const diff = diffInDays(contactDate, TODAY);
+              // Show events from 10 days ago up to 365 days in the future
+              if (diff > -10 && diff < 365) {
+                events.push({
+                  id: contactId,
+                  date: contactDate,
+                  type: 'message',
+                  title: `Contato dia ${m.day}`,
+                  subtitle: m.message,
+                  status: diff < 0 ? 'late' : 'pending',
+                  treatmentId: t.id
+                });
+              }
+            }
+          });
+        }
       }
     });
 
@@ -294,12 +301,15 @@ const PatientDetail: React.FC = () => {
 
       // Completed milestones/contacts
       if (proto.milestones) {
+        // For completed milestones, use the dismissedAt date minus milestone day as approximate reference
+        // This ensures the timeline shows them near when they were actually sent
         proto.milestones.forEach((m: any) => {
           const contactId = `${t.id}_m_${m.day}`;
           const dismissedLog = dismissedLogs.find(log => log.contactId === contactId);
 
           if (dismissedLog) {
-            const contactDate = addDays(new Date(t.startDate), m.day);
+            // Use dismissedAt date as the contact date (when it was actually sent)
+            const contactDate = new Date(dismissedLog.dismissedAt);
             events.push({
               id: contactId,
               date: contactDate,
