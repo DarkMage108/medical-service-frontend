@@ -18,6 +18,7 @@ import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
 import Checklist from './pages/Checklist';
 import NursingList from './pages/NursingList';
+import SettingsPage from './pages/SettingsPage';
 import { Loader2 } from 'lucide-react';
 import { UserRole } from './types';
 
@@ -286,6 +287,20 @@ const AppContent: React.FC = () => {
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <Profile />
             </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/configuracoes"
+        element={
+          <ProtectedRoute>
+            {layoutUser?.role === UserRole.ADMIN ? (
+              <Layout user={layoutUser!} onLogout={handleLogout}>
+                <SettingsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/" replace />
+            )}
           </ProtectedRoute>
         }
       />

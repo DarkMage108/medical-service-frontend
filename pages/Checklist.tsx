@@ -133,7 +133,7 @@ const Checklist: React.FC = () => {
         .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
 
       const activeDose = treatmentDoses.find(d =>
-        d.status !== DoseStatus.APPLIED ||
+        (d.status !== DoseStatus.APPLIED && d.status !== DoseStatus.APPLIED_LATE) ||
         d.paymentStatus !== PaymentStatus.PAID ||
         (d.nurse && d.surveyStatus !== SurveyStatus.ANSWERED && d.surveyStatus !== SurveyStatus.NOT_ANSWERED && d.surveyStatus !== SurveyStatus.NOT_SENT)
       ) || treatmentDoses[treatmentDoses.length - 1];
@@ -180,7 +180,7 @@ const Checklist: React.FC = () => {
           }
         }
 
-        const isApplied = activeDose.status === DoseStatus.APPLIED || activeDose.status === DoseStatus.NOT_ACCEPTED;
+        const isApplied = activeDose.status === DoseStatus.APPLIED || activeDose.status === DoseStatus.APPLIED_LATE || activeDose.status === DoseStatus.NOT_ACCEPTED;
         steps.application = isApplied ? 'OK' : 'PENDING';
 
         // Survey logic: only applicable if there's a nurse

@@ -66,6 +66,12 @@ const ADMIN_NAV_ITEMS = [
     path: '/permissoes',
     icon: Shield,
   },
+  {
+    key: 'settings',
+    label: 'Configuracoes',
+    path: '/configuracoes',
+    icon: Settings,
+  },
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {

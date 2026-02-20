@@ -79,6 +79,7 @@ const convertDose = (data: any): Dose => ({
   id: data.id,
   treatmentId: data.treatmentId,
   cycleNumber: data.cycleNumber,
+  scheduledDate: data.scheduledDate || data.applicationDate,
   applicationDate: data.applicationDate,
   lotNumber: data.lotNumber,
   expiryDate: data.expiryDate,

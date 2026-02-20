@@ -1,9 +1,9 @@
 ﻿import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, purchaseRequestsApi, dismissedLogsApi, patientEventsApi, PatientEventWithPatient } from '../services/api';
+import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, dismissedLogsApi, patientEventsApi, PatientEventWithPatient } from '../services/api';
 import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, PatientFull, Treatment, Protocol } from '../types';
 import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS } from '../constants';
-import { UserCheck, MessageSquare, Phone, ExternalLink, Activity, ShoppingCart } from 'lucide-react';
+import { UserCheck, MessageSquare, Phone, ExternalLink, Activity } from 'lucide-react';
 import KpiCard from '../components/ui/KpiCard';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
@@ -45,6 +45,7 @@ type ScheduledDoseItem = {
   protocolName: string;
   isCreated: boolean;
   doseId?: string;
+  lastDosePurchased?: boolean;
 };
 
 const Dashboard: React.FC = () => {
@@ -58,7 +59,6 @@ const Dashboard: React.FC = () => {
   const [documents, setDocuments] = useState<ConsentDocument[]>([]);
   const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
   const [manualEvents, setManualEvents] = useState<PatientEventWithPatient[]>([]);
-  const [pendingPurchases, setPendingPurchases] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,7 +133,6 @@ const Dashboard: React.FC = () => {
     treatmentsRes,
     protocolsRes,
     documentsRes,
-    purchaseRes,
     dismissedRes,
     manualEventsRes
     ] = await Promise.all([
@@ -142,7 +141,6 @@ const Dashboard: React.FC = () => {
     treatmentsApi.getAll({ limit: 500 }),
     protocolsApi.getAll(),
     documentsApi.getAll(),
-    purchaseRequestsApi.getAll(),
     dismissedLogsApi.getAll(),
     patientEventsApi.getAll()
     ]);
@@ -154,7 +152,6 @@ const Dashboard: React.FC = () => {
     setDocuments(documentsRes.data || []);
     setDismissedLogs(dismissedRes.data || []);
     setManualEvents(manualEventsRes.data || []);
-    setPendingPurchases((purchaseRes.data || []).filter((r: any) => r.status === 'PENDING').length);
   } catch (err: any) {
     setError(err.message || 'Erro ao carregar dados');
     console.error('Failed to load dashboard data:', err);
@@ -204,7 +201,7 @@ const Dashboard: React.FC = () => {
   const patient = getPatientByTreatmentId(treatmentId);
   if (patient && patient.address) {
     const a = patient.address;
-    const fullText = `${a.street}, ${a.number}${a.complement ? ' - ' + a.complement : ''} - ${a.neighborhood}, ${a.city} - ${a.state}, CEP: ${a.zipCode}`;
+    const fullText = `${a.street}, ${a.number}${a.complement ? ' - ' + a.complement : ''}${a.condominium ? ' - ' + a.condominium : ''} - ${a.neighborhood}, ${a.city} - ${a.state}, CEP: ${a.zipCode}${a.referencePoint ? '\nRef: ' + a.referencePoint : ''}`;
     setSelectedAddress(fullText);
     setSelectedPatientName(patient.fullName);
     setSelectedGuardianName(patient.guardian.fullName);
@@ -456,8 +453,8 @@ const Dashboard: React.FC = () => {
     const startDate = addDays(treatment.startDate, 0); // Normalize date
     const frequencyDays = protocol.frequencyDays || 28;
 
-    // Count applied doses
-    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+    // Count applied doses (APPLIED_LATE counts as applied)
+    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE).length;
 
     // If all planned doses are applied, treatment is complete - no overdue
     if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
@@ -482,7 +479,7 @@ const Dashboard: React.FC = () => {
         // This dose's scheduled date has passed - check if it was applied
         const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
 
-        if (!existingDose || existingDose.status !== DoseStatus.APPLIED) {
+        if (!existingDose || (existingDose.status !== DoseStatus.APPLIED && existingDose.status !== DoseStatus.APPLIED_LATE)) {
           // Dose is overdue (either not created or created but not applied)
           if (existingDose) {
             // Use the existing dose record
@@ -542,8 +539,8 @@ const Dashboard: React.FC = () => {
     const startDate = addDays(treatment.startDate, 0); // Normalize date
     const frequencyDays = protocol.frequencyDays || 28;
 
-    // Count applied doses
-    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+    // Count applied doses (APPLIED_LATE counts as applied)
+    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE).length;
 
     // If all planned doses are applied, treatment is complete
     if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
@@ -553,8 +550,8 @@ const Dashboard: React.FC = () => {
       const cycleNumber = i + 1;
       const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
 
-      // If dose exists and is APPLIED, skip it
-      if (existingDose && existingDose.status === DoseStatus.APPLIED) continue;
+      // If dose exists and is APPLIED (or APPLIED_LATE), skip it
+      if (existingDose && (existingDose.status === DoseStatus.APPLIED || existingDose.status === DoseStatus.APPLIED_LATE)) continue;
 
       // Calculate SCHEDULED date based on protocol (not when dose was added)
       // Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
@@ -569,6 +566,12 @@ const Dashboard: React.FC = () => {
 
       // Only include future doses (daysUntil >= 0 means today or future)
       if (daysUntil >= 0) {
+        // Check if last applied dose was purchased
+        const appliedDoses = treatmentDoses
+          .filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE)
+          .sort((a, b) => (b.cycleNumber || 0) - (a.cycleNumber || 0));
+        const lastAppliedDose = appliedDoses[0];
+
         result.push({
           treatmentId: treatment.id,
           cycleNumber,
@@ -578,7 +581,8 @@ const Dashboard: React.FC = () => {
           guardianName: patient.guardian.fullName,
           protocolName: protocol.name,
           isCreated: !!existingDose,
-          doseId: existingDose?.id
+          doseId: existingDose?.id,
+          lastDosePurchased: lastAppliedDose?.purchased
         });
       }
     }
@@ -678,7 +682,7 @@ const Dashboard: React.FC = () => {
     const noPurchase = d.purchased === false || (!d.paymentStatus && d.purchased !== true);
     // If dose is APPLIED and either PAID or no purchase, remove from list
     const paymentResolved = d.paymentStatus === PaymentStatus.PAID || noPurchase;
-    if (d.status === DoseStatus.APPLIED && paymentResolved) {
+    if ((d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE) && paymentResolved) {
     return false;
     }
     const appDate = new Date(d.applicationDate);
@@ -726,7 +730,7 @@ const Dashboard: React.FC = () => {
       const overduePendingDoses = allTreatmentDoses.filter(d =>
         d.status === DoseStatus.PENDING && diffInDays(parseLocalDate(d.applicationDate), TODAY) < 0
       );
-      const appliedDoses = allTreatmentDoses.filter(d => d.status === DoseStatus.APPLIED);
+      const appliedDoses = allTreatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE);
       const lastAppliedDose = appliedDoses.length > 0
         ? appliedDoses.reduce((latest, d) =>
             parseLocalDate(d.applicationDate).getTime() > parseLocalDate(latest.applicationDate).getTime() ? d : latest
@@ -908,13 +912,6 @@ const Dashboard: React.FC = () => {
 
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
     <h1 className="text-2xl font-bold text-slate-800">Painel de Controle</h1>
-    <div className="flex gap-2">
-      <select className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-500">
-      <option>Todos</option>
-      <option>Últimos 30 dias</option>
-      <option>Últimos 7 dias</option>
-      </select>
-    </div>
     </div>
 
     {error && (
@@ -926,12 +923,6 @@ const Dashboard: React.FC = () => {
     )}
 
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-    <KpiCard
-      title="Reposição de Estoque" value={pendingPurchases}
-      icon={<ShoppingCart size={20} className={pendingPurchases > 0 ? "text-red-600 animate-pulse" : "text-emerald-600"} />}
-      accentColor={pendingPurchases > 0 ? "red" : "green"}
-      onClick={() => navigate('/estoque', { state: { activeTab: 'orders' } })}
-    />
     <KpiCard
       title="Pacientes Ativos" subtitle="Em acompanhamento" value={patientStats.active}
       icon={<UserCheck size={20} className="text-green-600" />} accentColor="green"
@@ -1010,7 +1001,7 @@ const Dashboard: React.FC = () => {
           <td className="px-6 py-4 font-medium text-slate-900">
             <div className="flex items-center gap-2">
             {patient?.fullName}
-            {patient?.address && (
+            {patient?.address && dose.purchased !== false && (
               <button
               onClick={(e) => handleViewAddress(e, dose.treatmentId, dose.id)}
               className={`p-1 rounded-full transition-colors ${
@@ -1430,12 +1421,13 @@ const Dashboard: React.FC = () => {
         <th className="px-6 py-3">Paciente</th>
         <th className="px-6 py-3">Responsável</th>
         <th className="px-6 py-3">Protocolo</th>
+        <th className="px-6 py-3">Comprador</th>
         <th className="px-6 py-3 text-right">Ação</th>
       </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
       {upcomingScheduledDoses.length === 0 ? (
-        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhuma dose futura programada.</td></tr>
+        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-400">Nenhuma dose futura programada.</td></tr>
       ) : (
         paginate(upcomingScheduledDoses, upcomingDosesPage).map((dose: ScheduledDoseItem, idx) => (
         <tr
@@ -1460,6 +1452,15 @@ const Dashboard: React.FC = () => {
           <td className="px-6 py-4 text-slate-600">{dose.guardianName}</td>
           <td className="px-6 py-4 text-xs text-slate-600 max-w-[150px] truncate" title={dose.protocolName}>
           {dose.protocolName}
+          </td>
+          <td className="px-6 py-4">
+          {dose.lastDosePurchased === true ? (
+            <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded">Sim</span>
+          ) : dose.lastDosePurchased === false ? (
+            <span className="text-xs font-bold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded">Não</span>
+          ) : (
+            <span className="text-slate-300">-</span>
+          )}
           </td>
           <td className="px-6 py-4 text-right">
           <span className="inline-flex items-center text-slate-400 group-hover:text-teal-600 transition-colors">

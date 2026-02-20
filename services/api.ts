@@ -816,6 +816,61 @@ export const patientEventsApi = {
   },
 };
 
+// ============== CLINICAL NOTES ==============
+
+export interface ClinicalNoteResponse {
+  id: string;
+  patientId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const clinicalNotesApi = {
+  getByPatient: async (patientId: string) => {
+    return apiFetch<PaginatedResponse<ClinicalNoteResponse>>(`/patients/${patientId}/clinical-notes`);
+  },
+
+  create: async (patientId: string, content: string) => {
+    return apiFetch<ClinicalNoteResponse>(`/patients/${patientId}/clinical-notes`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  update: async (id: string, content: string) => {
+    return apiFetch<ClinicalNoteResponse>(`/clinical-notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  delete: async (id: string) => {
+    return apiFetch<void>(`/clinical-notes/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// ============== SETTINGS ==============
+
+export const settingsApi = {
+  getAll: async () => {
+    return apiFetch<{ data: Array<{ id: string; key: string; value: string; label: string | null }> }>('/settings');
+  },
+
+  getAdherenceSettings: async () => {
+    return apiFetch<{ data: Record<string, string> }>('/settings/adherence');
+  },
+
+  update: async (settings: Record<string, string>) => {
+    return apiFetch<{ data: Array<{ id: string; key: string; value: string; label: string | null }> }>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    });
+  },
+};
+
 // ============== HEALTH CHECK ==============
 
 export const healthCheck = async () => {

@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi } from '../services/api';
-import { formatDate, getStatusColor, addDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS } from '../constants';
+import { formatDate, getStatusColor, addDays, diffInDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS } from '../constants';
 import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem } from '../types';
 import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw } from 'lucide-react';
 
@@ -38,6 +38,7 @@ const TreatmentDetail: React.FC = () => {
   const [isSavingDose, setIsSavingDose] = useState(false);
 
   const [doseDate, setDoseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [doseScheduledDate, setDoseScheduledDate] = useState(''); // Stores the scheduled date for the dose being created/edited
   const [doseLot, setDoseLot] = useState('');
   const [selectedInventoryId, setSelectedInventoryId] = useState('');
 
@@ -146,6 +147,7 @@ const TreatmentDetail: React.FC = () => {
     setEditingDoseId(dose.id);
     setEditingCycleNumber(dose.cycleNumber || null);
     setDoseDate(dose.applicationDate.split('T')[0]);
+    setDoseScheduledDate(dose.scheduledDate ? dose.scheduledDate.split('T')[0] : dose.applicationDate.split('T')[0]);
     setDoseLot(dose.lotNumber || '');
     setSelectedInventoryId(dose.inventoryLotId || '');
     setDoseStatus(dose.status);
@@ -184,6 +186,7 @@ const TreatmentDetail: React.FC = () => {
     setEditingDoseId(null);
     setEditingCycleNumber(null);
     setDoseDate(new Date().toISOString().split('T')[0]);
+    setDoseScheduledDate('');
     setDoseLot('');
     setSelectedInventoryId('');
     setDoseStatus('');
@@ -209,9 +212,11 @@ const TreatmentDetail: React.FC = () => {
       // Store the cycle number for saving
       setEditingCycleNumber(targetCycleNumber);
 
-      // Set application date from scheduled date if provided
+      // Set application date and scheduled date from scheduled date if provided
       if (scheduledDate) {
-        setDoseDate(scheduledDate.toISOString().split('T')[0]);
+        const dateStr = scheduledDate.toISOString().split('T')[0];
+        setDoseDate(dateStr);
+        setDoseScheduledDate(dateStr);
       }
 
       // Mark as last dose if this is the last planned dose
@@ -302,6 +307,7 @@ const TreatmentDetail: React.FC = () => {
       const doseData = {
         treatmentId: id,
         cycleNumber: cycleNumber,
+        scheduledDate: doseScheduledDate ? new Date(doseScheduledDate).toISOString() : new Date(doseDate).toISOString(),
         applicationDate: new Date(doseDate).toISOString(),
         lotNumber: doseLot || '',
         inventoryLotId: selectedInventoryId || undefined,
@@ -408,41 +414,40 @@ const TreatmentDetail: React.FC = () => {
   const previewNextDate = protocol ? addDays(new Date(doseDate), protocol.frequencyDays || 30) : new Date();
 
   // Calculate scheduled doses based on protocol, start date, and planned doses
+  // For existing doses: use backend scheduledDate. For future: chain from last applied dose's applicationDate
   const scheduledDoses = useMemo(() => {
     if (!treatment || !protocol || treatment.plannedDosesBeforeConsult === 0) return [];
 
-    const scheduled: { cycleNumber: number; scheduledDate: Date; isCreated: boolean; doseId?: string }[] = [];
-    // Use addDays with 0 to normalize the start date (avoid timezone issues)
+    const scheduled: { cycleNumber: number; scheduledDate: Date; isCreated: boolean; doseId?: string; actualDose?: Dose }[] = [];
     const startDate = addDays(treatment.startDate, 0);
     const frequencyDays = protocol.frequencyDays || 28;
 
-    // Generate all planned doses
     for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
       const cycleNumber = i + 1;
-
-      // Find if this dose was already created
       const existingDose = doses.find(d => d.cycleNumber === cycleNumber);
 
       if (existingDose) {
-        // Use the actual application date from created dose (normalized)
+        // Use the scheduledDate from backend (may have been recalculated)
         scheduled.push({
           cycleNumber,
-          scheduledDate: addDays(existingDose.applicationDate, 0),
+          scheduledDate: addDays(existingDose.scheduledDate || existingDose.applicationDate, 0),
           isCreated: true,
-          doseId: existingDose.id
+          doseId: existingDose.id,
+          actualDose: existingDose
         });
       } else {
-        // Calculate scheduled date
         let scheduledDate: Date;
 
         if (i === 0) {
-          // Dose 1 is always at the start date
           scheduledDate = startDate;
         } else {
-          // Subsequent doses: add frequencyDays from previous dose
-          const previousScheduled = scheduled[i - 1];
-          if (previousScheduled) {
-            scheduledDate = addDays(previousScheduled.scheduledDate, frequencyDays);
+          const previous = scheduled[i - 1];
+          // If previous dose was applied, chain from its ACTUAL application date
+          if (previous && previous.actualDose &&
+              (previous.actualDose.status === DoseStatus.APPLIED || previous.actualDose.status === DoseStatus.APPLIED_LATE)) {
+            scheduledDate = addDays(previous.actualDose.applicationDate, frequencyDays);
+          } else if (previous) {
+            scheduledDate = addDays(previous.scheduledDate, frequencyDays);
           } else {
             scheduledDate = addDays(startDate, i * frequencyDays);
           }
@@ -707,71 +712,89 @@ const TreatmentDetail: React.FC = () => {
               {scheduledDoses.map((scheduledDose) => {
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
-                const isOverdue = !scheduledDose.isCreated && scheduledDose.scheduledDate < today;
-                const actualDose = scheduledDose.doseId ? doses.find(d => d.id === scheduledDose.doseId) : null;
+                const actualDose = scheduledDose.actualDose || (scheduledDose.doseId ? doses.find(d => d.id === scheduledDose.doseId) : null);
 
-                // Determine status: APLICADA, PENDENTE, or PROGRAMADA
-                let status: 'APLICADA' | 'PENDENTE' | 'PROGRAMADA';
+                // Determine display status
+                let displayStatus: string;
+                let bgClass: string;
+                let textClass: string;
+                let badgeClass: string;
+
                 if (scheduledDose.isCreated && actualDose) {
-                  status = actualDose.status === DoseStatus.APPLIED ? 'APLICADA' : 'PENDENTE';
+                  if (actualDose.status === DoseStatus.APPLIED) {
+                    displayStatus = 'APLICADA';
+                    bgClass = 'bg-green-50 border-green-200 hover:border-green-400';
+                    textClass = 'text-green-700';
+                    badgeClass = 'bg-green-600 text-white';
+                  } else if (actualDose.status === DoseStatus.APPLIED_LATE) {
+                    displayStatus = 'APLICADA COM ATRASO';
+                    bgClass = 'bg-amber-50 border-amber-200 hover:border-amber-400';
+                    textClass = 'text-amber-700';
+                    badgeClass = 'bg-amber-500 text-white';
+                  } else if (actualDose.status === DoseStatus.NOT_ACCEPTED) {
+                    displayStatus = 'NAO REALIZADA';
+                    bgClass = 'bg-slate-50 border-slate-200 hover:border-slate-400';
+                    textClass = 'text-slate-500';
+                    badgeClass = 'bg-slate-400 text-white';
+                  } else {
+                    // PENDING - dose registered, waiting application
+                    displayStatus = 'PENDENTE';
+                    bgClass = 'bg-blue-50 border-blue-200 hover:border-blue-400';
+                    textClass = 'text-blue-700';
+                    badgeClass = 'bg-blue-600 text-white';
+                  }
                 } else {
-                  status = 'PROGRAMADA';
+                  // Not created yet - compute from scheduledDate vs today
+                  const daysDiff = diffInDays(scheduledDose.scheduledDate, today);
+                  if (daysDiff > 0) {
+                    displayStatus = 'PROGRAMADA';
+                    bgClass = 'bg-slate-50 border-slate-200 hover:border-pink-300';
+                    textClass = 'text-slate-700';
+                    badgeClass = 'bg-slate-400 text-white';
+                  } else {
+                    const daysLate = Math.abs(daysDiff);
+                    displayStatus = `ATRASADA`;
+                    bgClass = 'bg-red-50 border-red-300 hover:border-red-500';
+                    textClass = 'text-red-700';
+                    badgeClass = 'bg-red-600 text-white';
+                  }
                 }
+
+                const isOverdue = displayStatus.startsWith('ATRASADA');
+                const daysLateCount = isOverdue ? Math.abs(diffInDays(scheduledDose.scheduledDate, today)) : 0;
 
                 return (
                   <button
                     key={scheduledDose.cycleNumber}
                     onClick={() => handleScheduledDoseClick(scheduledDose)}
-                    className={`p-4 rounded-lg border-2 transition-all text-left w-full hover:shadow-md cursor-pointer ${
-                      status === 'APLICADA'
-                        ? 'bg-green-50 border-green-200 hover:border-green-400'
-                        : status === 'PENDENTE'
-                        ? 'bg-blue-50 border-blue-200 hover:border-blue-400'
-                        : isOverdue
-                        ? 'bg-red-50 border-red-300 hover:border-red-500'
-                        : 'bg-slate-50 border-slate-200 hover:border-pink-300'
-                    }`}
+                    className={`p-4 rounded-lg border-2 transition-all text-left w-full hover:shadow-md cursor-pointer ${bgClass}`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">
                           Dose {scheduledDose.cycleNumber}
                         </span>
-                        <p className={`font-bold text-sm mt-1 ${
-                          status === 'APLICADA'
-                            ? 'text-green-700'
-                            : status === 'PENDENTE'
-                            ? 'text-blue-700'
-                            : isOverdue
-                            ? 'text-red-700'
-                            : 'text-slate-700'
-                        }`}>
+                        <p className={`font-bold text-sm mt-1 ${textClass}`}>
                           {formatDate(scheduledDose.scheduledDate.toISOString())}
                         </p>
+                        {/* Show actual application date if different from scheduled */}
+                        {actualDose && (actualDose.status === DoseStatus.APPLIED_LATE) && (
+                          <p className="text-[10px] text-amber-600 mt-0.5">
+                            Aplicada: {formatDate(actualDose.applicationDate)}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        {status === 'APLICADA' && (
-                          <span className="flex items-center text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">
-                            <Check size={10} className="mr-0.5" /> APLICADA
-                          </span>
-                        )}
-                        {status === 'PENDENTE' && (
-                          <span className="flex items-center text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold">
-                            <Calendar size={10} className="mr-0.5" /> PENDENTE
-                          </span>
-                        )}
-                        {status === 'PROGRAMADA' && (
-                          <>
-                            {isOverdue ? (
-                              <span className="flex items-center text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold">
-                                <AlertTriangle size={10} className="mr-0.5" /> ATRASADA
-                              </span>
-                            ) : (
-                              <span className="flex items-center text-[10px] bg-slate-400 text-white px-2 py-0.5 rounded-full font-bold">
-                                PROGRAMADA
-                              </span>
-                            )}
-                          </>
+                        <span className={`flex items-center text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeClass}`}>
+                          {displayStatus === 'APLICADA' && <><Check size={10} className="mr-0.5" /> APLICADA</>}
+                          {displayStatus === 'APLICADA COM ATRASO' && <><AlertTriangle size={10} className="mr-0.5" /> APLICADA COM ATRASO</>}
+                          {displayStatus === 'PENDENTE' && <><Calendar size={10} className="mr-0.5" /> PENDENTE</>}
+                          {displayStatus === 'NAO REALIZADA' && <>NAO REALIZADA</>}
+                          {displayStatus === 'PROGRAMADA' && <>PROGRAMADA</>}
+                          {displayStatus === 'ATRASADA' && <><AlertTriangle size={10} className="mr-0.5" /> ATRASADA</>}
+                        </span>
+                        {isOverdue && daysLateCount > 0 && (
+                          <span className="text-[10px] text-red-600 font-bold">{daysLateCount} dia(s) em atraso</span>
                         )}
                       </div>
                     </div>
@@ -784,10 +807,9 @@ const TreatmentDetail: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Click hint */}
                     <div className="mt-2 text-[10px] text-slate-400 flex items-center">
                       <Edit size={10} className="mr-1" />
-                      {status === 'PROGRAMADA' ? 'Clique para registrar aplicação' : 'Clique para editar'}
+                      {!scheduledDose.isCreated ? 'Clique para registrar aplicação' : 'Clique para editar'}
                     </div>
                   </button>
                 );
@@ -1101,7 +1123,8 @@ const TreatmentDetail: React.FC = () => {
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4">Data Aplicacao</th>
+                <th className="px-6 py-4">Data Aplicacao / Programada</th>
+                <th className="px-6 py-4">Protocolo</th>
                 <th className="px-6 py-4">Lote</th>
                 <th className="px-6 py-4">Status Dose</th>
                 <th className="px-6 py-4">Pagamento</th>
@@ -1120,8 +1143,18 @@ const TreatmentDetail: React.FC = () => {
                       <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded">
                         D{dose.cycleNumber || '-'}
                       </span>
-                      {formatDate(dose.applicationDate)}
+                      <div>
+                        <span>{formatDate(dose.applicationDate)}</span>
+                        {dose.scheduledDate && formatDate(dose.scheduledDate) !== formatDate(dose.applicationDate) && (
+                          <p className="text-[10px] text-amber-600 mt-0.5">
+                            Programada: {formatDate(dose.scheduledDate)}
+                          </p>
+                        )}
+                      </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-slate-700 text-xs">{protocol?.medicationType || protocol?.name}</span>
                   </td>
                   <td className="px-6 py-4">
                     {dose.purchased ? (
@@ -1177,7 +1210,7 @@ const TreatmentDetail: React.FC = () => {
               ))}
               {doses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhuma dose registrada.</td>
+                  <td colSpan={7} className="px-6 py-8 text-center text-slate-400">Nenhuma dose registrada.</td>
                 </tr>
               )}
             </tbody>

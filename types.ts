@@ -49,6 +49,14 @@ export interface Patient {
   active: boolean;
 }
 
+export interface ClinicalNote {
+  id: string;
+  patientId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ConsentDocument {
   id: string;
   patientId: string;
@@ -60,9 +68,12 @@ export interface ConsentDocument {
   status: 'PENDING' | 'SIGNED' | 'REFUSED'; // Status of consent
 }
 
-// Adherence level for patients
-// Rules: Sem atraso = BOA, <30 dias de atraso = ATRASADO, >30 dias de atraso = ABANDONO
-export type AdherenceLevel = 'BOA' | 'ATRASADO' | 'ABANDONO' | null;
+// Adherence level for patients (configurable via admin settings)
+// BOA: All doses on time, delays < X days
+// PARCIAL: 2 to Y doses APPLIED_LATE with delay > X days
+// RUIM: More than Y doses APPLIED_LATE with delay > Z days
+// ABANDONO: Last scheduled dose PENDING and exceeded W days overdue
+export type AdherenceLevel = 'BOA' | 'PARCIAL' | 'RUIM' | 'ABANDONO' | null;
 
 // Composite type for UI lists
 export interface PatientFull extends Patient {
@@ -119,6 +130,7 @@ export interface Protocol {
 export enum DoseStatus {
   PENDING = 'PENDING',
   APPLIED = 'APPLIED',
+  APPLIED_LATE = 'APPLIED_LATE',
   NOT_ACCEPTED = 'NOT_ACCEPTED'
 }
 
@@ -148,7 +160,8 @@ export interface Dose {
   id: string;
   treatmentId: string;
   cycleNumber: number;
-  applicationDate: string; // ISO Date
+  scheduledDate: string; // ISO Date - data programada ideal
+  applicationDate: string; // ISO Date - data real de aplicação
   lotNumber: string;
   expiryDate: string;
   status: DoseStatus;

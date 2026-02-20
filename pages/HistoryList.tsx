@@ -1,9 +1,9 @@
 ﻿
 import React, { useMemo, useState, useEffect } from 'react';
-import { dismissedLogsApi, treatmentsApi, protocolsApi, patientsApi } from '../services/api';
+import { dismissedLogsApi, treatmentsApi, protocolsApi, patientsApi, diagnosesApi } from '../services/api';
 import { TreatmentStatus, ProtocolCategory, PatientFeedback, Treatment, Protocol, PatientFull } from '../types';
-import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { formatDate } from '../constants';
+import { History, Search, Calendar, User, MessageCircle, Filter, MessageSquare, AlertTriangle, CheckCircle2, AlertCircle, Save, Loader2, Stethoscope, MessageSquarePlus, Edit2, Check, RefreshCw, Plus, Phone, X, ChevronLeft, ChevronRight, Tag } from 'lucide-react';
+import { formatDate, getDiagnosisColor } from '../constants';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
 
@@ -24,6 +24,8 @@ const ITEMS_PER_PAGE = 20;
 const HistoryList: React.FC = () => {
   const [filterDays, setFilterDays] = useState<number | 'all'>(30);
   const [medicalResponseFilter, setMedicalResponseFilter] = useState<'all' | 'yes' | 'no'>('all');
+  const [diagnosisFilter, setDiagnosisFilter] = useState<string>('all');
+  const [showOnlyWithResponse, setShowOnlyWithResponse] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
 
   // Data states
@@ -31,6 +33,7 @@ const HistoryList: React.FC = () => {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
   const [patients, setPatients] = useState<PatientFull[]>([]);
+  const [diagnoses, setDiagnoses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,11 +69,12 @@ const HistoryList: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [logsRes, treatmentsRes, protocolsRes, patientsRes] = await Promise.all([
+      const [logsRes, treatmentsRes, protocolsRes, patientsRes, diagnosesRes] = await Promise.all([
         dismissedLogsApi.getAll(),
         treatmentsApi.getAll({ limit: 100 }),
         protocolsApi.getAll(),
-        patientsApi.getAll({ limit: 100 })
+        patientsApi.getAll({ limit: 100 }),
+        diagnosesApi.getAll()
       ]);
 
       // Transform API response to expected format
@@ -96,6 +100,7 @@ const HistoryList: React.FC = () => {
       setTreatments(treatmentsRes.data || []);
       setProtocols(protocolsRes.data || []);
       setPatients(patientsRes.data || []);
+      setDiagnoses(diagnosesRes.data || []);
     } catch (err: any) {
       console.error('Error loading history data:', err);
       setError(err.message || 'Erro ao carregar dados');
@@ -180,6 +185,7 @@ const HistoryList: React.FC = () => {
               dismissedAt: dismissedAt,
               patientName: patient.fullName,
               patientPhone: patient.guardian?.phonePrimary || '',
+              patientDiagnosis: patient.mainDiagnosis || '',
               protocolName: proto.name,
               message: m.message,
               isMonitoring: proto.category === ProtocolCategory.MONITORING || proto.category === 'MONITORING',
@@ -199,11 +205,13 @@ const HistoryList: React.FC = () => {
         return;
       }
 
+      const manualPatient = log.patientId ? patients.find((p: PatientFull) => p.id === log.patientId) : null;
       items.push({
         id: log.contactId,
         dismissedAt: dismissedAt,
         patientName: log.patientName || 'Paciente',
         patientPhone: log.patientPhone || '',
+        patientDiagnosis: manualPatient?.mainDiagnosis || '',
         protocolName: 'Atendimento Manual',
         message: log.manualMessage || 'Registro manual de atendimento',
         isMonitoring: false,
@@ -215,21 +223,31 @@ const HistoryList: React.FC = () => {
     // Apply medical response filter
     let filteredItems = items;
     if (medicalResponseFilter === 'yes') {
-      filteredItems = items.filter(item => item.feedback?.needsMedicalResponse === true);
+      filteredItems = filteredItems.filter(item => item.feedback?.needsMedicalResponse === true);
     } else if (medicalResponseFilter === 'no') {
-      filteredItems = items.filter(item =>
+      filteredItems = filteredItems.filter(item =>
         item.feedback?.needsMedicalResponse === false ||
         !item.feedback?.needsMedicalResponse
       );
     }
 
+    // Apply diagnosis filter
+    if (diagnosisFilter !== 'all') {
+      filteredItems = filteredItems.filter(item => item.patientDiagnosis === diagnosisFilter);
+    }
+
+    // Apply response filter (show only items with response/action)
+    if (showOnlyWithResponse) {
+      filteredItems = filteredItems.filter(item => !!item.feedback);
+    }
+
     return filteredItems.sort((a: any, b: any) => b.dismissedAt.getTime() - a.dismissedAt.getTime());
-  }, [filterDays, medicalResponseFilter, dismissedLogs, treatments, protocols, patients]);
+  }, [filterDays, medicalResponseFilter, diagnosisFilter, showOnlyWithResponse, dismissedLogs, treatments, protocols, patients]);
 
   // Reset page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [filterDays, medicalResponseFilter]);
+  }, [filterDays, medicalResponseFilter, diagnosisFilter, showOnlyWithResponse]);
 
   // Pagination helpers
   const paginate = <T,>(items: T[], page: number): T[] => {
@@ -468,7 +486,7 @@ const HistoryList: React.FC = () => {
           <p className="text-slate-500 mt-1">Registro de todas as acoes e mensagens da regua de contato ja concluidas.</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={handleOpenManualModal}
             className="flex items-center px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-sm font-medium"
@@ -516,6 +534,32 @@ const HistoryList: React.FC = () => {
               <option value="no">Resposta Medica: Nao</option>
             </select>
           </div>
+
+          <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+            <div className="pl-2 pr-1 text-slate-400">
+              <Tag size={18} />
+            </div>
+            <select
+              value={diagnosisFilter}
+              onChange={(e) => setDiagnosisFilter(e.target.value)}
+              className="bg-transparent border-none text-sm font-medium text-slate-700 focus:ring-0 cursor-pointer py-1.5 pr-8 pl-1"
+            >
+              <option value="all">Diagnostico: Todos</option>
+              {diagnoses.map((d: any) => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <label className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showOnlyWithResponse}
+              onChange={(e) => setShowOnlyWithResponse(e.target.checked)}
+              className="w-4 h-4 text-pink-600 rounded border-slate-300 focus:ring-pink-500"
+            />
+            <span className="text-sm font-medium text-slate-700 whitespace-nowrap">Com resposta</span>
+          </label>
         </div>
       </div>
 
@@ -544,12 +588,18 @@ const HistoryList: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                paginate(historyItems, currentPage).map((item) => {
+                paginate(historyItems, currentPage).map((item: any) => {
                   const fb = item.feedback as PatientFeedback | undefined;
                   const isResolved = fb?.status === 'resolved';
+                  const diagColor = item.patientDiagnosis ? getDiagnosisColor(
+                    item.patientDiagnosis,
+                    diagnoses.find((d: any) => d.name === item.patientDiagnosis)?.color
+                  ) : '';
+                  // Extract just the bg class for row background
+                  const rowBgClass = diagColor ? diagColor.split(' ')[0] : '';
 
                   return (
-                    <tr key={item.id} className={`transition-colors ${isResolved ? 'bg-emerald-50 hover:bg-emerald-100' : 'hover:bg-slate-50'}`}>
+                    <tr key={item.id} className={`transition-colors ${isResolved ? 'bg-emerald-50 hover:bg-emerald-100' : rowBgClass ? `${rowBgClass} hover:opacity-80` : 'hover:bg-slate-50'}`}>
                       <td className="px-6 py-4 font-medium text-slate-700 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           <Calendar size={14} className="text-slate-400" />
@@ -561,6 +611,11 @@ const HistoryList: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-slate-800">{item.patientName}</div>
+                        {item.patientDiagnosis && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full border uppercase font-medium ${diagColor}`}>
+                            {item.patientDiagnosis}
+                          </span>
+                        )}
                         {item.patientPhone && (
                           <div className="text-xs text-slate-400 mt-0.5">
                             {item.patientPhone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}

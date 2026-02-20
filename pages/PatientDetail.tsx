@@ -1,11 +1,10 @@
 ﻿
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi, patientEventsApi, PatientEvent } from '../services/api';
+import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi, patientEventsApi, settingsApi, clinicalNotesApi, PatientEvent } from '../services/api';
 import { formatDate, getTreatmentStatusColor, addDays, diffInDays } from '../constants';
-import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2, ClipboardList, Calendar } from 'lucide-react';
-import AdherenceReportModal from '../components/AdherenceReportModal';
-import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose } from '../types';
+import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2, Calendar } from 'lucide-react';
+import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose, ClinicalNote } from '../types';
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -45,10 +44,6 @@ const PatientDetail: React.FC = () => {
   const [eventObservation, setEventObservation] = useState('');
   const [isSavingObservation, setIsSavingObservation] = useState(false);
 
-  // Adherence Report Modal State
-  const [isAdherenceReportOpen, setIsAdherenceReportOpen] = useState(false);
-  const [selectedTreatmentForReport, setSelectedTreatmentForReport] = useState<{ id: string; protocolName: string } | null>(null);
-
   // Manual Event Modal State
   const [manualEvents, setManualEvents] = useState<PatientEvent[]>([]);
   const [isManualEventModalOpen, setIsManualEventModalOpen] = useState(false);
@@ -61,8 +56,6 @@ const PatientDetail: React.FC = () => {
   const [editName, setEditName] = useState('');
   const [editGuardianName, setEditGuardianName] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editClinicalNotes, setEditClinicalNotes] = useState('');
-
   // Address Edit fields
   const [editStreet, setEditStreet] = useState('');
   const [editNumber, setEditNumber] = useState('');
@@ -75,20 +68,33 @@ const PatientDetail: React.FC = () => {
   const [editZipCode, setEditZipCode] = useState('');
   const [isLoadingCep, setIsLoadingCep] = useState(false);
 
+  // Adherence settings (loaded from API)
+  const [adherenceSettings, setAdherenceSettings] = useState<Record<string, string>>({});
+
+  // Clinical Notes states
+  const [clinicalNotesList, setClinicalNotesList] = useState<ClinicalNote[]>([]);
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteContent, setEditingNoteContent] = useState('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+
   // Load data from API
   const loadData = async () => {
     if (!id) return;
     setIsLoading(true);
     setError(null);
     try {
-      const [patientRes, treatmentsRes, protocolsRes, dosesRes, dismissedRes, docsRes, eventsRes] = await Promise.all([
+      const [patientRes, treatmentsRes, protocolsRes, dosesRes, dismissedRes, docsRes, eventsRes, adherenceRes, notesRes] = await Promise.all([
         patientsApi.getById(id),
         treatmentsApi.getAll({ patientId: id }),
         protocolsApi.getAll(),
         dosesApi.getAll({ limit: 500 }),
         dismissedLogsApi.getAll(),
         patientsApi.getDocuments(id),
-        patientEventsApi.getByPatient(id)
+        patientEventsApi.getByPatient(id),
+        settingsApi.getAdherenceSettings(),
+        clinicalNotesApi.getByPatient(id)
       ]);
 
       // getById returns the patient object directly, not wrapped in { data: ... }
@@ -99,6 +105,8 @@ const PatientDetail: React.FC = () => {
       setDismissedLogs(dismissedRes.data || []);
       setDocuments(docsRes.data || []);
       setManualEvents(eventsRes.data || []);
+      setAdherenceSettings(adherenceRes.data || {});
+      setClinicalNotesList(notesRes.data || []);
     } catch (err: any) {
       console.error('Error loading patient:', err);
       setError(err.message || 'Erro ao carregar paciente');
@@ -148,13 +156,13 @@ const PatientDetail: React.FC = () => {
 
         if (pendingDoses.length === 0) {
           // Check if all planned doses have been applied
-          const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+          const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE).length;
           const plannedCount = t.plannedDosesBeforeConsult || 0;
 
           // Only project next dose if there are more doses to be done
           if (plannedCount === 0 || appliedCount < plannedCount) {
             const lastDose = treatmentDoses
-              .filter(d => d.status === DoseStatus.APPLIED)
+              .filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE)
               .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime())[0];
 
             let nextDate: Date;
@@ -201,7 +209,7 @@ const PatientDetail: React.FC = () => {
           const overduePendingDoses = allTreatmentDoses.filter(d =>
             d.status === DoseStatus.PENDING && diffInDays(getLocalDate(d.applicationDate), TODAY) < 0
           );
-          const appliedDoses = allTreatmentDoses.filter(d => d.status === DoseStatus.APPLIED);
+          const appliedDoses = allTreatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE);
           const lastAppliedDose = appliedDoses
             .sort((a, b) => getLocalDate(b.applicationDate).getTime() - getLocalDate(a.applicationDate).getTime())[0];
 
@@ -281,7 +289,7 @@ const PatientDetail: React.FC = () => {
       // Applied doses - only show if date is in the past or today
       const treatmentDoses = doses.filter(d => d.treatmentId === t.id);
       const appliedDoses = treatmentDoses.filter(d =>
-        (d.status === DoseStatus.APPLIED || d.status === DoseStatus.NOT_ACCEPTED) &&
+        (d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE || d.status === DoseStatus.NOT_ACCEPTED) &&
         new Date(d.applicationDate) <= TODAY
       );
 
@@ -292,7 +300,7 @@ const PatientDetail: React.FC = () => {
           type: 'dose',
           title: `Dose ${d.cycleNumber}`,
           subtitle: proto.medicationType || proto.name,
-          status: d.status === DoseStatus.APPLIED ? 'applied' : 'not_accepted',
+          status: (d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE) ? 'applied' : 'not_accepted',
           treatmentId: t.id,
           observation: d.surveyComment || '',
           doseId: d.id
@@ -330,19 +338,26 @@ const PatientDetail: React.FC = () => {
     return events.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [treatments, patient, protocols, doses, dismissedLogs]);
 
-  // Calculate patient adherence level based on SCHEDULED doses from protocol
-  // Rules: Sem atraso = BOA, <30 dias de atraso = ATRASADO, >30 dias de atraso = ABANDONO
-  // IMPORTANT: Delay is calculated from SCHEDULED date (startDate + frequencyDays * cycleNumber)
-  // NOT from the date the dose was added in the system
+  // Calculate patient adherence level based on configurable settings
+  // BOA: All doses on time, individual delays < X days
+  // PARCIAL: 2 to Y doses APPLIED_LATE with delay > X days
+  // RUIM: More than Y doses APPLIED_LATE with delay > Z days
+  // ABANDONO: Last scheduled PENDING dose exceeded W days overdue
   const patientAdherenceLevel = useMemo(() => {
     if (!patient || treatments.length === 0) return null;
+
+    const X = parseInt(adherenceSettings['adherence_max_delay_good'] || '3', 10);
+    const Y = parseInt(adherenceSettings['adherence_max_late_doses_partial'] || '3', 10);
+    const Z = parseInt(adherenceSettings['adherence_min_delay_bad'] || '5', 10);
+    const W = parseInt(adherenceSettings['adherence_abandonment_days'] || '30', 10);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    let maxDelayDays = 0;
     let hasOngoingTreatment = false;
-    let hasOverdueDose = false;
+    let lateCount = 0;     // APPLIED_LATE doses with delay > X
+    let veryLateCount = 0; // APPLIED_LATE doses with delay > Z
+    let isAbandoned = false;
 
     treatments.forEach(t => {
       if (t.status !== TreatmentStatus.ONGOING) return;
@@ -359,56 +374,57 @@ const PatientDetail: React.FC = () => {
       const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
       const startDate = new Date(startYear, startMonth - 1, startDay);
 
-      // Count applied doses vs planned doses
-      const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED).length;
+      // Count APPLIED_LATE doses with delay thresholds
+      treatmentDoses.forEach(dose => {
+        if (dose.status === DoseStatus.APPLIED_LATE && dose.scheduledDate && dose.applicationDate) {
+          const schedDay = new Date(dose.scheduledDate); schedDay.setHours(0, 0, 0, 0);
+          const appDay = new Date(dose.applicationDate); appDay.setHours(0, 0, 0, 0);
+          const delayDays = Math.floor((appDay.getTime() - schedDay.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (delayDays > X) lateCount++;
+          if (delayDays > Z) veryLateCount++;
+        }
+      });
+
+      // Check for abandonment: find last pending dose and check if overdue > W days
       const plannedCount = t.plannedDosesBeforeConsult || 0;
-
-      // If all planned doses are applied, treatment is complete - no delay
-      if (plannedCount > 0 && appliedCount >= plannedCount) {
-        return; // This treatment is complete, skip delay calculation
-      }
-
-      // Check each planned dose based on SCHEDULED date from protocol
-      for (let i = 0; i < plannedCount; i++) {
+      for (let i = plannedCount - 1; i >= 0; i--) {
         const cycleNumber = i + 1;
-
-        // Calculate SCHEDULED date: Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
         const scheduledDate = new Date(startDate);
         if (i > 0) {
           scheduledDate.setDate(scheduledDate.getDate() + frequencyDays * i);
         }
 
-        // Check if scheduled date has passed
-        const daysUntilScheduled = Math.floor((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
 
-        if (daysUntilScheduled < 0) {
-          // Scheduled date has passed - check if dose was applied
-          const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
-
-          if (!existingDose || existingDose.status !== DoseStatus.APPLIED) {
-            // This dose is overdue
-            hasOverdueDose = true;
-            const delayDays = Math.abs(daysUntilScheduled);
-
-            if (delayDays > maxDelayDays) {
-              maxDelayDays = delayDays;
-            }
-            break; // Only count the first overdue dose per treatment
+        if (existingDose && existingDose.status === DoseStatus.PENDING) {
+          const daysOverdue = Math.floor((today.getTime() - scheduledDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysOverdue > W) {
+            isAbandoned = true;
           }
+          break;
+        } else if (!existingDose) {
+          const daysOverdue = Math.floor((today.getTime() - scheduledDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysOverdue > W) {
+            isAbandoned = true;
+          }
+          break;
+        } else if (existingDose.status === DoseStatus.APPLIED || existingDose.status === DoseStatus.APPLIED_LATE) {
+          continue;
+        } else {
+          break;
         }
       }
     });
 
     if (!hasOngoingTreatment) return null;
 
-    // If no overdue doses, adherence is good
-    if (!hasOverdueDose) return 'BOA';
-
-    // Apply classification rules based on delay from SCHEDULED doses
-    if (maxDelayDays > 30) return 'ABANDONO';
-    if (maxDelayDays > 0) return 'ATRASADO';
+    // Classify by priority
+    if (isAbandoned) return 'ABANDONO';
+    if (veryLateCount > Y) return 'RUIM';
+    if (lateCount >= 2 && lateCount <= Y) return 'PARCIAL';
     return 'BOA';
-  }, [patient, treatments, doses, protocols]);
+  }, [patient, treatments, doses, protocols, adherenceSettings]);
 
   const getProtocolName = (pid: string) => {
     return protocols.find(p => p.id === pid)?.name || 'Protocolo Desconhecido';
@@ -447,7 +463,6 @@ const PatientDetail: React.FC = () => {
     setEditName(patient.fullName);
     setEditGuardianName(patient.guardian?.fullName || '');
     setEditPhone(patient.guardian?.phonePrimary || '');
-    setEditClinicalNotes(patient.clinicalNotes || '');
 
     setEditStreet(patient.address?.street || '');
     setEditNumber(patient.address?.number || '');
@@ -497,7 +512,6 @@ const PatientDetail: React.FC = () => {
       // Update patient basic info
       await patientsApi.update(id, {
         fullName: editName,
-        clinicalNotes: editClinicalNotes
       });
 
       // Update guardian
@@ -713,6 +727,55 @@ const PatientDetail: React.FC = () => {
     }
   };
 
+  // Clinical Notes handlers
+  const handleAddNote = async () => {
+    if (!id || !newNoteContent.trim()) return;
+    setIsSavingNote(true);
+    try {
+      await clinicalNotesApi.create(id, newNoteContent.trim());
+      const res = await clinicalNotesApi.getByPatient(id);
+      setClinicalNotesList(res.data || []);
+      setNewNoteContent('');
+      setIsAddingNote(false);
+    } catch (err: any) {
+      alert('Erro ao adicionar observacao: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
+  const handleStartEditNote = (note: ClinicalNote) => {
+    setEditingNoteId(note.id);
+    setEditingNoteContent(note.content);
+  };
+
+  const handleSaveEditNote = async () => {
+    if (!id || !editingNoteId || !editingNoteContent.trim()) return;
+    setIsSavingNote(true);
+    try {
+      await clinicalNotesApi.update(editingNoteId, editingNoteContent.trim());
+      const res = await clinicalNotesApi.getByPatient(id);
+      setClinicalNotesList(res.data || []);
+      setEditingNoteId(null);
+      setEditingNoteContent('');
+    } catch (err: any) {
+      alert('Erro ao editar observacao: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!id || !confirm('Tem certeza que deseja excluir esta observacao?')) return;
+    try {
+      await clinicalNotesApi.delete(noteId);
+      const res = await clinicalNotesApi.getByPatient(id);
+      setClinicalNotesList(res.data || []);
+    } catch (err: any) {
+      alert('Erro ao excluir observacao: ' + (err.message || 'Erro desconhecido'));
+    }
+  };
+
   // Handle Remove Protocol Message from Flow (marks as dismissed without feedback)
   const handleRemoveMessageFromFlow = async (contactId: string) => {
     if (!confirm('Tem certeza que deseja remover esta mensagem do fluxo?')) return;
@@ -799,21 +862,19 @@ const PatientDetail: React.FC = () => {
             <RefreshCw size={16} className={`mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
-          {treatments.length > 0 && (
-            <button
-              onClick={() => {
-                const activeTreatment = treatments.find(t => t.status === TreatmentStatus.ONGOING) || treatments[0];
-                setSelectedTreatmentForReport({
-                  id: activeTreatment.id,
-                  protocolName: getProtocolName(activeTreatment.protocolId)
-                });
-                setIsAdherenceReportOpen(true);
-              }}
-              className="flex items-center bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-sm"
-            >
-              <ClipboardList size={18} className="mr-2" />
-              Relatorio de Adesao
-            </button>
+          {(patient as any)?.lateApplicationCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="flex items-center text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg text-xs font-bold">
+                <AlertCircle size={14} className="mr-1" />
+                {(patient as any).lateApplicationCount} dose(s) com atraso
+              </span>
+              {(patient as any)?.totalDelayDays > 0 && (
+                <span className="flex items-center text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold">
+                  <Clock size={14} className="mr-1" />
+                  {(patient as any).totalDelayDays} dia(s) de atraso total
+                </span>
+              )}
+            </div>
           )}
           <button
             onClick={() => {
@@ -1068,11 +1129,13 @@ const PatientDetail: React.FC = () => {
               {patientAdherenceLevel && (
                 <span className={`px-3 py-1 text-xs font-bold rounded-full border ${
                   patientAdherenceLevel === 'BOA' ? 'bg-green-100 text-green-700 border-green-200' :
-                  patientAdherenceLevel === 'ATRASADO' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                  patientAdherenceLevel === 'PARCIAL' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                  patientAdherenceLevel === 'RUIM' ? 'bg-orange-100 text-orange-700 border-orange-200' :
                   'bg-red-100 text-red-700 border-red-200'
                 }`}>
                   {patientAdherenceLevel === 'BOA' ? 'BOA ADESAO' :
-                   patientAdherenceLevel === 'ATRASADO' ? 'ATRASADO' :
+                   patientAdherenceLevel === 'PARCIAL' ? 'PARCIAL' :
+                   patientAdherenceLevel === 'RUIM' ? 'RUIM' :
                    'ABANDONO'}
                 </span>
               )}
@@ -1135,7 +1198,7 @@ const PatientDetail: React.FC = () => {
 
             <div className="space-y-4">
               {treatments.map(treatment => {
-                const appliedDoses = doses.filter(d => d.treatmentId === treatment.id && d.status === DoseStatus.APPLIED).length;
+                const appliedDoses = doses.filter(d => d.treatmentId === treatment.id && (d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE)).length;
                 return (
                   <div key={treatment.id} className="border border-slate-100 rounded-lg p-4 hover:border-pink-200 hover:shadow-md transition-all">
                     <div className="flex justify-between items-start">
@@ -1190,13 +1253,120 @@ const PatientDetail: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            <h3 className="font-semibold text-slate-800 mb-4 flex items-center">
-              <FileText size={18} className="mr-2 text-pink-500" />
-              Observacoes Clinicas
-            </h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              {patient.clinicalNotes || "Nenhuma observacao registrada."}
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-800 flex items-center">
+                <FileText size={18} className="mr-2 text-pink-500" />
+                Observacoes Clinicas
+              </h3>
+              {!isAddingNote && (
+                <button
+                  onClick={() => setIsAddingNote(true)}
+                  className="flex items-center text-xs font-medium text-pink-600 hover:text-pink-700 bg-pink-50 hover:bg-pink-100 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Plus size={14} className="mr-1" />
+                  Adicionar
+                </button>
+              )}
+            </div>
+
+            {/* Add new note form */}
+            {isAddingNote && (
+              <div className="mb-4 p-3 bg-pink-50 border border-pink-200 rounded-lg">
+                <textarea
+                  value={newNoteContent}
+                  onChange={(e) => setNewNoteContent(e.target.value)}
+                  rows={3}
+                  className="w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500 mb-2"
+                  placeholder="Digite a observacao clinica..."
+                  autoFocus
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => { setIsAddingNote(false); setNewNoteContent(''); }}
+                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                    disabled={isSavingNote}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleAddNote}
+                    disabled={isSavingNote || !newNoteContent.trim()}
+                    className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-pink-600 hover:bg-pink-700 rounded-lg disabled:opacity-50"
+                  >
+                    {isSavingNote ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Save size={12} className="mr-1" />}
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Notes list */}
+            {clinicalNotesList.length > 0 ? (
+              <div className="space-y-3">
+                {clinicalNotesList.map(note => (
+                  <div key={note.id} className="border border-slate-100 rounded-lg p-3 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-500">
+                          {new Date(note.createdAt).toLocaleDateString('pt-BR')} {new Date(note.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {note.updatedAt !== note.createdAt && new Date(note.updatedAt).getTime() - new Date(note.createdAt).getTime() > 60000 && (
+                          <span className="text-[10px] text-slate-400 italic">(editado)</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleStartEditNote(note)}
+                          className="p-1 text-slate-400 hover:text-pink-600 rounded"
+                          title="Editar"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteNote(note.id)}
+                          className="p-1 text-slate-400 hover:text-red-600 rounded"
+                          title="Excluir"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    {editingNoteId === note.id ? (
+                      <div>
+                        <textarea
+                          value={editingNoteContent}
+                          onChange={(e) => setEditingNoteContent(e.target.value)}
+                          rows={3}
+                          className="w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500 mb-2"
+                          autoFocus
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => { setEditingNoteId(null); setEditingNoteContent(''); }}
+                            className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                            disabled={isSavingNote}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={handleSaveEditNote}
+                            disabled={isSavingNote || !editingNoteContent.trim()}
+                            className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-pink-600 hover:bg-pink-700 rounded-lg disabled:opacity-50"
+                          >
+                            {isSavingNote ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Save size={12} className="mr-1" />}
+                            Salvar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{note.content}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 italic">Nenhuma observacao registrada.</p>
+            )}
           </div>
         </div>
       </div>
@@ -1532,10 +1702,6 @@ const PatientDetail: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Observacoes Clinicas</label>
-                <textarea value={editClinicalNotes} onChange={e => setEditClinicalNotes(e.target.value)} rows={3} className="w-full border-slate-300 rounded-lg" />
-              </div>
               <div className="pt-2">
                 <button
                   type="submit"
@@ -1549,19 +1715,6 @@ const PatientDetail: React.FC = () => {
             </form>
           </div>
         </div>
-      )}
-
-      {/* Adherence Report Modal */}
-      {selectedTreatmentForReport && (
-        <AdherenceReportModal
-          isOpen={isAdherenceReportOpen}
-          onClose={() => {
-            setIsAdherenceReportOpen(false);
-            setSelectedTreatmentForReport(null);
-          }}
-          treatmentId={selectedTreatmentForReport.id}
-          protocolName={selectedTreatmentForReport.protocolName}
-        />
       )}
 
       {/* Manual Event Modal */}

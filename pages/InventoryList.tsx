@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { inventoryApi, medicationsApi, purchaseRequestsApi, dispenseLogsApi } from '../services/api';
-import { InventoryItem, MedicationBase } from '../types';
-import { Package, Plus, Search, AlertTriangle, ShoppingCart, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, PieChart, ArrowRight, DollarSign } from 'lucide-react';
+import { inventoryApi, medicationsApi, dispenseLogsApi, dosesApi, treatmentsApi, patientsApi, protocolsApi } from '../services/api';
+import { InventoryItem, MedicationBase, Dose, Treatment, Protocol, PatientFull, DoseStatus, TreatmentStatus, ProtocolCategory } from '../types';
+import { Package, Plus, Search, AlertTriangle, Calendar, Check, X, Loader2, Pill, Trash2, Edit2, Save, Filter, BarChart3, ArrowRightLeft, PieChart, DollarSign, TrendingUp } from 'lucide-react';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
-import { formatDate } from '../constants';
+import { formatDate, addDays, diffInDays } from '../constants';
 
 // Pharmaceutical form options with code and label
 const PHARMACEUTICAL_FORM_OPTIONS = [
@@ -24,16 +24,6 @@ const UNIT_OPTIONS = [
   { code: 'COMPRIMIDO', label: 'Comprimido' },
 ] as const;
 
-interface PurchaseRequest {
-  id: string;
-  medicationName: string;
-  currentStock: number;
-  predictedConsumption10Days: number;
-  suggestedQuantity: number;
-  status: 'PENDING' | 'ORDERED' | 'RECEIVED';
-  createdAt: string;
-}
-
 interface DispenseLog {
   id: string;
   medicationName: string;
@@ -41,13 +31,230 @@ interface DispenseLog {
   date: string;
 }
 
+// --- FORECAST TAB COMPONENT (lazy loads data) ---
+const ForecastTab: React.FC<{ stockByMedication: Record<string, number> }> = ({ stockByMedication }) => {
+  const [doses, setDoses] = useState<Dose[]>([]);
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [patients, setPatients] = useState<PatientFull[]>([]);
+  const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [forecastPeriod, setForecastPeriod] = useState<7 | 15 | 30 | 'custom'>(30);
+  const [customEndDate, setCustomEndDate] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const [dosesRes, treatmentsRes, patientsRes, protocolsRes] = await Promise.all([
+          dosesApi.getAll({ limit: 500 }),
+          treatmentsApi.getAll({ limit: 500 }),
+          patientsApi.getAll({ limit: 500 }),
+          protocolsApi.getAll()
+        ]);
+        setDoses(dosesRes.data || []);
+        setTreatments(treatmentsRes.data || []);
+        setPatients(patientsRes.data || []);
+        setProtocols(protocolsRes.data || []);
+      } catch (err) {
+        console.error('Error loading forecast data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const demandForecast = useMemo(() => {
+    if (isLoading) return [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let endDate: Date;
+    if (forecastPeriod === 'custom' && customEndDate) {
+      const [y, m, d] = customEndDate.split('-').map(Number);
+      endDate = new Date(y, m - 1, d);
+    } else {
+      const days = typeof forecastPeriod === 'number' ? forecastPeriod : 30;
+      endDate = addDays(today.toISOString(), days);
+    }
+
+    const grouped: Record<string, { totalDoses: number; patients: Set<string> }> = {};
+
+    const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
+
+    activeTreatments.forEach(treatment => {
+      const protocol = protocols.find(p => p.id === treatment.protocolId);
+      const isMedication = protocol?.category === 'MEDICATION' || protocol?.category === ProtocolCategory.MEDICATION;
+      if (!protocol || !isMedication || treatment.plannedDosesBeforeConsult === 0) return;
+
+      const patient = patients.find(p => p.id === treatment.patientId);
+      if (!patient) return;
+
+      const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
+      const frequencyDays = protocol.frequencyDays || 28;
+
+      // Check if last applied dose was purchased (buyer check)
+      const appliedDoses = treatmentDoses
+        .filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE)
+        .sort((a, b) => (b.cycleNumber || 0) - (a.cycleNumber || 0));
+      const lastApplied = appliedDoses[0];
+
+      // Only include patients who are buyers (purchased last dose)
+      if (!lastApplied || lastApplied.purchased !== true) return;
+
+      const medName = protocol.medicationType || protocol.name;
+      const startDate = addDays(treatment.startDate, 0);
+
+      for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
+        const cycleNumber = i + 1;
+        const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
+
+        // Skip already applied doses
+        if (existingDose && (existingDose.status === DoseStatus.APPLIED || existingDose.status === DoseStatus.APPLIED_LATE)) continue;
+
+        // Calculate scheduled date
+        const scheduledDate = i === 0 ? startDate : addDays(startDate, frequencyDays * i);
+
+        // Only count if within the forecast period
+        const daysUntil = diffInDays(scheduledDate, today);
+        const daysUntilEnd = diffInDays(scheduledDate, endDate);
+
+        if (daysUntil >= 0 && daysUntilEnd <= 0) {
+          if (!grouped[medName]) {
+            grouped[medName] = { totalDoses: 0, patients: new Set() };
+          }
+          grouped[medName].totalDoses++;
+          grouped[medName].patients.add(patient.fullName);
+        }
+      }
+    });
+
+    return Object.entries(grouped)
+      .map(([medicationName, data]) => ({
+        medicationName,
+        totalDoses: data.totalDoses,
+        patients: Array.from(data.patients),
+        currentStock: stockByMedication[medicationName] || 0,
+        balance: (stockByMedication[medicationName] || 0) - data.totalDoses
+      }))
+      .sort((a, b) => a.balance - b.balance);
+  }, [doses, treatments, patients, protocols, forecastPeriod, customEndDate, stockByMedication, isLoading]);
+
+  const periodLabel = forecastPeriod === 'custom'
+    ? (customEndDate ? `Até ${formatDate(customEndDate)}` : 'Selecione a data')
+    : `Próximos ${forecastPeriod} dias`;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 size={24} className="animate-spin text-pink-600 mr-3" />
+        <span className="text-slate-500">Carregando previsão...</span>
+      </div>
+    );
+  }
+
+  return (
+    <SectionCard
+      title="Previsão de Demanda"
+      icon={<TrendingUp size={18} className="text-indigo-600" />}
+      headerBg="bg-indigo-50/30"
+    >
+      <div className="p-4 mx-4 mt-4 mb-2">
+        <p className="text-sm text-slate-500 mb-3">
+          Projeção de consumo baseada nas doses programadas de pacientes compradores.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {([7, 15, 30] as const).map(days => (
+            <button
+              key={days}
+              onClick={() => setForecastPeriod(days)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                forecastPeriod === days
+                  ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {days} dias
+            </button>
+          ))}
+          <button
+            onClick={() => setForecastPeriod('custom')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              forecastPeriod === 'custom'
+                ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
+                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Personalizado
+          </button>
+          {forecastPeriod === 'custom' && (
+            <input
+              type="date"
+              value={customEndDate}
+              onChange={e => setCustomEndDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="border-slate-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
+            />
+          )}
+          <span className="text-xs text-slate-400 ml-2">{periodLabel}</span>
+        </div>
+      </div>
+
+      <table className="w-full text-sm text-left">
+        <thead className="text-xs text-slate-500 uppercase bg-slate-50">
+          <tr>
+            <th className="px-6 py-3">Medicação</th>
+            <th className="px-6 py-3 text-center">Estoque Atual</th>
+            <th className="px-6 py-3 text-center">Demanda Prevista</th>
+            <th className="px-6 py-3 text-center">Saldo Previsto</th>
+            <th className="px-6 py-3">Pacientes Compradores</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {demandForecast.length === 0 ? (
+            <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma demanda prevista para o período selecionado.</td></tr>
+          ) : (
+            demandForecast.map(item => (
+              <tr key={item.medicationName} className="hover:bg-slate-50">
+                <td className="px-6 py-4 font-medium text-slate-800">{item.medicationName}</td>
+                <td className="px-6 py-4 text-center font-bold text-slate-700">{item.currentStock}</td>
+                <td className="px-6 py-4 text-center font-bold text-indigo-700">{item.totalDoses}</td>
+                <td className="px-6 py-4 text-center">
+                  <span className={`font-bold px-2 py-1 rounded ${
+                    item.balance < 0
+                      ? 'bg-red-100 text-red-700'
+                      : item.balance === 0
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-100 text-green-700'
+                  }`}>
+                    {item.balance}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-wrap gap-1">
+                    {item.patients.map(name => (
+                      <span key={name} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </SectionCard>
+  );
+};
+
 const InventoryList: React.FC = () => {
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'list' | 'entry' | 'orders' | 'reports' | 'medications'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'entry' | 'forecast' | 'reports' | 'medications'>('list');
 
   // Data States
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [requests, setRequests] = useState<PurchaseRequest[]>([]);
   const [logs, setLogs] = useState<DispenseLog[]>([]);
   const [medications, setMedications] = useState<MedicationBase[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,13 +277,6 @@ const InventoryList: React.FC = () => {
   loadData();
   }, []);
 
-  // Reload data when tab changes
-  useEffect(() => {
-  if (activeTab === 'orders') {
-    checkPurchaseRequests();
-  }
-  }, [activeTab]);
-
   // Handle Navigation State to switch tabs automatically
   useEffect(() => {
   if (location.state && (location.state as any).activeTab) {
@@ -89,31 +289,19 @@ const InventoryList: React.FC = () => {
   try {
     setIsLoading(true);
     setError(null);
-    const [inventoryRes, medicationsRes, requestsRes, logsRes] = await Promise.all([
+    const [inventoryRes, medicationsRes, logsRes] = await Promise.all([
     inventoryApi.getAll(),
     medicationsApi.getAll(),
-    purchaseRequestsApi.getAll(),
     dispenseLogsApi.getAll()
     ]);
     setInventory(inventoryRes.data || []);
     setMedications(medicationsRes.data || []);
-    setRequests(requestsRes.data || []);
     setLogs(logsRes.data || []);
   } catch (err: any) {
     setError(err.message || 'Erro ao carregar dados');
     console.error('Failed to load data:', err);
   } finally {
     setIsLoading(false);
-  }
-  };
-
-  const checkPurchaseRequests = async () => {
-  try {
-    await purchaseRequestsApi.check();
-    const requestsRes = await purchaseRequestsApi.getAll();
-    setRequests(requestsRes.data || []);
-  } catch (err: any) {
-    console.error('Failed to check purchase requests:', err);
   }
   };
 
@@ -137,8 +325,6 @@ const InventoryList: React.FC = () => {
   const [entryOther, setEntryOther] = useState<number>(0);
 
   // State to link Order -> Entry
-  const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
-
   // --- MEDICATION REGISTRY STATES ---
   const [newActiveIngredient, setNewActiveIngredient] = useState('');
   const [newDosage, setNewDosage] = useState('');
@@ -179,11 +365,6 @@ const InventoryList: React.FC = () => {
   });
   return stockMap;
   }, [inventory]);
-
-  // Filter requests to exclude RECEIVED status
-  const activeRequests = useMemo(() => {
-  return requests.filter(r => r.status !== 'RECEIVED');
-  }, [requests]);
 
   // --- REPORT DATA PROCESSING (MATRIX) ---
   const reportMatrix = useMemo(() => {
@@ -254,38 +435,6 @@ const InventoryList: React.FC = () => {
 
   // --- HANDLERS ---
 
-  const handleUpdateStatus = async (id: string, status: 'ORDERED' | 'RECEIVED') => {
-  try {
-    await purchaseRequestsApi.update(id, status);
-    if (status === 'RECEIVED') {
-      // Remove from list when received
-      setRequests(prev => prev.filter(r => r.id !== id));
-    } else {
-      setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-    }
-  } catch (err: any) {
-    setError(err.message || 'Erro ao atualizar status');
-  }
-  };
-
-  const handleDeleteRequest = async (id: string) => {
-  if (!window.confirm('Excluir este pedido de compra?')) return;
-  try {
-    await purchaseRequestsApi.delete(id);
-    setRequests(prev => prev.filter(r => r.id !== id));
-  } catch (err: any) {
-    setError(err.message || 'Erro ao excluir pedido');
-  }
-  };
-
-  const handleReceiveOrder = (req: PurchaseRequest) => {
-  setFulfillingRequestId(req.id);
-  setEntryMedication(req.medicationName);
-  setEntryQuantity(req.suggestedQuantity || 0);
-  setActiveTab('entry');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const handleSaveEntry = async (e: React.FormEvent) => {
   e.preventDefault();
   if (!entryMedication || !entryLot || !entryExpiry || entryQuantity <= 0) return;
@@ -315,13 +464,7 @@ const InventoryList: React.FC = () => {
     const created = await inventoryApi.create(newItem);
     setInventory(prev => [...prev, created]);
 
-    if (fulfillingRequestId) {
-    await handleUpdateStatus(fulfillingRequestId, 'RECEIVED');
-    setFulfillingRequestId(null);
-    alert('Pedido recebido e estoque atualizado com sucesso!');
-    } else {
     alert('Entrada de estoque realizada com sucesso!');
-    }
 
     // Reset form fields
     setEntryLot('');
@@ -470,15 +613,11 @@ const InventoryList: React.FC = () => {
       Dar Entrada
       </button>
       <button
-      onClick={() => setActiveTab('orders')}
-      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'orders' ? 'bg-pink-50 text-pink-700' : 'text-slate-600 hover:bg-slate-50'}`}
+      onClick={() => setActiveTab('forecast')}
+      className={`flex items-center px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'forecast' ? 'bg-pink-50 text-pink-700' : 'text-slate-600 hover:bg-slate-50'}`}
       >
-      Pedidos
-      {activeRequests.filter(r => r.status === 'PENDING').length > 0 && (
-        <span className="ml-2 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded-full">
-        {activeRequests.filter(r => r.status === 'PENDING').length}
-        </span>
-      )}
+      <TrendingUp size={16} className="mr-2" />
+      Previsão de Demanda
       </button>
       <button
       onClick={() => setActiveTab('reports')}
@@ -705,22 +844,6 @@ const InventoryList: React.FC = () => {
       Registrar Entrada de Lote
       </h3>
 
-      {fulfillingRequestId && (
-      <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start animate-in slide-in-from-top-2">
-        <ShoppingCart size={18} className="text-blue-600 mt-0.5 mr-2 flex-shrink-0" />
-        <div>
-        <p className="font-bold text-blue-800">Recebendo Pedido</p>
-        <p className="text-sm text-blue-600 mt-1">
-          Preencha os dados do lote físico para concluir o recebimento deste pedido.
-          O pedido será marcado como <span className="font-bold">RECEBIDO</span> após salvar.
-        </p>
-        <button onClick={() => { setFulfillingRequestId(null); setEntryMedication(''); setEntryQuantity(0); }} className="text-xs text-blue-500 underline mt-2 hover:text-blue-700">
-          Cancelar vínculo (Entrada avulsa)
-        </button>
-        </div>
-      </div>
-      )}
-
       <form onSubmit={handleSaveEntry} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Medicação</label>
@@ -915,85 +1038,16 @@ const InventoryList: React.FC = () => {
         className="flex items-center bg-pink-600 text-white px-6 py-2.5 rounded-lg hover:bg-pink-700 font-medium disabled:opacity-50"
         >
         {isSavingEntry ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Check size={18} className="mr-2" />}
-        {fulfillingRequestId ? 'Confirmar Recebimento e Salvar' : 'Salvar e Adicionar ao Estoque'}
+        Salvar e Adicionar ao Estoque
         </button>
       </div>
       </form>
     </div>
     )}
 
-    {/* --- TAB: PEDIDOS --- */}
-    {activeTab === 'orders' && (
-    <SectionCard
-      title="Pedidos de Compra (Automáticos)"
-      icon={<ShoppingCart size={18} className="text-purple-600" />}
-      headerBg="bg-purple-50/30"
-    >
-      <div className="p-4 bg-purple-50/50 text-purple-800 text-sm mb-4 rounded-lg flex items-start mx-4 mt-4">
-      <AlertTriangle size={16} className="mr-2 mt-0.5 flex-shrink-0" />
-      <p>O sistema gera pedidos automaticamente quando o estoque é insuficiente para cobrir as doses agendadas dos próximos 10 dias.</p>
-      </div>
-      <table className="w-full text-sm text-left">
-      <thead className="text-xs text-slate-500 uppercase bg-slate-50">
-        <tr>
-        <th className="px-6 py-3">Data Gerado</th>
-        <th className="px-6 py-3">Medicação</th>
-        <th className="px-6 py-3">Estoque Atual</th>
-        <th className="px-6 py-3">Demanda (10d)</th>
-        <th className="px-6 py-3">Status</th>
-        <th className="px-6 py-3 text-right">Ação</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-        {activeRequests.length === 0 ? (
-        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-400">Nenhum pedido de compra necessário no momento.</td></tr>
-        ) : (
-        activeRequests.map(req => {
-          const realTimeStock = stockByMedication[req.medicationName] || 0;
-          return (
-          <tr key={req.id} className="hover:bg-slate-50">
-            <td className="px-6 py-4">{formatDate(req.createdAt)}</td>
-            <td className="px-6 py-4 font-medium text-slate-800">{req.medicationName}</td>
-            <td className="px-6 py-4 text-red-600 font-bold">{realTimeStock}</td>
-            <td className="px-6 py-4">{req.predictedConsumption10Days}</td>
-            <td className="px-6 py-4">
-            <span className={`text-xs px-2 py-1 rounded-full font-bold ${req.status === 'PENDING' ? 'bg-orange-100 text-orange-700' :
-              'bg-blue-100 text-blue-700'
-            }`}>
-              {req.status === 'PENDING' ? 'Pendente' : 'Comprado'}
-            </span>
-            </td>
-            <td className="px-6 py-4 text-right">
-            <div className="flex justify-end gap-2">
-              {req.status === 'PENDING' && (
-              <button onClick={() => handleUpdateStatus(req.id, 'ORDERED')} className="text-blue-600 hover:underline text-xs font-bold border border-blue-200 px-2 py-1 rounded hover:bg-blue-50">
-                Marcar Comprado
-              </button>
-              )}
-              {req.status === 'ORDERED' && (
-              <button
-                onClick={() => handleReceiveOrder(req)}
-                className="text-white bg-green-600 hover:bg-green-700 text-xs font-bold px-3 py-1.5 rounded flex items-center transition-colors shadow-sm"
-              >
-                Receber <ArrowRight size={12} className="ml-1" />
-              </button>
-              )}
-              <button
-              onClick={() => handleDeleteRequest(req.id)}
-              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-              title="Excluir pedido"
-              >
-              <Trash2 size={16} />
-              </button>
-            </div>
-            </td>
-          </tr>
-          );
-        })
-        )}
-      </tbody>
-      </table>
-    </SectionCard>
+    {/* --- TAB: PREVISÃO DE DEMANDA --- */}
+    {activeTab === 'forecast' && (
+    <ForecastTab stockByMedication={stockByMedication} />
     )}
 
     {/* --- TAB: RELATÓRIOS --- */}

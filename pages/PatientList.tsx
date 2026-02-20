@@ -11,6 +11,7 @@ const PatientList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [diagnosisFilter, setDiagnosisFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [adherenceFilter, setAdherenceFilter] = useState('');
   const [patients, setPatients] = useState<PatientFull[]>([]);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -128,9 +129,17 @@ const PatientList: React.FC = () => {
         if (p.active !== isActive) return false;
       }
 
+      if (adherenceFilter) {
+        if (adherenceFilter === 'none') {
+          if (p.adherenceLevel) return false;
+        } else {
+          if (p.adherenceLevel !== adherenceFilter) return false;
+        }
+      }
+
       return true;
     });
-  }, [processedPatients, searchTerm, diagnosisFilter, statusFilter]);
+  }, [processedPatients, searchTerm, diagnosisFilter, statusFilter, adherenceFilter]);
 
   const resetForm = () => {
     setNewName('');
@@ -390,9 +399,27 @@ const PatientList: React.FC = () => {
           </select>
         </div>
 
-        {(searchTerm || diagnosisFilter || statusFilter !== 'all') && (
+        <div className="relative w-full md:w-48">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Activity size={18} className="text-slate-400" />
+          </div>
+          <select
+            value={adherenceFilter}
+            onChange={(e) => setAdherenceFilter(e.target.value)}
+            className="block w-full pl-10 pr-8 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 appearance-none bg-white"
+          >
+            <option value="">Todas Adesões</option>
+            <option value="BOA">Boa Adesão</option>
+            <option value="PARCIAL">Adesão Parcial</option>
+            <option value="RUIM">Adesão Ruim</option>
+            <option value="ABANDONO">Abandono</option>
+            <option value="none">Sem Adesão</option>
+          </select>
+        </div>
+
+        {(searchTerm || diagnosisFilter || statusFilter !== 'all' || adherenceFilter) && (
           <button
-            onClick={() => { setSearchTerm(''); setDiagnosisFilter(''); setStatusFilter('all'); }}
+            onClick={() => { setSearchTerm(''); setDiagnosisFilter(''); setStatusFilter('all'); setAdherenceFilter(''); }}
             className="px-4 py-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
           >
             Limpar
@@ -445,12 +472,14 @@ const PatientList: React.FC = () => {
                   <td className="px-6 py-4">
                     <span className={`inline-flex px-2.5 py-1 text-xs font-bold rounded-full ${
                       patient.adherenceLevel === 'BOA' ? 'bg-green-100 text-green-700' :
-                      patient.adherenceLevel === 'ATRASADO' ? 'bg-yellow-100 text-yellow-700' :
+                      patient.adherenceLevel === 'PARCIAL' ? 'bg-yellow-100 text-yellow-700' :
+                      patient.adherenceLevel === 'RUIM' ? 'bg-orange-100 text-orange-700' :
                       patient.adherenceLevel === 'ABANDONO' ? 'bg-red-100 text-red-700' :
                       'bg-slate-100 text-slate-500'
                     }`}>
                       {patient.adherenceLevel === 'BOA' ? 'BOA ADESAO' :
-                       patient.adherenceLevel === 'ATRASADO' ? 'ATRASADO' :
+                       patient.adherenceLevel === 'PARCIAL' ? 'PARCIAL' :
+                       patient.adherenceLevel === 'RUIM' ? 'RUIM' :
                        patient.adherenceLevel === 'ABANDONO' ? 'ABANDONO' :
                        '-'}
                     </span>
@@ -498,7 +527,7 @@ const PatientList: React.FC = () => {
         </div>
         {filteredPatients.length === 0 && (
           <div className="p-8 text-center text-slate-500">
-            {(searchTerm || diagnosisFilter || statusFilter !== 'all') ? "Nenhum paciente encontrado com estes filtros." : "Nenhum paciente cadastrado."}
+            {(searchTerm || diagnosisFilter || statusFilter !== 'all' || adherenceFilter) ? "Nenhum paciente encontrado com estes filtros." : "Nenhum paciente cadastrado."}
           </div>
         )}
       </div>
