@@ -92,9 +92,9 @@ const TreatmentDetail: React.FC = () => {
         // Initialize edit states
         setEditProtocolId(treatmentData.protocolId);
         setEditPlannedDoses(treatmentData.plannedDosesBeforeConsult || 0);
-        setEditNextConsult(treatmentData.nextConsultationDate || '');
+        setEditNextConsult(treatmentData.nextConsultationDate ? new Date(treatmentData.nextConsultationDate).toISOString().split('T')[0] : '');
         setEditStatus(treatmentData.status);
-        setEditStartDate(treatmentData.startDate || '');
+        setEditStartDate(treatmentData.startDate ? new Date(treatmentData.startDate).toISOString().split('T')[0] : '');
         setEditObservations(treatmentData.observations || '');
       }
     } catch (err: any) {
@@ -279,8 +279,8 @@ const TreatmentDetail: React.FC = () => {
     }
     if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
 
-    // Only require inventory lot if there are available lots and it's a new dose
-    if (availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
+    // Only require inventory lot if purchased, there are available lots, and it's a new dose
+    if (dosePurchased && availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
       alert("Selecione um lote disponivel no estoque.");
       return;
     }
@@ -309,8 +309,8 @@ const TreatmentDetail: React.FC = () => {
         cycleNumber: cycleNumber,
         scheduledDate: doseScheduledDate ? new Date(doseScheduledDate).toISOString() : new Date(doseDate).toISOString(),
         applicationDate: new Date(doseDate).toISOString(),
-        lotNumber: doseLot || '',
-        inventoryLotId: selectedInventoryId || undefined,
+        lotNumber: dosePurchased ? (doseLot || '') : '',
+        inventoryLotId: dosePurchased ? (selectedInventoryId || undefined) : undefined,
         purchased: dosePurchased,
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
@@ -388,9 +388,9 @@ const TreatmentDetail: React.FC = () => {
     if (!isEditing && treatment) {
       setEditProtocolId(treatment.protocolId);
       setEditPlannedDoses(treatment.plannedDosesBeforeConsult || 0);
-      setEditNextConsult(treatment.nextConsultationDate || '');
+      setEditNextConsult(treatment.nextConsultationDate ? new Date(treatment.nextConsultationDate).toISOString().split('T')[0] : '');
       setEditStatus(treatment.status);
-      setEditStartDate(treatment.startDate || '');
+      setEditStartDate(treatment.startDate ? new Date(treatment.startDate).toISOString().split('T')[0] : '');
       setEditObservations(treatment.observations || '');
     }
     setIsEditing(!isEditing);
@@ -854,38 +854,39 @@ const TreatmentDetail: React.FC = () => {
                   Sim
                 </label>
                 <label className={`flex-1 flex items-center justify-center p-2 rounded-lg border cursor-pointer transition-all ${!dosePurchased ? 'bg-slate-100 border-slate-400 text-slate-800 ring-1 ring-slate-400' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  <input type="radio" name="purchased" checked={!dosePurchased} onChange={() => setDosePurchased(false)} className="sr-only" />
+                  <input type="radio" name="purchased" checked={!dosePurchased} onChange={() => { setDosePurchased(false); setSelectedInventoryId(''); setDoseLot(''); }} className="sr-only" />
                   Nao
                 </label>
               </div>
             </div>
 
-            <div className="lg:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Lote (Estoque)
-                {!dosePurchased && <span className="ml-2 text-xs text-blue-600 font-normal">(Medicamento da clínica)</span>}
-              </label>
-              <div className="flex gap-2">
-                <select
-                  value={selectedInventoryId}
-                  onChange={handleInventorySelection}
-                  disabled={!!editingDoseId && !!selectedInventoryId}
-                  className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
-                >
-                  <option value="">Selecione um lote do estoque...</option>
-                  {availableLots.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.medicationName} - Lote: {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
-                    </option>
-                  ))}
-                </select>
-                {availableLots.length === 0 && (
-                  <div className="text-red-500 text-xs flex items-center w-24">
-                    <AlertTriangle size={14} className="mr-1" /> Sem estoque
-                  </div>
-                )}
+            {dosePurchased && (
+              <div className="lg:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Lote (Estoque)
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedInventoryId}
+                    onChange={handleInventorySelection}
+                    disabled={!!editingDoseId && !!selectedInventoryId}
+                    className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
+                  >
+                    <option value="">Selecione um lote do estoque...</option>
+                    {availableLots.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.medicationName} - Lote: {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
+                      </option>
+                    ))}
+                  </select>
+                  {availableLots.length === 0 && (
+                    <div className="text-red-500 text-xs flex items-center w-24">
+                      <AlertTriangle size={14} className="mr-1" /> Sem estoque
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             <input type="hidden" value={doseLot} />
 

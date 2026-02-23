@@ -341,7 +341,7 @@ const Dashboard: React.FC = () => {
   e.stopPropagation();
   const patient = getPatientByTreatmentId(dose.treatmentId);
   setSelectedConsultDoseId(dose.id);
-  setConsultPatientName(patient?.fullName || 'Paciente');
+  setConsultPatientName(patient?.fullName || dose.treatment?.patient?.fullName || 'Paciente');
   setConsultDateInput(dose.consultationDate ? dose.consultationDate.split('T')[0] : '');
   setConsultModalOpen(true);
   };
@@ -1000,7 +1000,7 @@ const Dashboard: React.FC = () => {
           </td>
           <td className="px-6 py-4 font-medium text-slate-900">
             <div className="flex items-center gap-2">
-            {patient?.fullName}
+            {patient?.fullName || dose.treatment?.patient?.fullName || '-'}
             {patient?.address && dose.purchased !== false && (
               <button
               onClick={(e) => handleViewAddress(e, dose.treatmentId, dose.id)}
@@ -1225,10 +1225,10 @@ const Dashboard: React.FC = () => {
           return (
             <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`, { state: { editDoseId: dose.id } })} className="hover:bg-blue-50/30 cursor-pointer transition-colors">
             <td className="px-6 py-3 font-bold text-slate-700">{formatDate(dose.applicationDate)}</td>
-            <td className="px-6 py-3 font-medium text-slate-800">{patient?.fullName || 'Desconhecido'}</td>
+            <td className="px-6 py-3 font-medium text-slate-800">{patient?.fullName || dose.treatment?.patient?.fullName || 'Desconhecido'}</td>
             <td className="px-6 py-3 text-slate-600">
-              <div>{patient?.guardian.fullName}</div>
-              <div className="text-xs text-slate-400">{patient?.guardian.phonePrimary}</div>
+              <div>{patient?.guardian?.fullName || '-'}</div>
+              <div className="text-xs text-slate-400">{patient?.guardian?.phonePrimary}</div>
             </td>
             <td className="px-6 py-3">
               <select
@@ -1370,8 +1370,8 @@ const Dashboard: React.FC = () => {
             </button>
             )}
           </td>
-          <td className="px-6 py-4 font-medium text-slate-800">{patient?.fullName}</td>
-          <td className="px-6 py-4 text-slate-600">{patient?.guardian.fullName}</td>
+          <td className="px-6 py-4 font-medium text-slate-800">{patient?.fullName || dose.treatment?.patient?.fullName || '-'}</td>
+          <td className="px-6 py-4 text-slate-600">{patient?.guardian?.fullName || '-'}</td>
           <td className="px-6 py-4 text-right">
             <div className="flex items-center justify-end gap-2">
             {!hasDate && (
@@ -1509,12 +1509,12 @@ const Dashboard: React.FC = () => {
         return (
           <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`)} className="hover:bg-red-50/20 cursor-pointer transition-colors group">
           <td className="px-6 py-4">
-            <div className="font-bold text-slate-900">{patient?.fullName || 'Desconhecido'}</div>
+            <div className="font-bold text-slate-900">{patient?.fullName || dose.treatment?.patient?.fullName || 'Desconhecido'}</div>
             <div className="text-xs text-slate-500">{patient?.mainDiagnosis}</div>
           </td>
           <td className="px-6 py-4">
-            <div className="text-slate-700">{patient?.guardian.fullName}</div>
-            <div className="text-xs font-mono text-slate-500">{patient?.guardian.phonePrimary}</div>
+            <div className="text-slate-700">{patient?.guardian?.fullName || '-'}</div>
+            <div className="text-xs font-mono text-slate-500">{patient?.guardian?.phonePrimary}</div>
           </td>
           <td className="px-6 py-4">
             <div className="flex flex-col gap-1">

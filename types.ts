@@ -194,6 +194,12 @@ export interface Dose {
 
   // Link with Inventory
   inventoryLotId?: string; // ID do lote usado
+
+  // Embedded relations (from API includes)
+  treatment?: {
+    patient?: { id: string; fullName: string };
+    protocol?: { id: string; name: string; frequencyDays?: number };
+  };
 }
 
 export interface Treatment {
