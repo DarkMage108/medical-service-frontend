@@ -1,17 +1,23 @@
 ﻿
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { patientsApi, diagnosesApi } from '../services/api';
 import { PatientFull, Diagnosis } from '../types';
 import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity, RefreshCw } from 'lucide-react';
 import { getDiagnosisColor } from '../constants';
 
+const ITEMS_PER_PAGE = 30;
+
 const PatientList: React.FC = () => {
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [diagnosisFilter, setDiagnosisFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [adherenceFilter, setAdherenceFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPatients, setTotalPatients] = useState(0);
   const [patients, setPatients] = useState<PatientFull[]>([]);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -42,18 +48,37 @@ const PatientList: React.FC = () => {
   const [nameSuggestions, setNameSuggestions] = useState<PatientFull[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Load data from API
-  const loadData = async () => {
+  // Load diagnoses once
+  const loadDiagnoses = async () => {
+    try {
+      const diagnosesRes = await diagnosesApi.getAll();
+      setDiagnoses(diagnosesRes.data || []);
+    } catch (err: any) {
+      console.error('Error loading diagnoses:', err);
+    }
+  };
+
+  // Load patients with server-side pagination and filters
+  const loadPatients = async (page = currentPage) => {
     setIsLoading(true);
     setError(null);
     try {
-      const [patientsRes, diagnosesRes] = await Promise.all([
-        patientsApi.getAll({ limit: 1000 }),
-        diagnosesApi.getAll()
-      ]);
+      const params: any = {
+        page,
+        limit: ITEMS_PER_PAGE,
+      };
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (diagnosisFilter) params.diagnosis = diagnosisFilter;
+      if (statusFilter === 'active') params.active = true;
+      if (statusFilter === 'inactive') params.active = false;
+      if (adherenceFilter) params.adherence = adherenceFilter;
+
+      const patientsRes = await patientsApi.getAll(params);
 
       setPatients(patientsRes.data || []);
-      setDiagnoses(diagnosesRes.data || []);
+      setTotalPatients(patientsRes.total || 0);
+      setTotalPages(patientsRes.totalPages || 1);
+      setCurrentPage(page);
     } catch (err: any) {
       console.error('Error loading patients:', err);
       setError(err.message || 'Erro ao carregar dados');
@@ -62,9 +87,31 @@ const PatientList: React.FC = () => {
     }
   };
 
+  // Convenience wrapper to reload current page
+  const loadData = () => loadPatients(currentPage);
+
+  // Load diagnoses on mount
   useEffect(() => {
-    loadData();
+    loadDiagnoses();
   }, []);
+
+  // Debounce search term (400ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Reload patients when filters or page change
+  useEffect(() => {
+    loadPatients(1);
+  }, [debouncedSearch, diagnosisFilter, statusFilter, adherenceFilter]);
+
+  // Reload when page changes (but not on filter change - that resets to page 1)
+  useEffect(() => {
+    loadPatients(currentPage);
+  }, [currentPage]);
 
   // Check for filters from Dashboard navigation
   useEffect(() => {
@@ -86,60 +133,8 @@ const PatientList: React.FC = () => {
     return getDiagnosisColor(diagnosisName, diagnosis?.color);
   }, [diagnoses]);
 
-  // Optimized filtering
-  const processedPatients = useMemo(() => {
-    const normalize = (str: string) =>
-      str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-    return patients.map(p => ({
-      ...p,
-      _searchName: normalize(p.fullName || ''),
-      _searchGuardian: normalize(p.guardian?.fullName || ''),
-      _searchPhone: (p.guardian?.phonePrimary || '').replace(/\D/g, '')
-    }));
-  }, [patients]);
-
-  const filteredPatients = useMemo(() => {
-    const normalize = (str: string) =>
-      str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-    const term = searchTerm.trim();
-    const normalizedTerm = normalize(term);
-    const numericTerm = term.replace(/\D/g, '');
-    const hasSearch = term.length > 0;
-    const hasNumericSearch = numericTerm.length > 2;
-
-    return processedPatients.filter(p => {
-      let matchesSearch = true;
-      if (hasSearch) {
-        const nameMatch = p._searchName.includes(normalizedTerm);
-        const guardianMatch = p._searchGuardian.includes(normalizedTerm);
-        const phoneMatch = hasNumericSearch && p._searchPhone.includes(numericTerm);
-        matchesSearch = nameMatch || guardianMatch || phoneMatch;
-      }
-
-      if (!matchesSearch) return false;
-
-      if (diagnosisFilter && p.mainDiagnosis !== diagnosisFilter) {
-        return false;
-      }
-
-      if (statusFilter !== 'all') {
-        const isActive = statusFilter === 'active';
-        if (p.active !== isActive) return false;
-      }
-
-      if (adherenceFilter) {
-        if (adherenceFilter === 'none') {
-          if (p.adherenceLevel) return false;
-        } else {
-          if (p.adherenceLevel !== adherenceFilter) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [processedPatients, searchTerm, diagnosisFilter, statusFilter, adherenceFilter]);
+  // Patients are now filtered server-side, use directly
+  const filteredPatients = patients;
 
   const resetForm = () => {
     setNewName('');
@@ -305,7 +300,8 @@ const PatientList: React.FC = () => {
     }
   };
 
-  if (isLoading) {
+  // Only show full loading spinner on initial load (no patients yet)
+  if (isLoading && patients.length === 0 && !error) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 size={32} className="animate-spin text-pink-600 mr-3" />
@@ -314,7 +310,7 @@ const PatientList: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (error && patients.length === 0) {
     return (
       <div className="text-center py-20">
         <User size={48} className="mx-auto text-red-300 mb-4" />
@@ -331,7 +327,10 @@ const PatientList: React.FC = () => {
     <div className="space-y-6 relative">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            Pacientes
+            {isLoading && patients.length > 0 && <Loader2 size={18} className="animate-spin text-pink-600" />}
+          </h1>
           <p className="text-slate-500">Gerenciamento de base de pacientes</p>
         </div>
         <div className="flex items-center gap-2">
@@ -525,9 +524,62 @@ const PatientList: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {filteredPatients.length === 0 && (
+        {filteredPatients.length === 0 && !isLoading && (
           <div className="p-8 text-center text-slate-500">
             {(searchTerm || diagnosisFilter || statusFilter !== 'all' || adherenceFilter) ? "Nenhum paciente encontrado com estes filtros." : "Nenhum paciente cadastrado."}
+          </div>
+        )}
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100 bg-slate-50/50">
+            <span className="text-xs text-slate-500">
+              {totalPatients} paciente{totalPatients !== 1 ? 's' : ''} encontrado{totalPatients !== 1 ? 's' : ''}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm rounded hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Anterior
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(page => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 2)
+                .map((page, idx, arr) => {
+                  const elements = [];
+                  if (idx > 0 && arr[idx - 1] !== page - 1) {
+                    elements.push(<span key={`dot-${page}`} className="px-1 text-slate-400">...</span>);
+                  }
+                  elements.push(
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`w-8 h-8 rounded text-sm font-medium transition-colors ${
+                        currentPage === page
+                          ? 'bg-pink-600 text-white'
+                          : 'hover:bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  );
+                  return elements;
+                })}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm rounded hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Proximo
+              </button>
+            </div>
+          </div>
+        )}
+        {totalPages <= 1 && totalPatients > 0 && (
+          <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/50">
+            <span className="text-xs text-slate-500">
+              {totalPatients} paciente{totalPatients !== 1 ? 's' : ''} encontrado{totalPatients !== 1 ? 's' : ''}
+            </span>
           </div>
         )}
       </div>

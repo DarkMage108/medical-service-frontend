@@ -137,6 +137,7 @@ export const patientsApi = {
     search?: string;
     diagnosis?: string;
     active?: boolean;
+    adherence?: string;
     page?: number;
     limit?: number;
   }) => {
@@ -144,6 +145,7 @@ export const patientsApi = {
     if (params?.search) searchParams.set('search', params.search);
     if (params?.diagnosis) searchParams.set('diagnosis', params.diagnosis);
     if (params?.active !== undefined) searchParams.set('active', String(params.active));
+    if (params?.adherence) searchParams.set('adherence', params.adherence);
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
     const query = searchParams.toString();
