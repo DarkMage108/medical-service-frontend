@@ -89,7 +89,7 @@ const PatientDetail: React.FC = () => {
         patientsApi.getById(id),
         treatmentsApi.getAll({ patientId: id }),
         protocolsApi.getAll(),
-        dosesApi.getAll({ limit: 500 }),
+        dosesApi.getAll({ limit: 1000 }),
         dismissedLogsApi.getAll(),
         patientsApi.getDocuments(id),
         patientEventsApi.getByPatient(id),

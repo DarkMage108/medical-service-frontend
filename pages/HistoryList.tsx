@@ -71,9 +71,9 @@ const HistoryList: React.FC = () => {
     try {
       const [logsRes, treatmentsRes, protocolsRes, patientsRes, diagnosesRes] = await Promise.all([
         dismissedLogsApi.getAll(),
-        treatmentsApi.getAll({ limit: 100 }),
+        treatmentsApi.getAll({ limit: 1000 }),
         protocolsApi.getAll(),
-        patientsApi.getAll({ limit: 100 }),
+        patientsApi.getAll({ limit: 1000 }),
         diagnosesApi.getAll()
       ]);
 

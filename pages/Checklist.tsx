@@ -84,10 +84,10 @@ const Checklist: React.FC = () => {
     setError(null);
     try {
       const [treatmentsRes, patientsRes, protocolsRes, dosesRes, documentsRes, diagnosesRes] = await Promise.all([
-        treatmentsApi.getAll({ limit: 100 }),
-        patientsApi.getAll({ limit: 100 }),
+        treatmentsApi.getAll({ limit: 1000 }),
+        patientsApi.getAll({ limit: 1000 }),
         protocolsApi.getAll(),
-        dosesApi.getAll({ limit: 500 }),
+        dosesApi.getAll({ limit: 1000 }),
         documentsApi.getAll(),
         diagnosesApi.getAll()
       ]);

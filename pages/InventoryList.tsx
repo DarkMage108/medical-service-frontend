@@ -46,9 +46,9 @@ const ForecastTab: React.FC<{ stockByMedication: Record<string, number> }> = ({ 
       setIsLoading(true);
       try {
         const [dosesRes, treatmentsRes, patientsRes, protocolsRes] = await Promise.all([
-          dosesApi.getAll({ limit: 500 }),
-          treatmentsApi.getAll({ limit: 500 }),
-          patientsApi.getAll({ limit: 500 }),
+          dosesApi.getAll({ limit: 1000 }),
+          treatmentsApi.getAll({ limit: 1000 }),
+          patientsApi.getAll({ limit: 1000 }),
           protocolsApi.getAll()
         ]);
         setDoses(dosesRes.data || []);

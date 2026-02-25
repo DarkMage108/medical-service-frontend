@@ -48,7 +48,7 @@ const PatientList: React.FC = () => {
     setError(null);
     try {
       const [patientsRes, diagnosesRes] = await Promise.all([
-        patientsApi.getAll({ limit: 100 }),
+        patientsApi.getAll({ limit: 1000 }),
         diagnosesApi.getAll()
       ]);
 

@@ -136,9 +136,9 @@ const Dashboard: React.FC = () => {
     dismissedRes,
     manualEventsRes
     ] = await Promise.all([
-    dosesApi.getAll({ limit: 500 }),
-    patientsApi.getAll({ limit: 500 }),
-    treatmentsApi.getAll({ limit: 500 }),
+    dosesApi.getAll({ limit: 1000 }),
+    patientsApi.getAll({ limit: 1000 }),
+    treatmentsApi.getAll({ limit: 1000 }),
     protocolsApi.getAll(),
     documentsApi.getAll(),
     dismissedLogsApi.getAll(),
