@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings, DollarSign } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings, DollarSign, MessageSquare, FileWarning, Calendar, MessageCircle } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
 import { usePermissions } from '../contexts/PermissionsContext';
@@ -52,6 +52,34 @@ const MENU_LABELS: Record<string, string> = {
   protocols: 'Protocolos',
 };
 
+// March 2026 — sidebar pages extracted from main dashboard
+const SECONDARY_NAV_ITEMS = [
+  {
+    key: 'consent-terms',
+    label: 'Termos Consent.',
+    path: '/termos-consentimento',
+    icon: FileWarning,
+  },
+  {
+    key: 'doses-page',
+    label: 'Doses',
+    path: '/doses',
+    icon: Syringe,
+  },
+  {
+    key: 'consultations',
+    label: 'Consultas',
+    path: '/consultas',
+    icon: Calendar,
+  },
+  {
+    key: 'survey',
+    label: 'Pesquisa Enf.',
+    path: '/pesquisa-enfermagem',
+    icon: MessageCircle,
+  },
+];
+
 // Static nav items for admin only
 const ADMIN_NAV_ITEMS = [
   {
@@ -65,6 +93,12 @@ const ADMIN_NAV_ITEMS = [
     label: 'Permissoes',
     path: '/permissoes',
     icon: Shield,
+  },
+  {
+    key: 'message-templates',
+    label: 'Modelos Msg',
+    path: '/modelos-mensagem',
+    icon: MessageSquare,
   },
   {
     key: 'settings',
@@ -97,6 +131,9 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
     // Sort items in a logical order
     const order = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'cashregister', 'diagnoses', 'protocols'];
     items.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+
+    // March 2026 — extracted dashboard sections (visible to all authenticated users)
+    items.push(...SECONDARY_NAV_ITEMS);
 
     // Add admin-only menus
     if (user.role === UserRole.ADMIN) {

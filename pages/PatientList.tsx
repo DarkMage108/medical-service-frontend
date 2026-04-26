@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { patientsApi, diagnosesApi } from '../services/api';
 import { PatientFull, Diagnosis } from '../types';
-import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity, RefreshCw } from 'lucide-react';
+import { Search, Plus, ChevronRight, X, Save, User, Phone, FileText, MapPin, Calendar, AlignLeft, Loader2, Trash2, Filter, Activity, RefreshCw, UserCheck, UserX } from 'lucide-react';
 import { getDiagnosisColor } from '../constants';
 
 const ITEMS_PER_PAGE = 30;
@@ -132,6 +132,28 @@ const PatientList: React.FC = () => {
     const diagnosis = diagnoses.find(d => d.name === diagnosisName);
     return getDiagnosisColor(diagnosisName, diagnosis?.color);
   }, [diagnoses]);
+
+  // March 2026 — distribution cards moved here from main Dashboard.
+  // Aggregated across the full base independently of the current filtered page.
+  const [allPatients, setAllPatients] = useState<PatientFull[]>([]);
+  useEffect(() => {
+    // Load full patient base once (for distribution stats only).
+    patientsApi.getAll({ limit: 5000 }).then(res => setAllPatients(res.data || [])).catch(() => {});
+  }, []);
+
+  const distributionStats = React.useMemo(() => {
+    const active = allPatients.filter(p => p.active).length;
+    const inactive = allPatients.length - active;
+    const byDiag: Record<string, number> = {};
+    allPatients.forEach(p => {
+      if (!p.active) return;
+      const k = p.mainDiagnosis || 'Sem diagnóstico';
+      byDiag[k] = (byDiag[k] || 0) + 1;
+    });
+    const sorted = Object.entries(byDiag).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+    const max = sorted[0]?.count || 1;
+    return { active, inactive, byDiag: sorted, max };
+  }, [allPatients]);
 
   // Patients are now filtered server-side, use directly
   const filteredPatients = patients;
@@ -351,6 +373,63 @@ const PatientList: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* March 2026 — moved from Dashboard: Pacientes Ativos/Inativos + Pacientes por Diagnóstico */}
+      {allPatients.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="flex items-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <UserCheck size={14} className="mr-1.5 text-green-600" />
+              Pacientes Ativos / Inativos
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setStatusFilter('active')}
+                className={`text-left rounded-lg p-3 transition-colors ${statusFilter === 'active' ? 'bg-green-50 ring-2 ring-green-300' : 'hover:bg-slate-50'}`}
+              >
+                <div className="text-xs text-slate-500">Ativos</div>
+                <div className="text-2xl font-bold text-green-600">{distributionStats.active}</div>
+              </button>
+              <button
+                onClick={() => setStatusFilter('inactive')}
+                className={`text-left rounded-lg p-3 transition-colors ${statusFilter === 'inactive' ? 'bg-slate-100 ring-2 ring-slate-300' : 'hover:bg-slate-50'}`}
+              >
+                <div className="text-xs text-slate-500 flex items-center"><UserX size={12} className="mr-1" />Inativos</div>
+                <div className="text-2xl font-bold text-slate-700">{distributionStats.inactive}</div>
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center mb-3">
+              <Activity size={14} className="mr-1.5 text-pink-600" />
+              Pacientes Ativos por Diagnóstico
+            </h3>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+              {distributionStats.byDiag.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">Nenhum paciente ativo.</p>
+              ) : distributionStats.byDiag.map(d => (
+                <button
+                  key={d.name}
+                  onClick={() => setDiagnosisFilter(d.name)}
+                  className={`w-full text-left p-2 -mx-1 rounded-lg transition-colors ${diagnosisFilter === d.name ? 'bg-pink-50' : 'hover:bg-slate-50'}`}
+                >
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium text-slate-700 truncate">{d.name}</span>
+                    <span className="font-bold text-slate-900 ml-2">{d.count}</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-pink-500 to-pink-400 transition-all"
+                      style={{ width: `${(d.count / distributionStats.max) * 100}%` }}
+                    />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">

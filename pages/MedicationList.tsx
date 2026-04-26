@@ -16,6 +16,11 @@ const convertProtocol = (data: any): Protocol => ({
   day: m.day,
   message: m.message,
   })),
+  // March 2026: per-dose message configuration
+  dose1MessageEnabled: data.dose1MessageEnabled ?? true,
+  dose1ExtraMessage: data.dose1ExtraMessage,
+  lastDoseMessageEnabled: data.lastDoseMessageEnabled ?? true,
+  lastDoseExtraMessage: data.lastDoseExtraMessage,
 });
 
 const MedicationList: React.FC = () => {
@@ -63,21 +68,50 @@ const MedicationList: React.FC = () => {
   const [newMileDay, setNewMileDay] = useState('');
   const [newMileMsg, setNewMileMsg] = useState('');
 
+  // March 2026: per-dose message config state
+  const [dose1MessageEnabled, setDose1MessageEnabled] = useState(true);
+  const [dose1ExtraMessage, setDose1ExtraMessage] = useState('');
+  const [lastDoseMessageEnabled, setLastDoseMessageEnabled] = useState(true);
+  const [lastDoseExtraMessage, setLastDoseExtraMessage] = useState('');
+
+  // March 2026: support editing existing milestones (image 15 — missing edit button bug)
+  const [editingMilestoneIdx, setEditingMilestoneIdx] = useState<number | null>(null);
+
   const handleAddMilestone = () => {
   if (!newMileDay || !newMileMsg) return;
   const newItem: ProtocolMilestone = {
     day: Number(newMileDay),
     message: newMileMsg
   };
-  setMilestones([...milestones, newItem].sort((a, b) => a.day - b.day));
+  if (editingMilestoneIdx !== null) {
+    // Update mode — replace at index
+    const updated = [...milestones];
+    updated[editingMilestoneIdx] = newItem;
+    setMilestones(updated.sort((a, b) => a.day - b.day));
+    setEditingMilestoneIdx(null);
+  } else {
+    setMilestones([...milestones, newItem].sort((a, b) => a.day - b.day));
+  }
   setNewMileDay('');
   setNewMileMsg('');
+  };
+
+  const handleEditMilestone = (idx: number) => {
+  const ms = milestones[idx];
+  setNewMileDay(String(ms.day));
+  setNewMileMsg(ms.message);
+  setEditingMilestoneIdx(idx);
   };
 
   const removeMilestone = (index: number) => {
   const newList = [...milestones];
   newList.splice(index, 1);
   setMilestones(newList);
+  if (editingMilestoneIdx === index) {
+    setEditingMilestoneIdx(null);
+    setNewMileDay('');
+    setNewMileMsg('');
+  }
   };
 
   const resetForm = () => {
@@ -89,6 +123,11 @@ const MedicationList: React.FC = () => {
   setMessage('');
   setMilestones([]);
   setFrequency('28');
+  // March 2026 per-dose config defaults
+  setDose1MessageEnabled(true);
+  setDose1ExtraMessage('');
+  setLastDoseMessageEnabled(true);
+  setLastDoseExtraMessage('');
   };
 
   const handleEdit = (proto: Protocol) => {
@@ -108,6 +147,11 @@ const MedicationList: React.FC = () => {
   setGoal(proto.goal || '');
   setMessage(proto.message || '');
   setMilestones(proto.milestones || []);
+  // March 2026 per-dose config
+  setDose1MessageEnabled(proto.dose1MessageEnabled ?? true);
+  setDose1ExtraMessage(proto.dose1ExtraMessage || '');
+  setLastDoseMessageEnabled(proto.lastDoseMessageEnabled ?? true);
+  setLastDoseExtraMessage(proto.lastDoseExtraMessage || '');
   window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -162,7 +206,12 @@ const MedicationList: React.FC = () => {
     frequencyDays: Number(frequency),
     goal: goal || '',
     message: message || '',
-    milestones
+    milestones,
+    // March 2026 per-dose configuration
+    dose1MessageEnabled,
+    dose1ExtraMessage: dose1ExtraMessage || null,
+    lastDoseMessageEnabled,
+    lastDoseExtraMessage: lastDoseExtraMessage || null,
     };
 
     if (editingId) {
@@ -386,15 +435,26 @@ const MedicationList: React.FC = () => {
           <p className="text-[10px] text-slate-400">
           Suporta Emojis (💊, 🛵) e formatação WhatsApp (*negrito*, _itálico_).
           </p>
-          <button
-          type="button"
-          onClick={handleAddMilestone}
-          disabled={!newMileDay || !newMileMsg}
-          className="w-full md:w-auto bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center shadow-sm"
-          >
-          <Plus size={16} className="mr-2" />
-          Adicionar à Régua
-          </button>
+          <div className="flex gap-2 w-full md:w-auto">
+            {editingMilestoneIdx !== null && (
+              <button
+                type="button"
+                onClick={() => { setEditingMilestoneIdx(null); setNewMileDay(''); setNewMileMsg(''); }}
+                className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                Cancelar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleAddMilestone}
+              disabled={!newMileDay || !newMileMsg}
+              className="flex-1 md:w-auto bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center shadow-sm"
+            >
+              {editingMilestoneIdx !== null ? <Edit2 size={16} className="mr-2" /> : <Plus size={16} className="mr-2" />}
+              {editingMilestoneIdx !== null ? 'Atualizar Mensagem' : 'Adicionar à Régua'}
+            </button>
+          </div>
         </div>
         </div>
       </div>
@@ -411,6 +471,15 @@ const MedicationList: React.FC = () => {
             {ms.message}
             </p>
           </div>
+          {/* March 2026: edit + trash actions side-by-side. Edit first by convention. */}
+          <button
+            type="button"
+            onClick={() => handleEditMilestone(idx)}
+            className="text-slate-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg ml-2 transition-colors"
+            title="Editar Mensagem"
+          >
+            <Edit2 size={16} />
+          </button>
           <button
             type="button"
             onClick={() => removeMilestone(idx)}
@@ -424,6 +493,150 @@ const MedicationList: React.FC = () => {
         </div>
       )}
       </div>
+
+      {/* March 2026: Per-Dose Configuration (Dose 1 / Última Dose) — only for medication protocols */}
+      {category === ProtocolCategory.MEDICATION && (
+        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+          <h4 className="font-bold text-slate-700 mb-1 flex items-center">
+            <Target size={18} className="mr-2 text-pink-600" />
+            Configuração por Dose Especial
+          </h4>
+          <p className="text-xs text-slate-500 mb-4">
+            Personalize o envio de mensagens para a primeira e última dose do tratamento.
+          </p>
+
+          {/* Summary table */}
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden mb-4">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-2 text-left">Dose</th>
+                  <th className="px-4 py-2 text-left">Msg Padrão</th>
+                  <th className="px-4 py-2 text-left">Msg Extra</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                <tr>
+                  <td className="px-4 py-2 font-medium text-slate-700">Dose 1</td>
+                  <td className="px-4 py-2">
+                    <span className={`inline-flex items-center text-xs font-medium ${dose1MessageEnabled ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      <span className={`w-2 h-2 rounded-full mr-1.5 ${dose1MessageEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      {dose1MessageEnabled ? 'Ativa' : 'Desativada'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-xs text-slate-500">{dose1ExtraMessage ? 'Configurada' : '—'}</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-2 font-medium text-slate-700">Doses 2..N-1</td>
+                  <td className="px-4 py-2">
+                    <span className="inline-flex items-center text-xs font-medium text-emerald-600">
+                      <span className="w-2 h-2 rounded-full mr-1.5 bg-emerald-500" />
+                      Sempre ativa
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-xs text-slate-400">N/A</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-2 font-medium text-slate-700">Última Dose</td>
+                  <td className="px-4 py-2">
+                    <span className={`inline-flex items-center text-xs font-medium ${lastDoseMessageEnabled ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      <span className={`w-2 h-2 rounded-full mr-1.5 ${lastDoseMessageEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      {lastDoseMessageEnabled ? 'Ativa' : 'Desativada'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-xs text-slate-500">{lastDoseExtraMessage ? 'Configurada' : '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Dose 1 card */}
+          <div className="bg-white border border-slate-200 rounded-lg p-4 mb-3">
+            <div className="flex items-center mb-3">
+              <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded mr-2">DOSE 1</span>
+              <span className="font-bold text-slate-700">Início do Tratamento</span>
+            </div>
+
+            {/* Toggle */}
+            <label className="flex items-start gap-3 mb-3 p-3 bg-slate-50 rounded-lg cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setDose1MessageEnabled(!dose1MessageEnabled)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                  !dose1MessageEnabled ? 'bg-slate-700' : 'bg-slate-300'
+                }`}
+                role="switch"
+                aria-checked={!dose1MessageEnabled}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${!dose1MessageEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+              <div>
+                <p className="font-semibold text-slate-700 text-sm">Não enviar mensagens padrão na Dose 1</p>
+                <p className="text-xs text-slate-500 mt-0.5">Paciente acabou de sair do consultório — lembrete pode ser desnecessário.</p>
+              </div>
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Mensagem extra — Dose 1 <span className="text-xs text-slate-400 font-normal">Opcional</span>
+            </label>
+            <textarea
+              rows={3}
+              value={dose1ExtraMessage}
+              onChange={(e) => setDose1ExtraMessage(e.target.value)}
+              placeholder="Ex: Boas-vindas ao tratamento, orientações iniciais, o que esperar..."
+              className="block w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1 italic">
+              Enviada apenas na primeira dose. Suporta variáveis: {'{nome_responsavel}'}, {'{nome_paciente}'}, {'{nome_medico}'}, {'{data_proxima_dose}'}, {'{data_proxima_consulta}'}.
+            </p>
+          </div>
+
+          {/* Última Dose card */}
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center mb-3">
+              <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-2 py-0.5 rounded mr-2">ÚLTIMA DOSE</span>
+              <span className="font-bold text-slate-700">Encerramento</span>
+            </div>
+
+            <label className="flex items-start gap-3 mb-3 p-3 bg-slate-50 rounded-lg cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setLastDoseMessageEnabled(!lastDoseMessageEnabled)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                  !lastDoseMessageEnabled ? 'bg-slate-700' : 'bg-slate-300'
+                }`}
+                role="switch"
+                aria-checked={!lastDoseMessageEnabled}
+              >
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${!lastDoseMessageEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+              <div>
+                <p className="font-semibold text-slate-700 text-sm">Não enviar mensagens padrão na Última Dose</p>
+                <p className="text-xs text-slate-500 mt-0.5">Tratamento encerrado — mensagens de acompanhamento não se aplicam.</p>
+              </div>
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Mensagem extra — Última Dose <span className="text-xs text-slate-400 font-normal">Opcional</span>
+            </label>
+            <textarea
+              rows={3}
+              value={lastDoseExtraMessage}
+              onChange={(e) => setLastDoseExtraMessage(e.target.value)}
+              placeholder="Ex: Orientações de encerramento, lembrete de retorno, próximos passos..."
+              className="block w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1 italic">
+              Enviada apenas na última dose (baseado no campo "Doses Planejadas" do tratamento).
+            </p>
+          </div>
+
+          {/* How it works helper */}
+          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+            <span className="font-bold">💡 Como funciona:</span> O sistema identifica automaticamente a última dose pelo campo "Doses Planejadas" do tratamento. Se Doses Planejadas = 4, a Dose 4 é a última. As configurações acima são aplicadas automaticamente.
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-end pt-2">
       <button

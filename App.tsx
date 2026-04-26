@@ -19,6 +19,11 @@ import Profile from './pages/Profile';
 import Checklist from './pages/Checklist';
 import NursingList from './pages/NursingList';
 import SettingsPage from './pages/SettingsPage';
+import MessageTemplates from './pages/MessageTemplates';
+import ConsentTermsPage from './pages/ConsentTermsPage';
+import DosesPage from './pages/DosesPage';
+import ConsultationsPage from './pages/ConsultationsPage';
+import SurveyPage from './pages/SurveyPage';
 import { Loader2 } from 'lucide-react';
 import { UserRole } from './types';
 
@@ -297,6 +302,61 @@ const AppContent: React.FC = () => {
             {layoutUser?.role === UserRole.ADMIN ? (
               <Layout user={layoutUser!} onLogout={handleLogout}>
                 <SettingsPage />
+              </Layout>
+            ) : (
+              <Navigate to="/" replace />
+            )}
+          </ProtectedRoute>
+        }
+      />
+      {/* March 2026 — sidebar pages extracted from main dashboard */}
+      <Route
+        path="/termos-consentimento"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <ConsentTermsPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/doses"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <DosesPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/consultas"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <ConsultationsPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/pesquisa-enfermagem"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <SurveyPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/modelos-mensagem"
+        element={
+          <ProtectedRoute>
+            {layoutUser?.role === UserRole.ADMIN ? (
+              <Layout user={layoutUser!} onLogout={handleLogout}>
+                <MessageTemplates />
               </Layout>
             ) : (
               <Navigate to="/" replace />

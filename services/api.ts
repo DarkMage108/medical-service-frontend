@@ -555,6 +555,58 @@ export const dashboardApi = {
     const query = days ? `?days=${days}` : '';
     return apiFetch<{ data: any[] }>(`/dashboard/activity-window${query}`);
   },
+
+  // March 2026: doses awaiting Dose 1 confirmation (CONFIRM_APPLICATION status)
+  getConfirmApplicationDoses: async () => {
+    return apiFetch<{ data: any[] }>(`/dashboard/confirm-application-doses`);
+  },
+};
+
+// ============== MESSAGE TEMPLATES API (March 2026) ==============
+
+export const messageTemplatesApi = {
+  getAll: async (params?: { trigger?: string; active?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.trigger) searchParams.set('trigger', params.trigger);
+    if (params?.active !== undefined) searchParams.set('active', String(params.active));
+    const query = searchParams.toString();
+    return apiFetch<{ data: any[] }>(`/message-templates${query ? `?${query}` : ''}`);
+  },
+
+  getById: async (id: string) => {
+    return apiFetch<any>(`/message-templates/${id}`);
+  },
+
+  create: async (data: { name: string; trigger?: string; content: string; active?: boolean }) => {
+    return apiFetch<any>('/message-templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  update: async (id: string, data: { name?: string; trigger?: string; content?: string; active?: boolean }) => {
+    return apiFetch<any>(`/message-templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  delete: async (id: string) => {
+    return apiFetch<void>(`/message-templates/${id}`, { method: 'DELETE' });
+  },
+
+  // Get the variable picker definitions (for the admin UI)
+  getVariables: async () => {
+    return apiFetch<{ data: Array<{ tag: string; key: string; returns: string; source: string; example: string }> }>(`/message-templates/variables`);
+  },
+
+  // Resolve a template (or ad-hoc content) for a given treatment — returns rendered text
+  resolve: async (data: { templateId?: string; content?: string; treatmentId: string; doseId?: string }) => {
+    return apiFetch<{ rendered: string; raw: string }>(`/message-templates/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
 };
 
 // ============== DOCUMENTS API ==============
@@ -898,5 +950,6 @@ export default {
   dismissedLogs: dismissedLogsApi,
   sales: salesApi,
   patientEvents: patientEventsApi,
+  messageTemplates: messageTemplatesApi,
   healthCheck,
 };

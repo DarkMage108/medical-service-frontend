@@ -125,13 +125,19 @@ export interface Protocol {
   goal?: string; // Meta Terapêutica
   message?: string; // Mensagem/Instrução Padrão (Geral)
   milestones?: ProtocolMilestone[]; // Régua de contato (dias específicos)
+  // Per-dose message configuration (March 2026 spec)
+  dose1MessageEnabled?: boolean;
+  dose1ExtraMessage?: string;
+  lastDoseMessageEnabled?: boolean;
+  lastDoseExtraMessage?: string;
 }
 
 export enum DoseStatus {
   PENDING = 'PENDING',
   APPLIED = 'APPLIED',
   APPLIED_LATE = 'APPLIED_LATE',
-  NOT_ACCEPTED = 'NOT_ACCEPTED'
+  NOT_ACCEPTED = 'NOT_ACCEPTED',
+  CONFIRM_APPLICATION = 'CONFIRM_APPLICATION'
 }
 
 export enum PaymentStatus {
@@ -165,11 +171,11 @@ export interface Dose {
   lotNumber: string;
   expiryDate: string;
   status: DoseStatus;
-  
+
   // Calculated Fields
   calculatedNextDate: string;
   daysUntilNext: number;
-  
+
   // Logic
   isLastBeforeConsult: boolean;
   consultationDate?: string;
@@ -188,12 +194,17 @@ export interface Dose {
   // Nurse & Satisfaction (Moved from Treatment)
   nurse: boolean;
   surveyStatus: SurveyStatus;
-  surveyScore?: number; // 1-10
+  surveyScore?: number | null; // 1-10, null = não avaliado (March 2026 bug fix)
   surveyComment?: string;
   clinicalObservations?: string; // Observações clínicas da aplicação
 
   // Link with Inventory
   inventoryLotId?: string; // ID do lote usado
+
+  // Application tracking (March 2026 spec — "Application Data" highlight card)
+  appliedByUserId?: string;
+  appliedAt?: string;
+  appliedBy?: { id: string; name: string };
 
   // Embedded relations (from API includes)
   treatment?: {
@@ -209,8 +220,16 @@ export interface Treatment {
   status: TreatmentStatus; // Substitui o active boolean
   startDate: string;
   nextConsultationDate?: string;
+  // Structured forecast (March 2026: Phase 3 of treatment wizard)
+  nextConsultationMonth?: number;        // 1-12
+  nextConsultationYear?: number;         // e.g. 2026
+  nextConsultationFortnight?: 1 | 2;     // 1ª or 2ª Quinzena
   observations?: string;
-  
+
+  // Doctor (source for {nome_medico} variable)
+  doctorId?: string;
+  doctor?: { id: string; name: string };
+
   // Specific Logic Fields
   plannedDosesBeforeConsult: number; // 1, 2, or 3
 }
@@ -383,6 +402,35 @@ export interface LotPricing {
   expiryDate: string;
   estimatedProfit: number;
   estimatedMargin: number;
+}
+
+// --- MENSAGENS / TEMPLATES (March 2026) ---
+
+export enum MessageTemplateTrigger {
+  CONSENT_TERM = 'CONSENT_TERM',
+  SURVEY_PENDING = 'SURVEY_PENDING',
+  SCHEDULE_CONSULTATION = 'SCHEDULE_CONSULTATION',
+  NEXT_DOSE = 'NEXT_DOSE',
+  LATE_DOSE = 'LATE_DOSE',
+  GENERAL = 'GENERAL'
+}
+
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  trigger: MessageTemplateTrigger;
+  content: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TemplateVariableDef {
+  tag: string;          // e.g. "{nome_paciente}"
+  key: string;          // backend technical name e.g. "first_name_paciente"
+  returns: string;      // human description
+  source: string;       // source area
+  example: string;      // example value
 }
 
 export interface MonthlyReport {

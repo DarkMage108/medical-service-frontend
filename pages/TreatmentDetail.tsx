@@ -2,9 +2,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi } from '../services/api';
-import { formatDate, getStatusColor, addDays, diffInDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS } from '../constants';
+import { formatDate, getStatusColor, addDays, diffInDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS, formatConsultationPeriod } from '../constants';
 import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem } from '../types';
-import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw } from 'lucide-react';
+import FortnightSelector from '../components/ui/FortnightSelector';
+import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw, ChevronRight } from 'lucide-react';
 
 const TreatmentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +29,10 @@ const TreatmentDetail: React.FC = () => {
   const [editProtocolId, setEditProtocolId] = useState('');
   const [editPlannedDoses, setEditPlannedDoses] = useState(0);
   const [editNextConsult, setEditNextConsult] = useState('');
+  // March 2026: structured Quinzena edit fields
+  const [editNextMonth, setEditNextMonth] = useState<number | null>(null);
+  const [editNextYear, setEditNextYear] = useState<number | null>(null);
+  const [editNextFortnight, setEditNextFortnight] = useState<1 | 2 | null>(null);
   const [editStatus, setEditStatus] = useState<TreatmentStatus>(TreatmentStatus.ONGOING);
   const [editStartDate, setEditStartDate] = useState('');
   const [editObservations, setEditObservations] = useState('');
@@ -36,6 +41,11 @@ const TreatmentDetail: React.FC = () => {
   const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
   const [editingCycleNumber, setEditingCycleNumber] = useState<number | null>(null);
   const [isSavingDose, setIsSavingDose] = useState(false);
+  // March 2026: 3-step wizard state for Edit Dose
+  const [doseStep, setDoseStep] = useState<1 | 2 | 3>(1);
+  // Application tracking — populated from dose.appliedBy when editing
+  const [doseAppliedByName, setDoseAppliedByName] = useState<string>('');
+  const [doseAppliedAt, setDoseAppliedAt] = useState<string>('');
 
   const [doseDate, setDoseDate] = useState(new Date().toISOString().split('T')[0]);
   const [doseScheduledDate, setDoseScheduledDate] = useState(''); // Stores the scheduled date for the dose being created/edited
@@ -55,7 +65,8 @@ const TreatmentDetail: React.FC = () => {
 
   const [doseNurseSelection, setDoseNurseSelection] = useState('');
   const [doseSurveyStatus, setDoseSurveyStatus] = useState<SurveyStatus | ''>('');
-  const [doseSurveyScore, setDoseSurveyScore] = useState(0);
+  // March 2026 BUG FIX: default null (not 0) — 0 is not a valid 1-10 score, must be distinguishable from "not evaluated"
+  const [doseSurveyScore, setDoseSurveyScore] = useState<number | null>(null);
   const [doseSurveyComment, setDoseSurveyComment] = useState('');
 
   // Load data from API
@@ -93,6 +104,9 @@ const TreatmentDetail: React.FC = () => {
         setEditProtocolId(treatmentData.protocolId);
         setEditPlannedDoses(treatmentData.plannedDosesBeforeConsult || 0);
         setEditNextConsult(treatmentData.nextConsultationDate ? new Date(treatmentData.nextConsultationDate).toISOString().split('T')[0] : '');
+        setEditNextMonth(treatmentData.nextConsultationMonth ?? null);
+        setEditNextYear(treatmentData.nextConsultationYear ?? null);
+        setEditNextFortnight((treatmentData.nextConsultationFortnight as 1 | 2) ?? null);
         setEditStatus(treatmentData.status);
         setEditStartDate(treatmentData.startDate ? new Date(treatmentData.startDate).toISOString().split('T')[0] : '');
         setEditObservations(treatmentData.observations || '');
@@ -146,6 +160,7 @@ const TreatmentDetail: React.FC = () => {
   const handleOpenEditDose = (dose: Dose) => {
     setEditingDoseId(dose.id);
     setEditingCycleNumber(dose.cycleNumber || null);
+    setDoseStep(1);
     setDoseDate(dose.applicationDate.split('T')[0]);
     setDoseScheduledDate(dose.scheduledDate ? dose.scheduledDate.split('T')[0] : dose.applicationDate.split('T')[0]);
     setDoseLot(dose.lotNumber || '');
@@ -160,10 +175,15 @@ const TreatmentDetail: React.FC = () => {
     setDosePurchased(dose.purchased !== undefined ? dose.purchased : true);
     setDoseDeliveryStatus(dose.deliveryStatus || '');
 
+    // March 2026: keep existing nurse selection when editing; new doses default to 'yes'
     setDoseNurseSelection(dose.nurse ? 'yes' : 'no');
     setDoseSurveyStatus(dose.surveyStatus || '');
-    setDoseSurveyScore(dose.surveyScore || 0);
+    setDoseSurveyScore(dose.surveyScore ?? null);
     setDoseSurveyComment(dose.surveyComment || '');
+
+    // Application tracking (highlight card)
+    setDoseAppliedByName((dose as any).appliedBy?.name || '');
+    setDoseAppliedAt(dose.appliedAt || '');
 
     setShowDoseForm(true);
 
@@ -185,6 +205,7 @@ const TreatmentDetail: React.FC = () => {
   const resetDoseForm = () => {
     setEditingDoseId(null);
     setEditingCycleNumber(null);
+    setDoseStep(1);
     setDoseDate(new Date().toISOString().split('T')[0]);
     setDoseScheduledDate('');
     setDoseLot('');
@@ -197,10 +218,13 @@ const TreatmentDetail: React.FC = () => {
     setDosePurchased(true);
     setDoseIsLast(false);
     setDoseConsultDate('');
-    setDoseNurseSelection('');
-    setDoseSurveyStatus('');
-    setDoseSurveyScore(0);
+    // March 2026 spec: defaults — Enfermeira "Sim", Pesquisa "Aguardando"
+    setDoseNurseSelection('yes');
+    setDoseSurveyStatus(SurveyStatus.WAITING);
+    setDoseSurveyScore(null);
     setDoseSurveyComment('');
+    setDoseAppliedByName('');
+    setDoseAppliedAt('');
   };
 
   const handleOpenNewDose = (cycleNumber?: number, scheduledDate?: Date) => {
@@ -264,25 +288,34 @@ const TreatmentDetail: React.FC = () => {
     e.preventDefault();
     if (!id || !protocol) return;
 
-    if (!doseStatus) { alert("Selecione o Status da Dose"); return; }
-    if (dosePurchased && !dosePayment) { alert("Selecione a Situacao do Pagamento"); return; }
-    // Dados financeiros são obrigatórios apenas quando há compra de medicamento
-    if (dosePurchased) {
-      if (!dosePaymentMethod) {
-        alert("Selecione a Forma de Pagamento");
-        return;
-      }
-      if (!dosePaymentDate) {
-        alert("Informe a Data do Pagamento");
-        return;
-      }
-    }
-    if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); return; }
+    // March 2026 spec: CONFIRM_APPLICATION is a visual-only auto-created status — payment/nurse fields are optional.
+    const isConfirmApplication = doseStatus === DoseStatus.CONFIRM_APPLICATION;
 
-    // Only require inventory lot if purchased, there are available lots, and it's a new dose
-    if (dosePurchased && availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
-      alert("Selecione um lote disponivel no estoque.");
-      return;
+    if (!doseStatus) { alert("Selecione o Status da Dose"); setDoseStep(1); return; }
+
+    if (!isConfirmApplication) {
+      if (dosePurchased && !dosePayment) { alert("Selecione a Situação do Pagamento"); setDoseStep(2); return; }
+      // Forma de pagamento sempre obrigatória; data do pagamento obrigatória APENAS quando "PAGO".
+      if (dosePurchased) {
+        if (!dosePaymentMethod) {
+          alert("Selecione a Forma de Pagamento");
+          setDoseStep(2);
+          return;
+        }
+        if (dosePayment === PaymentStatus.PAID && !dosePaymentDate) {
+          alert("Informe a Data do Pagamento (obrigatório quando status é PAGO)");
+          setDoseStep(2);
+          return;
+        }
+      }
+      if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); setDoseStep(3); return; }
+
+      // Only require inventory lot if purchased, there are available lots, and it's a new dose
+      if (dosePurchased && availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
+        alert("Selecione um lote disponivel no estoque.");
+        setDoseStep(1);
+        return;
+      }
     }
 
     setIsSavingDose(true);
@@ -322,7 +355,8 @@ const TreatmentDetail: React.FC = () => {
         consultationDate: doseIsLast ? (doseConsultDate ? new Date(doseConsultDate).toISOString() : undefined) : undefined,
         nurse: isNurse,
         surveyStatus: finalSurveyStatus,
-        surveyScore: Number(doseSurveyScore),
+        // March 2026 bug fix: send null (not 0) when not evaluated. Score is only set when nurse explicitly fills.
+        surveyScore: doseSurveyScore !== null ? Number(doseSurveyScore) : null,
         surveyComment: doseSurveyComment
       };
 
@@ -349,10 +383,14 @@ const TreatmentDetail: React.FC = () => {
     setIsSavingTreatment(true);
 
     try {
-      const updates = {
+      const updates: any = {
         protocolId: editProtocolId,
         plannedDosesBeforeConsult: Number(editPlannedDoses),
         nextConsultationDate: editNextConsult || undefined,
+        // March 2026: structured Quinzena fields. Send null to clear.
+        nextConsultationMonth: editNextMonth,
+        nextConsultationYear: editNextYear,
+        nextConsultationFortnight: editNextFortnight,
         status: editStatus,
         startDate: editStartDate,
         observations: editObservations,
@@ -389,6 +427,9 @@ const TreatmentDetail: React.FC = () => {
       setEditProtocolId(treatment.protocolId);
       setEditPlannedDoses(treatment.plannedDosesBeforeConsult || 0);
       setEditNextConsult(treatment.nextConsultationDate ? new Date(treatment.nextConsultationDate).toISOString().split('T')[0] : '');
+      setEditNextMonth(treatment.nextConsultationMonth ?? null);
+      setEditNextYear(treatment.nextConsultationYear ?? null);
+      setEditNextFortnight((treatment.nextConsultationFortnight as 1 | 2) ?? null);
       setEditStatus(treatment.status);
       setEditStartDate(treatment.startDate ? new Date(treatment.startDate).toISOString().split('T')[0] : '');
       setEditObservations(treatment.observations || '');
@@ -569,9 +610,18 @@ const TreatmentDetail: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Proxima Consulta (Indicada)</label>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Próxima Consulta (Indicada)</label>
                   <div className="flex items-center mt-1">
-                    {treatment.nextConsultationDate ? (
+                    {(treatment.nextConsultationMonth && treatment.nextConsultationYear && treatment.nextConsultationFortnight) ? (
+                      <span className="font-medium text-slate-800 flex items-center">
+                        <Calendar size={16} className="mr-2 text-slate-400" />
+                        {formatConsultationPeriod(
+                          treatment.nextConsultationMonth,
+                          treatment.nextConsultationYear,
+                          treatment.nextConsultationFortnight,
+                        )}
+                      </span>
+                    ) : treatment.nextConsultationDate ? (
                       <span className="font-medium text-slate-800 flex items-center">
                         <Calendar size={16} className="mr-2 text-slate-400" />
                         {formatDate(treatment.nextConsultationDate)}
@@ -648,15 +698,30 @@ const TreatmentDetail: React.FC = () => {
                 </div>
               </div>
 
+              {/* March 2026: structured Quinzena selector. Legacy date field kept below for transition. */}
+              <FortnightSelector
+                month={editNextMonth}
+                year={editNextYear}
+                fortnight={editNextFortnight}
+                onChange={(m, y, f) => {
+                  setEditNextMonth(m);
+                  setEditNextYear(y);
+                  setEditNextFortnight(f);
+                }}
+              />
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Proxima Consulta (Indicada)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Próxima Consulta (data exata — opcional)
+                  </label>
                   <input
                     type="date"
                     value={editNextConsult}
                     onChange={e => setEditNextConsult(e.target.value)}
                     className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                   />
+                  <p className="text-xs text-slate-500 mt-1">Use a previsão acima quando ainda não houver data exata definida.</p>
                 </div>
               </div>
 
@@ -832,288 +897,381 @@ const TreatmentDetail: React.FC = () => {
         )}
       </div>
 
-      {/* Add/Edit Dose Form */}
+      {/* Add/Edit Dose Form — March 2026: 3-step wizard (Medicamento / Pagamento / Enfermeira) */}
       {showDoseForm && (
-        <div id="dose-form-container" className="bg-slate-50 border border-slate-200 rounded-xl p-6 animate-in fade-in slide-in-from-top-4 shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-4 flex items-center">
-            {editingDoseId ? <Edit size={18} className="mr-2 text-pink-600" /> : <Plus size={18} className="mr-2 text-pink-600" />}
-            {editingDoseId ? 'Editar Dose' : 'Nova Aplicacao'}
-            {editingCycleNumber && (
-              <span className="ml-2 bg-pink-100 text-pink-700 text-xs font-bold px-2 py-1 rounded-full">
-                Dose {editingCycleNumber}
-              </span>
-            )}
-          </h3>
-          <form onSubmit={handleSaveDose} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div id="dose-form-container" className="bg-white border border-slate-200 rounded-xl p-6 animate-in fade-in slide-in-from-top-4 shadow-md">
+          <div className="flex justify-between items-center mb-1">
+            <h3 className="font-bold text-slate-800 flex items-center">
+              {editingDoseId ? <Edit size={18} className="mr-2 text-pink-600" /> : <Plus size={18} className="mr-2 text-pink-600" />}
+              {editingDoseId ? 'Editar Dose' : 'Nova Aplicação'}
+              {editingCycleNumber && (
+                <span className="ml-2 bg-pink-100 text-pink-700 text-xs font-bold px-2 py-1 rounded-full">
+                  Dose {editingCycleNumber}
+                </span>
+              )}
+            </h3>
+            <button
+              type="button"
+              onClick={() => { setShowDoseForm(false); resetDoseForm(); }}
+              className="text-slate-400 hover:text-slate-600 p-1"
+              aria-label="Fechar"
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-            <div className="lg:col-span-1">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Compra de Medicamento?</label>
-              <div className="flex gap-4">
-                <label className={`flex-1 flex items-center justify-center p-2 rounded-lg border cursor-pointer transition-all ${dosePurchased ? 'bg-pink-50 border-pink-500 text-pink-700 ring-1 ring-pink-500' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  <input type="radio" name="purchased" checked={dosePurchased} onChange={() => setDosePurchased(true)} className="sr-only" />
-                  Sim
-                </label>
-                <label className={`flex-1 flex items-center justify-center p-2 rounded-lg border cursor-pointer transition-all ${!dosePurchased ? 'bg-slate-100 border-slate-400 text-slate-800 ring-1 ring-slate-400' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  <input type="radio" name="purchased" checked={!dosePurchased} onChange={() => { setDosePurchased(false); setSelectedInventoryId(''); setDoseLot(''); }} className="sr-only" />
-                  Nao
-                </label>
+          {/* Stepper indicator */}
+          <div className="flex items-center mt-4 mb-6">
+            {([
+              { n: 1, label: 'Medicamento' },
+              { n: 2, label: 'Pagamento' },
+              { n: 3, label: 'Enfermeira' },
+            ] as const).map((s, idx) => (
+              <React.Fragment key={s.n}>
+                <button
+                  type="button"
+                  onClick={() => setDoseStep(s.n as 1 | 2 | 3)}
+                  className="flex flex-col items-center group"
+                >
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                    doseStep === s.n
+                      ? 'bg-slate-800 text-white'
+                      : doseStep > s.n
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    {doseStep > s.n ? <Check size={16} /> : s.n}
+                  </span>
+                  <span className={`text-xs mt-1 ${doseStep === s.n ? 'font-bold text-slate-800' : 'text-slate-500'}`}>
+                    {s.label}
+                  </span>
+                </button>
+                {idx < 2 && (
+                  <span className={`flex-1 h-0.5 mx-2 ${doseStep > s.n ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Application Data highlight card — visible whenever we know who applied */}
+          {editingDoseId && (doseAppliedByName || doseAppliedAt) && (
+            <div className="mb-5 p-4 rounded-lg bg-pink-50 border border-pink-200">
+              <p className="text-xs font-bold text-pink-700 uppercase tracking-wide mb-2 flex items-center">
+                <UserCheck size={14} className="mr-1.5" /> Dados da Aplicação
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {doseAppliedByName && (
+                  <div>
+                    <span className="text-xs text-slate-500 block">Aplicada por</span>
+                    <span className="font-semibold text-slate-800">{doseAppliedByName}</span>
+                  </div>
+                )}
+                {doseAppliedAt && (
+                  <div>
+                    <span className="text-xs text-slate-500 block">Em</span>
+                    <span className="font-semibold text-slate-800">{formatDate(doseAppliedAt)}</span>
+                  </div>
+                )}
               </div>
             </div>
+          )}
 
-            {dosePurchased && (
-              <div className="lg:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Lote (Estoque)
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedInventoryId}
-                    onChange={handleInventorySelection}
-                    disabled={!!editingDoseId && !!selectedInventoryId}
-                    className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
-                  >
-                    <option value="">Selecione um lote do estoque...</option>
-                    {availableLots.map(item => (
-                      <option key={item.id} value={item.id}>
-                        {item.medicationName} - Lote: {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
-                      </option>
-                    ))}
-                  </select>
-                  {availableLots.length === 0 && (
-                    <div className="text-red-500 text-xs flex items-center w-24">
-                      <AlertTriangle size={14} className="mr-1" /> Sem estoque
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+          <form onSubmit={handleSaveDose} className="space-y-6">
 
-            <input type="hidden" value={doseLot} />
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Data da Aplicacao</label>
-              <input
-                type="date"
-                required
-                value={doseDate}
-                onChange={(e) => setDoseDate(e.target.value)}
-                className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status da Dose</label>
-              <select
-                required
-                value={doseStatus}
-                onChange={(e) => {
-                  const newStatus = e.target.value as DoseStatus;
-                  setDoseStatus(newStatus);
-                  if (newStatus === DoseStatus.APPLIED) {
-                    setDoseDate(new Date().toISOString().split('T')[0]);
-                  }
-                }}
-                className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-              >
-                <option value="" disabled>Selecione...</option>
-                <option value={DoseStatus.PENDING}>{DOSE_STATUS_LABELS[DoseStatus.PENDING]}</option>
-                <option value={DoseStatus.APPLIED}>{DOSE_STATUS_LABELS[DoseStatus.APPLIED]}</option>
-              </select>
-            </div>
-
-            {dosePurchased && (
+            {/* ============= STEP 1: Medicamento ============= */}
+            {doseStep === 1 && (
               <>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Medicamento</p>
+
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Situacao Pagamento</label>
-                  <select
-                    required
-                    value={dosePayment}
-                    onChange={(e) => setDosePayment(e.target.value as PaymentStatus)}
-                    className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                  >
-                    <option value="" disabled>Selecione...</option>
-                    <option value={PaymentStatus.WAITING_PIX}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_PIX]}</option>
-                    <option value={PaymentStatus.WAITING_BOLETO}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_BOLETO]}</option>
-                    <option value={PaymentStatus.WAITING_CARD}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_CARD]}</option>
-                    <option value={PaymentStatus.PAID}>{PAYMENT_STATUS_LABELS[PaymentStatus.PAID]}</option>
-                  </select>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Compra de Medicamento?</label>
+                  <div className="flex gap-3">
+                    <label className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all ${dosePurchased ? 'bg-pink-50 border-pink-500 text-pink-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                      <input type="radio" name="purchased" checked={dosePurchased} onChange={() => setDosePurchased(true)} className="sr-only" />
+                      Sim
+                    </label>
+                    <label className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all ${!dosePurchased ? 'bg-slate-100 border-slate-400 text-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                      <input type="radio" name="purchased" checked={!dosePurchased} onChange={() => { setDosePurchased(false); setSelectedInventoryId(''); setDoseLot(''); }} className="sr-only" />
+                      Não
+                    </label>
+                  </div>
                 </div>
 
-                <div className="lg:col-span-2 bg-green-50 p-4 rounded-lg border border-green-200">
-                  <p className="text-xs font-semibold text-green-700 mb-3 uppercase tracking-wide">Dados Financeiros da Venda</p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Forma de Pagamento <span className="text-red-500">*</span>
-                      </label>
+                {dosePurchased && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Lote (Estoque)</label>
+                    <div className="flex gap-2">
                       <select
-                        required
-                        value={dosePaymentMethod}
-                        onChange={(e) => setDosePaymentMethod(e.target.value as 'PIX' | 'CARD' | 'BOLETO' | '')}
-                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                        value={selectedInventoryId}
+                        onChange={handleInventorySelection}
+                        disabled={!!editingDoseId && !!selectedInventoryId}
+                        className="flex-1 w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100"
                       >
-                        <option value="" disabled>Selecione...</option>
-                        <option value="PIX">PIX</option>
-                        <option value="CARD">Cartao</option>
-                        <option value="BOLETO">Boleto</option>
+                        <option value="">Selecione um lote do estoque...</option>
+                        {availableLots.map(item => (
+                          <option key={item.id} value={item.id}>
+                            {item.medicationName} - Lote: {item.lotNumber} - Val: {formatDate(item.expiryDate)} (Qtd: {item.quantity})
+                          </option>
+                        ))}
                       </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        Data do Pagamento (Data da Venda) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="date"
-                        required
-                        min="2020-01-01"
-                        max="2030-12-31"
-                        value={dosePaymentDate}
-                        onChange={(e) => setDosePaymentDate(e.target.value)}
-                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
-                      />
+                      {availableLots.length === 0 && (
+                        <div className="text-red-500 text-xs flex items-center w-24">
+                          <AlertTriangle size={14} className="mr-1" /> Sem estoque
+                        </div>
+                      )}
                     </div>
                   </div>
+                )}
 
-                  <p className="text-xs text-slate-600 mt-2 italic">
-                    Esta data sera registrada como a data oficial da venda para fins financeiros.
-                  </p>
-                </div>
+                <input type="hidden" value={doseLot} />
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Entrega</label>
-                  <select
-                    value={doseDeliveryStatus}
-                    onChange={(e) => setDoseDeliveryStatus(e.target.value as any)}
-                    className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="waiting">Aguardando Entrega</option>
-                    <option value="delivered">Entregue</option>
-                  </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Data da Aplicação <span className="text-red-500">*</span></label>
+                    <input
+                      type="date"
+                      required
+                      value={doseDate}
+                      onChange={(e) => setDoseDate(e.target.value)}
+                      className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Status da Dose <span className="text-red-500">*</span></label>
+                    <select
+                      required
+                      value={doseStatus}
+                      onChange={(e) => setDoseStatus(e.target.value as DoseStatus)}
+                      className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                    >
+                      <option value="" disabled>Selecione...</option>
+                      <option value={DoseStatus.PENDING}>{DOSE_STATUS_LABELS[DoseStatus.PENDING]}</option>
+                      <option value={DoseStatus.APPLIED}>{DOSE_STATUS_LABELS[DoseStatus.APPLIED]}</option>
+                      <option value={DoseStatus.CONFIRM_APPLICATION}>{DOSE_STATUS_LABELS[DoseStatus.CONFIRM_APPLICATION]}</option>
+                    </select>
+                  </div>
                 </div>
               </>
             )}
 
-            <div className="lg:col-span-4 flex flex-col md:flex-row items-center gap-4 bg-white p-4 rounded-lg border border-slate-200">
-              <div className="flex items-center h-5">
-                <input
-                  id="isLast"
-                  type="checkbox"
-                  checked={doseIsLast}
-                  onChange={(e) => {
-                    const isChecked = e.target.checked;
-                    setDoseIsLast(isChecked);
+            {/* ============= STEP 2: Pagamento e Entrega ============= */}
+            {doseStep === 2 && (
+              <>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Pagamento & Entrega</p>
 
-                    // Auto-fill with treatment's next consultation date if available
-                    if (isChecked && treatment?.nextConsultationDate && !doseConsultDate) {
-                      setDoseConsultDate(treatment.nextConsultationDate.split('T')[0]);
-                    }
-                  }}
-                  className="w-4 h-4 text-pink-600 border-slate-300 rounded focus:ring-pink-500"
-                />
-                <label htmlFor="isLast" className="ml-2 text-sm font-medium text-slate-900">Esta e a ultima dose antes da consulta?</label>
-              </div>
-              {doseIsLast && (
-                <div className="flex-1 w-full animate-in fade-in duration-200">
-                  <input
-                    type="date"
-                    value={doseConsultDate}
-                    onChange={e => setDoseConsultDate(e.target.value)}
-                    className="w-full text-sm border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                    placeholder="Data Agendada da Consulta (Opcional)"
-                  />
-                </div>
-              )}
-            </div>
+                {!dosePurchased ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600">
+                    Esta dose não envolveu compra de medicamento. Avance para a etapa Enfermeira.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Situação Pagamento <span className="text-red-500">*</span></label>
+                      <select
+                        required
+                        value={dosePayment}
+                        onChange={(e) => setDosePayment(e.target.value as PaymentStatus)}
+                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                      >
+                        <option value="" disabled>Selecione...</option>
+                        <option value={PaymentStatus.WAITING_PIX}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_PIX]}</option>
+                        <option value={PaymentStatus.WAITING_BOLETO}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_BOLETO]}</option>
+                        <option value={PaymentStatus.WAITING_CARD}>{PAYMENT_STATUS_LABELS[PaymentStatus.WAITING_CARD]}</option>
+                        <option value={PaymentStatus.PAID}>{PAYMENT_STATUS_LABELS[PaymentStatus.PAID]}</option>
+                      </select>
+                    </div>
 
-            <div className="lg:col-span-4 border-t border-slate-100 pt-4">
-              <h4 className="font-bold text-slate-700 mb-3 flex items-center">
-                <UserCheck size={16} className="mr-2 text-pink-600" />
-                Acompanhamento e Satisfacao
-              </h4>
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                      <p className="text-xs font-semibold text-green-700 mb-3 uppercase tracking-wide">Dados Financeiros da Venda</p>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-slate-100/50 p-4 rounded-lg">
-                <div className="md:col-span-1">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">1. Enfermeira</label>
-                  <select
-                    required
-                    value={doseNurseSelection}
-                    onChange={e => setDoseNurseSelection(e.target.value)}
-                    className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                  >
-                    <option value="" disabled>Selecione...</option>
-                    <option value="yes">Sim</option>
-                    <option value="no">Nao</option>
-                  </select>
-                </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Forma de Pagamento <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            required
+                            value={dosePaymentMethod}
+                            onChange={(e) => setDosePaymentMethod(e.target.value as 'PIX' | 'CARD' | 'BOLETO' | '')}
+                            className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                          >
+                            <option value="" disabled>Selecione...</option>
+                            <option value="PIX">PIX</option>
+                            <option value="CARD">Cartão</option>
+                            <option value="BOLETO">Boleto</option>
+                          </select>
+                        </div>
 
-                <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 ${doseNurseSelection !== 'yes' ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">2. Pesquisa</label>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">
+                            Data do Pagamento {dosePayment === PaymentStatus.PAID && <span className="text-red-500">*</span>}
+                          </label>
+                          <input
+                            type="date"
+                            required={dosePayment === PaymentStatus.PAID}
+                            min="2020-01-01"
+                            max="2030-12-31"
+                            value={dosePaymentDate}
+                            onChange={(e) => setDosePaymentDate(e.target.value)}
+                            className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 bg-white"
+                          />
+                          <p className="text-xs text-slate-500 mt-1 italic">
+                            {dosePayment === PaymentStatus.PAID
+                              ? 'Esta data será registrada como a data oficial da venda.'
+                              : 'Obrigatória apenas quando a Situação for "PAGO".'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Entrega</label>
+                      <select
+                        value={doseDeliveryStatus}
+                        onChange={(e) => setDoseDeliveryStatus(e.target.value as any)}
+                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                      >
+                        <option value="">Selecione...</option>
+                        <option value="waiting">Aguardando Entrega</option>
+                        <option value="delivered">Entregue</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ============= STEP 3: Enfermeira ============= */}
+            {doseStep === 3 && (
+              <>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Acompanhamento & Satisfação</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div className="md:col-span-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">1. Enfermeira</label>
                     <select
-                      value={doseSurveyStatus}
-                      onChange={e => setDoseSurveyStatus(e.target.value as SurveyStatus)}
+                      required
+                      value={doseNurseSelection}
+                      onChange={e => setDoseNurseSelection(e.target.value)}
                       className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                     >
                       <option value="" disabled>Selecione...</option>
-                      {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{SURVEY_STATUS_LABELS[s]}</option>)}
+                      <option value="yes">Sim</option>
+                      <option value="no">Não</option>
                     </select>
                   </div>
-                  <div className="md:col-span-2 flex items-end gap-2">
-                    <div className={`flex-1 transition-opacity ${doseSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40 pointer-events-none' : ''}`}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">3. Nota</label>
+
+                  <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 ${doseNurseSelection !== 'yes' ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">2. Pesquisa</label>
+                      <select
+                        value={doseSurveyStatus}
+                        onChange={e => setDoseSurveyStatus(e.target.value as SurveyStatus)}
+                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                      >
+                        <option value="" disabled>Selecione...</option>
+                        {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{SURVEY_STATUS_LABELS[s]}</option>)}
+                      </select>
+                    </div>
+                    <div className="md:col-span-2 flex items-end gap-2">
+                      <div className={`flex-1 transition-opacity ${doseSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40 pointer-events-none' : ''}`}>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">3. Nota (1-10)</label>
+                        <select
+                          value={doseSurveyScore === null ? '' : String(doseSurveyScore)}
+                          onChange={e => setDoseSurveyScore(e.target.value === '' ? null : Number(e.target.value))}
+                          className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                          disabled={doseSurveyStatus !== SurveyStatus.ANSWERED}
+                        >
+                          <option value="">— Selecione</option>
+                          {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <span className={`w-10 h-10 flex items-center justify-center bg-white border border-slate-200 font-bold rounded-lg text-slate-700 mb-1 ${doseSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40' : ''}`}>
+                        {doseSurveyScore !== null ? doseSurveyScore : '—'}
+                      </span>
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">4. Comentário</label>
                       <input
-                        type="range" min="0" max="10" step="1"
-                        value={doseSurveyScore}
-                        onChange={e => setDoseSurveyScore(Number(e.target.value))}
-                        className="w-full accent-pink-600"
-                        disabled={doseSurveyStatus !== SurveyStatus.ANSWERED}
+                        type="text"
+                        value={doseSurveyComment}
+                        onChange={e => setDoseSurveyComment(e.target.value)}
+                        placeholder="Observação sobre o atendimento..."
+                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
                       />
                     </div>
-                    <span className={`w-10 h-10 flex items-center justify-center bg-white border border-slate-200 font-bold rounded-lg text-slate-700 mb-1 ${doseSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40' : ''}`}>
-                      {doseSurveyScore}
-                    </span>
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">4. Comentario</label>
-                    <input
-                      type="text"
-                      value={doseSurveyComment}
-                      onChange={e => setDoseSurveyComment(e.target.value)}
-                      placeholder="Observacao sobre o atendimento..."
-                      className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                    />
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="lg:col-span-4 flex justify-end gap-3 pt-4 border-t border-slate-200">
+                <div className="flex flex-col md:flex-row items-center gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div className="flex items-center h-5">
+                    <input
+                      id="isLast"
+                      type="checkbox"
+                      checked={doseIsLast}
+                      onChange={(e) => {
+                        const isChecked = e.target.checked;
+                        setDoseIsLast(isChecked);
+                        if (isChecked && treatment?.nextConsultationDate && !doseConsultDate) {
+                          setDoseConsultDate(treatment.nextConsultationDate.split('T')[0]);
+                        }
+                      }}
+                      className="w-4 h-4 text-pink-600 border-slate-300 rounded focus:ring-pink-500"
+                    />
+                    <label htmlFor="isLast" className="ml-2 text-sm font-medium text-slate-900">Esta é a última dose antes da consulta?</label>
+                  </div>
+                  {doseIsLast && (
+                    <div className="flex-1 w-full animate-in fade-in duration-200">
+                      <input
+                        type="date"
+                        value={doseConsultDate}
+                        onChange={e => setDoseConsultDate(e.target.value)}
+                        className="w-full text-sm border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                        placeholder="Data Agendada da Consulta (Opcional)"
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Step nav buttons */}
+            <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
               <button
                 type="button"
-                onClick={() => {
-                  setShowDoseForm(false);
-                  resetDoseForm();
-                }}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                onClick={() => doseStep > 1 ? setDoseStep((doseStep - 1) as 1 | 2 | 3) : (setShowDoseForm(false), resetDoseForm())}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg flex items-center"
               >
-                Cancelar
+                {doseStep > 1 ? <><ArrowLeft size={16} className="mr-1.5" /> Voltar</> : 'Cancelar'}
               </button>
-              <button
-                type="submit"
-                disabled={isSavingDose}
-                className="flex items-center px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
-                {editingDoseId ? (isSavingDose ? 'Atualizando...' : 'Atualizar Dose') : (isSavingDose ? 'Salvando...' : 'Salvar Nova Dose')}
-              </button>
+
+              {doseStep < 3 ? (
+                <button
+                  type="button"
+                  onClick={() => setDoseStep((doseStep + 1) as 1 | 2 | 3)}
+                  className="flex items-center px-5 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
+                >
+                  Próximo
+                  <ChevronRight size={16} className="ml-1.5" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={isSavingDose}
+                  className="flex items-center px-5 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow"
+                >
+                  {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
+                  {editingDoseId ? (isSavingDose ? 'Atualizando...' : 'Atualizar Dose') : (isSavingDose ? 'Salvando...' : 'Salvar Dose')}
+                </button>
+              )}
             </div>
           </form>
           <div className="mt-4 text-xs text-slate-500 flex items-center">
             <Activity size={14} className="mr-1" />
-            Proxima aplicacao estimada em: <span className="font-bold ml-1">{formatDate(previewNextDate.toISOString())}</span>
+            Próxima aplicação estimada em: <span className="font-bold ml-1">{formatDate(previewNextDate.toISOString())}</span>
           </div>
         </div>
       )}

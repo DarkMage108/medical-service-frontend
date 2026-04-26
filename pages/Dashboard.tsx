@@ -99,26 +99,19 @@ const Dashboard: React.FC = () => {
   const [editIsLast, setEditIsLast] = useState(false);
   const [editNurse, setEditNurse] = useState('no');
   const [editSurveyStatus, setEditSurveyStatus] = useState<SurveyStatus | ''>('');
-  const [editScore, setEditScore] = useState(0);
+  const [editScore, setEditScore] = useState<number | null>(null);
   const [editComment, setEditComment] = useState('');
   const [editPurchased, setEditPurchased] = useState(true);
 
-  // Pagination States (10 items per page)
+  // Pagination States (10 items per page) — March 2026: only Activity, Messages, UpcomingDoses remain on dashboard
   const ITEMS_PER_PAGE = 10;
   const [activityPage, setActivityPage] = useState(1);
   const [messagesPage, setMessagesPage] = useState(1);
-  const [surveysPage, setSurveysPage] = useState(1);
-  const [consentPage, setConsentPage] = useState(1);
-  const [consultsPage, setConsultsPage] = useState(1);
-  const [overduePage, setOverduePage] = useState(1);
   const [upcomingDosesPage, setUpcomingDosesPage] = useState(1);
 
   // Sort direction states (true = ascending/closest first, false = descending/farthest first)
   const [activitySortAsc, setActivitySortAsc] = useState(true);
   const [messagesSortAsc, setMessagesSortAsc] = useState(true);
-  const [surveysSortAsc, setSurveysSortAsc] = useState(true);
-  const [consultsSortAsc, setConsultsSortAsc] = useState(true);
-  const [overdueSortAsc, setOverdueSortAsc] = useState(true);
   const [upcomingDosesSortAsc, setUpcomingDosesSortAsc] = useState(true);
 
   // Load data from API
@@ -298,7 +291,8 @@ const Dashboard: React.FC = () => {
   setEditIsLast(dose.isLastBeforeConsult);
   setEditNurse(dose.nurse ? 'yes' : 'no');
   setEditSurveyStatus(dose.surveyStatus);
-  setEditScore(dose.surveyScore || 0);
+  // March 2026 bug fix: null = não avaliado, distinct from a real score of 0
+  setEditScore(dose.surveyScore ?? null);
   setEditComment(dose.surveyComment || '');
   setEditPurchased(dose.purchased !== false);
   setDoseModalOpen(true);
@@ -322,7 +316,7 @@ const Dashboard: React.FC = () => {
     isLastBeforeConsult: editIsLast,
     nurse: isNurse,
     surveyStatus: finalSurveyStatus,
-    surveyScore: Number(editScore),
+    surveyScore: editScore !== null && editScore !== undefined ? Number(editScore) : null,
     surveyComment: editComment
     };
 
@@ -422,6 +416,28 @@ const Dashboard: React.FC = () => {
   }, []);
 
   // Stats - Active patients are those with ongoing treatments (scheduled events)
+  // March 2026 — Operational counters (Painel de Controle Operacional)
+  // ENTREGAR: doses with status PAID + delivery waiting
+  // A PAGAR:  doses pending payment (any WAITING_*)
+  // ENFERMAGEM: nurse-assigned doses still pending application
+  const operationalCounters = useMemo(() => {
+    const toDeliver = doses.filter(d => d.paymentStatus === PaymentStatus.PAID && d.deliveryStatus === 'waiting');
+    const toPay = doses.filter(d => [
+      PaymentStatus.WAITING_PIX, PaymentStatus.WAITING_CARD, PaymentStatus.WAITING_BOLETO,
+    ].includes(d.paymentStatus));
+    const nursingPending = doses.filter(d => d.nurse === true && d.status === DoseStatus.PENDING);
+    return {
+      toDeliver,
+      toPay,
+      nursingPending,
+    };
+  }, [doses]);
+
+  // March 2026 — doses awaiting Dose 1 confirmation (CONFIRM_APPLICATION status)
+  const confirmApplicationDoses = useMemo(() => {
+    return doses.filter(d => d.status === DoseStatus.CONFIRM_APPLICATION);
+  }, [doses]);
+
   const patientStats = useMemo(() => {
   const total = patients.length;
   // Get patient IDs that have ongoing treatments
@@ -510,13 +526,13 @@ const Dashboard: React.FC = () => {
     const dateA = a.status === DoseStatus.PENDING ? addDays(a.applicationDate, 0) : addDays(a.calculatedNextDate, 0);
     const dateB = b.status === DoseStatus.PENDING ? addDays(b.applicationDate, 0) : addDays(b.calculatedNextDate, 0);
     const diff = dateA.getTime() - dateB.getTime();
-    if (diff !== 0) return overdueSortAsc ? diff : -diff;
+    if (diff !== 0) return diff;
     // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, overdueSortAsc, treatments, patients, protocols, TODAY]);
+  }, [doses, treatments, patients, protocols, TODAY]);
 
   // Upcoming Scheduled Doses (future doses not yet applied)
   // IMPORTANT: Uses SCHEDULED dates from protocol (startDate + frequencyDays * cycleNumber)
@@ -539,8 +555,12 @@ const Dashboard: React.FC = () => {
     const startDate = addDays(treatment.startDate, 0); // Normalize date
     const frequencyDays = protocol.frequencyDays || 28;
 
-    // Count applied doses (APPLIED_LATE counts as applied)
-    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE).length;
+    // Count applied doses (APPLIED_LATE / CONFIRM_APPLICATION count as applied per March 2026 spec)
+    const appliedCount = treatmentDoses.filter(d =>
+      d.status === DoseStatus.APPLIED ||
+      d.status === DoseStatus.APPLIED_LATE ||
+      d.status === DoseStatus.CONFIRM_APPLICATION
+    ).length;
 
     // If all planned doses are applied, treatment is complete
     if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
@@ -550,8 +570,12 @@ const Dashboard: React.FC = () => {
       const cycleNumber = i + 1;
       const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
 
-      // If dose exists and is APPLIED (or APPLIED_LATE), skip it
-      if (existingDose && (existingDose.status === DoseStatus.APPLIED || existingDose.status === DoseStatus.APPLIED_LATE)) continue;
+      // If dose exists and is APPLIED / APPLIED_LATE / CONFIRM_APPLICATION, skip it
+      if (existingDose && (
+        existingDose.status === DoseStatus.APPLIED ||
+        existingDose.status === DoseStatus.APPLIED_LATE ||
+        existingDose.status === DoseStatus.CONFIRM_APPLICATION
+      )) continue;
 
       // Calculate SCHEDULED date based on protocol (not when dose was added)
       // Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
@@ -564,8 +588,9 @@ const Dashboard: React.FC = () => {
 
       const daysUntil = diffInDays(scheduledDate, TODAY);
 
-      // Only include future doses (daysUntil >= 0 means today or future)
-      if (daysUntil >= 0) {
+      // March 2026 spec — main dashboard "Próximas Doses" filtered to next 7 days only.
+      // (Full list lives on the new sidebar page /doses.)
+      if (daysUntil >= 0 && daysUntil <= 7) {
         // Check if last applied dose was purchased
         const appliedDoses = treatmentDoses
           .filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE)
@@ -608,13 +633,13 @@ const Dashboard: React.FC = () => {
     return isPendingStatus;
   }).sort((a, b) => {
     const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
-    if (diff !== 0) return surveysSortAsc ? diff : -diff;
+    if (diff !== 0) return diff;
     // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, surveysSortAsc, treatments, patients]);
+  }, [doses, treatments, patients]);
 
   // Approaching Consults
   const approachingConsults = useMemo(() => {
@@ -630,13 +655,13 @@ const Dashboard: React.FC = () => {
     if (!a.consultationDate) return -1;
     if (!b.consultationDate) return 1;
     const diff = new Date(a.consultationDate).getTime() - new Date(b.consultationDate).getTime();
-    if (diff !== 0) return consultsSortAsc ? diff : -diff;
+    if (diff !== 0) return diff;
     // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, consultsSortAsc, treatments, patients]);
+  }, [doses, treatments, patients]);
 
   // Get patient IDs with ongoing treatments (for filtering active patients)
   const patientsWithOngoingTreatmentsSet = useMemo(() => {
@@ -647,17 +672,7 @@ const Dashboard: React.FC = () => {
   );
   }, [treatments]);
 
-  // Patients by Diagnosis (only those with ongoing treatments)
-  const patientsByDiagnosis = useMemo(() => {
-  const counts: Record<string, number> = {};
-  patients
-    .filter(p => patientsWithOngoingTreatmentsSet.has(p.id))
-    .forEach(p => {
-      const diag = p.mainDiagnosis || 'Não Informado';
-      counts[diag] = (counts[diag] || 0) + 1;
-    });
-  return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [patients, patientsWithOngoingTreatmentsSet]);
+  // March 2026 spec 4.5: "Pacientes Ativos por Diagnóstico" moved to /pacientes (PatientList) — memo removed.
 
   // Consent Missing (only for patients with ongoing treatments)
   const patientsMissingConsent = useMemo(() => {
@@ -922,43 +937,134 @@ const Dashboard: React.FC = () => {
     </div>
     )}
 
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-    <KpiCard
-      title="Pacientes Ativos" subtitle="Em acompanhamento" value={patientStats.active}
-      icon={<UserCheck size={20} className="text-green-600" />} accentColor="green"
-      onClick={() => navigate('/pacientes', { state: { statusFilter: 'active' } })}
-    />
-    <KpiCard
-      title="Pacientes Inativos" subtitle="Sem tratamento vigente" value={patientStats.inactive}
-      icon={<UserX size={20} className="text-gray-600" />} accentColor="gray"
-      onClick={() => navigate('/pacientes', { state: { statusFilter: 'inactive' } })}
-    />
-    <KpiCard
-      title="Termos Pendentes" value={patientsMissingConsent.length}
-      icon={<FileWarning size={20} className="text-cyan-600" />} accentColor="cyan"
-      onClick={() => scrollToSection('section-consent')}
-    />
-    <KpiCard
-      title="Doses em Atraso" value={overdueDoses.length}
-      icon={<AlertCircle size={20} className="text-red-600" />} accentColor="red"
-      onClick={() => scrollToSection('section-overdue')}
-    />
-    <KpiCard
-      title="Agendar Consulta" value={approachingConsults.length}
-      icon={<Calendar size={20} className="text-purple-600" />} accentColor="purple"
-      onClick={() => scrollToSection('section-consults')}
-    />
-    <KpiCard
-      title="Pesquisa Enfermeira" value={pendingSurveys.length}
-      icon={<MessageCircle size={20} className="text-blue-600" />} accentColor="blue"
-      onClick={() => scrollToSection('section-surveys')}
-    />
-    <KpiCard
-      title="Próximas Doses" subtitle="Doses Programadas" value={upcomingScheduledDoses.length}
-      icon={<Syringe size={20} className="text-teal-600" />} accentColor="teal"
-      onClick={() => scrollToSection('section-upcoming-doses')}
-    />
+    {/* ============= Painel de Controle Operacional (March 2026 spec) ============= */}
+    {/* 3 new action counters — daily operational queues */}
+    <div>
+      <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ação Operacional</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <KpiCard
+          title="Entregar"
+          subtitle="Pago + Aguardando Entrega"
+          value={operationalCounters.toDeliver.length}
+          icon={<Bike size={20} className="text-orange-600" />} accentColor="orange"
+          onClick={() => navigate('/doses', { state: { filter: 'to-deliver' } })}
+        />
+        <KpiCard
+          title="A Pagar"
+          subtitle="Doses pendentes de pagamento"
+          value={operationalCounters.toPay.length}
+          icon={<AlertCircle size={20} className="text-amber-600" />} accentColor="amber"
+          onClick={() => navigate('/doses', { state: { filter: 'to-pay' } })}
+        />
+        <KpiCard
+          title="Enfermagem"
+          subtitle="Aguardando aplicação"
+          value={operationalCounters.nursingPending.length}
+          icon={<Syringe size={20} className="text-rose-600" />} accentColor="rose"
+          onClick={() => navigate('/enfermagem')}
+        />
+      </div>
     </div>
+
+    {/* General KPIs */}
+    <div>
+      <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Indicadores Gerais</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <KpiCard
+          title="Pacientes Ativos" subtitle="Em acompanhamento" value={patientStats.active}
+          icon={<UserCheck size={20} className="text-green-600" />} accentColor="green"
+          onClick={() => navigate('/pacientes', { state: { statusFilter: 'active' } })}
+        />
+        <KpiCard
+          title="Pacientes Inativos" subtitle="Sem tratamento vigente" value={patientStats.inactive}
+          icon={<UserX size={20} className="text-gray-600" />} accentColor="gray"
+          onClick={() => navigate('/pacientes', { state: { statusFilter: 'inactive' } })}
+        />
+        <KpiCard
+          title="Termos Pendentes" value={patientsMissingConsent.length}
+          icon={<FileWarning size={20} className="text-cyan-600" />} accentColor="cyan"
+          onClick={() => navigate('/termos-consentimento')}
+        />
+        <KpiCard
+          title="Doses em Atraso" value={overdueDoses.length}
+          icon={<AlertCircle size={20} className="text-red-600" />} accentColor="red"
+          onClick={() => navigate('/doses', { state: { filter: 'overdue' } })}
+        />
+        <KpiCard
+          title="Agendar Consulta" value={approachingConsults.length}
+          icon={<Calendar size={20} className="text-purple-600" />} accentColor="purple"
+          onClick={() => navigate('/consultas')}
+        />
+        <KpiCard
+          title="Pesquisa Enfermeira" value={pendingSurveys.length}
+          icon={<MessageCircle size={20} className="text-blue-600" />} accentColor="blue"
+          onClick={() => navigate('/pesquisa-enfermagem')}
+        />
+        <KpiCard
+          title="Próximas Doses (7d)" subtitle="Próximos 7 dias" value={upcomingScheduledDoses.length}
+          icon={<Syringe size={20} className="text-teal-600" />} accentColor="teal"
+          onClick={() => scrollToSection('section-upcoming-doses')}
+        />
+        <KpiCard
+          title="Confirmar Aplicação" subtitle="Dose 1 aguardando" value={confirmApplicationDoses.length}
+          icon={<CheckCircle2 size={20} className="text-pink-600" />} accentColor="pink"
+          onClick={() => scrollToSection('section-confirm-application')}
+        />
+      </div>
+    </div>
+
+    {/* ============= Confirmar Aplicação table (March 2026 — patients with auto-created Dose 1 awaiting confirmation) ============= */}
+    {confirmApplicationDoses.length > 0 && (
+      <SectionCard
+        id="section-confirm-application"
+        title="Pacientes Aguardando Confirmação da Dose 1"
+        icon={<CheckCircle2 size={18} className="text-pink-600" />}
+        countBadge={confirmApplicationDoses.length}
+        badgeColor="bg-pink-100 text-pink-800"
+        headerBg="bg-pink-50/30"
+      >
+        <div className="p-2 bg-pink-50 text-pink-800 text-xs text-center border-b border-pink-100">
+          A 1ª dose foi auto-registrada. A enfermagem deve completar lote/pagamento e atualizar para "Aplicada".
+        </div>
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+            <tr>
+              <th className="px-6 py-3">Paciente</th>
+              <th className="px-6 py-3">Responsável</th>
+              <th className="px-6 py-3">Data Início</th>
+              <th className="px-6 py-3">Protocolo</th>
+              <th className="px-6 py-3 text-right">Ação</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {confirmApplicationDoses.map(dose => {
+              const treatment = treatments.find(t => t.id === dose.treatmentId);
+              const patient = treatment ? patients.find(p => p.id === treatment.patientId) : null;
+              const protocol = treatment ? protocols.find(p => p.id === treatment.protocolId) : null;
+              return (
+                <tr key={dose.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-3 font-medium text-slate-700">{patient?.fullName || '—'}</td>
+                  <td className="px-6 py-3 text-slate-600">{patient?.guardian?.fullName || '—'}</td>
+                  <td className="px-6 py-3">{formatDate(dose.applicationDate)}</td>
+                  <td className="px-6 py-3 text-slate-600">{protocol?.name || '—'}</td>
+                  <td className="px-6 py-3 text-right">
+                    {treatment && (
+                      <button
+                        onClick={() => navigate(`/tratamento/${treatment.id}`, { state: { editDoseId: dose.id } })}
+                        className="text-pink-600 hover:text-pink-800 font-medium text-xs flex items-center justify-end ml-auto"
+                      >
+                        Confirmar Aplicação
+                        <ChevronRight size={14} className="ml-0.5" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </SectionCard>
+    )}
 
     {/* Activity Window */}
     <SectionCard
@@ -1169,245 +1275,20 @@ const Dashboard: React.FC = () => {
     />
     </SectionCard>
 
-    {/* Grid (Diagnosis / Survey) */}
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    {/* Patients by Diagnosis */}
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 lg:col-span-1">
-      <h3 className="font-bold text-slate-800 mb-4 flex items-center">
-      <Activity size={18} className="mr-2 text-pink-600" />
-      Pacientes Ativos por Diagnóstico
-      </h3>
-      <div className="space-y-4">
-      {patientsByDiagnosis.map((item) => (
-        <div
-        key={item.name}
-        onClick={() => navigate('/pacientes', { state: { diagnosisFilter: item.name } })}
-        className="group cursor-pointer hover:bg-slate-50 p-2 -mx-2 rounded-lg transition-colors"
-        >
-        <div className="flex justify-between text-sm mb-1">
-          <span className="font-medium text-slate-700 group-hover:text-pink-600 transition-colors">{item.name}</span>
-          <span className="font-bold text-slate-900">{item.value}</span>
-        </div>
-        <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-          <div className={`h-2.5 rounded-full`} style={{ width: `${(item.value / patientsWithOngoingTreatmentsSet.size) * 100}%` }}>
-          <div className={`h-full w-full ${getDiagnosisColor(item.name).split(' ')[0]}`}></div>
-          </div>
-        </div>
-        </div>
-      ))}
-      </div>
-    </div>
+    {/* March 2026 spec 4.4 — moved off main page to sidebar pages:
+        - Termo de Consentimento → /termos-consentimento
+        - Doses em Atraso + Próximas Doses → /doses
+        - Datas de Consultas (Agendar Consulta) → /consultas
+        - Pesquisa Enfermagem → /pesquisa-enfermagem
+        Spec 4.5 — moved to Patients tab:
+        - Pacientes Ativos por Diagnóstico
+        - Pacientes Ativos / Inativos
+        Main dashboard now keeps: KPIs, Activity Window, Próximas Mensagens,
+        operational counters (ENTREGAR/A PAGAR/ENFERMAGEM), Confirmar Aplicação,
+        and Próximas Doses (filtered to next 7 days). */}
 
-    {/* Pending Surveys */}
-    <div className="lg:col-span-2">
-      <SectionCard id="section-surveys" title="Aguardando Resposta da Pesquisa" icon={<MessageCircle size={18} className="text-blue-600" />} countBadge={pendingSurveys.length} badgeColor="bg-blue-100 text-blue-800" headerBg="bg-blue-50/30">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
-        <tr>
-          <th className="px-6 py-3">
-            <div className="flex items-center gap-1">
-              Data
-              <SortButton isAsc={surveysSortAsc} onToggle={() => { setSurveysSortAsc(!surveysSortAsc); setSurveysPage(1); }} />
-            </div>
-          </th>
-          <th className="px-6 py-3">Paciente</th>
-          <th className="px-6 py-3">Responsável</th>
-          <th className="px-6 py-3">Status</th>
-          <th className="px-6 py-3 text-right">Ação</th>
-        </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-        {pendingSurveys.length === 0 ? (
-          <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma pesquisa pendente.</td></tr>
-        ) : (
-          paginate(pendingSurveys, surveysPage).map((dose: Dose) => {
-          const patient = getPatientByTreatmentId(dose.treatmentId);
-          return (
-            <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`, { state: { editDoseId: dose.id } })} className="hover:bg-blue-50/30 cursor-pointer transition-colors">
-            <td className="px-6 py-3 font-bold text-slate-700">{formatDate(dose.applicationDate)}</td>
-            <td className="px-6 py-3 font-medium text-slate-800">{patient?.fullName || dose.treatment?.patient?.fullName || 'Desconhecido'}</td>
-            <td className="px-6 py-3 text-slate-600">
-              <div>{patient?.guardian?.fullName || '-'}</div>
-              <div className="text-xs text-slate-400">{patient?.guardian?.phonePrimary}</div>
-            </td>
-            <td className="px-6 py-3">
-              <select
-              value={dose.surveyStatus || SurveyStatus.NOT_SENT}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => handleQuickUpdate(dose.id, 'surveyStatus', e.target.value)}
-              className={`text-xs px-2 py-1 rounded-full border-0 font-medium cursor-pointer focus:ring-2 focus:ring-blue-500 ${
-                dose.surveyStatus === SurveyStatus.SENT
-                ? 'bg-blue-100 text-blue-700'
-                : dose.surveyStatus === SurveyStatus.ANSWERED
-                ? 'bg-emerald-100 text-emerald-700'
-                : dose.surveyStatus === SurveyStatus.NOT_ANSWERED
-                ? 'bg-amber-100 text-amber-700'
-                : 'bg-slate-100 text-slate-600'
-              }`}
-              >
-              <option value={SurveyStatus.NOT_SENT}>{SURVEY_STATUS_LABELS[SurveyStatus.NOT_SENT]}</option>
-              <option value={SurveyStatus.SENT}>{SURVEY_STATUS_LABELS[SurveyStatus.SENT]}</option>
-              <option value={SurveyStatus.ANSWERED}>{SURVEY_STATUS_LABELS[SurveyStatus.ANSWERED]}</option>
-              <option value={SurveyStatus.NOT_ANSWERED}>{SURVEY_STATUS_LABELS[SurveyStatus.NOT_ANSWERED]}</option>
-              </select>
-            </td>
-            <td className="px-6 py-3 text-right">
-              <span className="text-blue-600 text-xs font-bold hover:underline">Registrar Resposta</span>
-            </td>
-            </tr>
-          );
-          })
-        )}
-        </tbody>
-      </table>
-      <Pagination
-        currentPage={surveysPage}
-        totalPages={getTotalPages(pendingSurveys.length)}
-        onPageChange={setSurveysPage}
-      />
-      </SectionCard>
-    </div>
-    </div>
-
-    {/* Consent Pending */}
-    <SectionCard id="section-consent" title="Pendência: Termo de Consentimento" icon={<FileWarning size={18} className="text-cyan-600" />} countBadge={patientsMissingConsent.length} badgeColor="bg-cyan-100 text-cyan-800" headerBg="bg-cyan-50/30">
-    <table className="w-full text-sm text-left">
-      <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
-      <tr>
-        <th className="px-6 py-3">Paciente</th>
-        <th className="px-6 py-3">Diagnóstico</th>
-        <th className="px-6 py-3">Responsável</th>
-        <th className="px-6 py-3 text-right">Ação</th>
-      </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-      {patientsMissingConsent.length === 0 ? (
-        <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Todos os pacientes possuem termo anexado.</td></tr>
-      ) : (
-        paginate(patientsMissingConsent, consentPage).map((patient: PatientFull) => (
-        <tr key={patient.id} onClick={() => navigate(`/pacientes/${patient.id}`)} className="hover:bg-cyan-50/20 cursor-pointer transition-colors">
-          <td className="px-6 py-4 font-medium text-slate-800">{patient.fullName}</td>
-          <td className="px-6 py-4">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${getDiagnosisColor(patient.mainDiagnosis)}`}>
-            {patient.mainDiagnosis}
-          </span>
-          </td>
-          <td className="px-6 py-4 text-slate-600">{patient.guardian.fullName}</td>
-          <td className="px-6 py-4 text-right">
-          {isUploadingGlobal && uploadTargetPatientId === patient.id ? (
-            <span className="inline-flex items-center text-cyan-600 text-xs font-bold">
-            <Loader2 size={14} className="mr-1 animate-spin" /> Enviando...
-            </span>
-          ) : (
-            <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleTriggerUpload(patient.id);
-            }}
-            className="inline-flex items-center text-cyan-600 hover:text-cyan-800 text-xs font-bold border border-cyan-200 bg-white px-3 py-1.5 rounded-lg hover:bg-cyan-50 transition-colors cursor-pointer"
-            >
-            <UploadCloud size={14} className="mr-1" /> Anexar Termo
-            </button>
-          )}
-          </td>
-        </tr>
-        ))
-      )}
-      </tbody>
-    </table>
-    <Pagination
-      currentPage={consentPage}
-      totalPages={getTotalPages(patientsMissingConsent.length)}
-      onPageChange={setConsentPage}
-    />
-    </SectionCard>
-
-    {/* Consults */}
-    <SectionCard id="section-consults" title="Agendar Consulta" icon={<Calendar size={18} className="text-purple-600" />} countBadge={approachingConsults.length} badgeColor="bg-purple-100 text-purple-800" headerBg="bg-purple-50/30">
-    <table className="w-full text-sm text-left">
-      <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
-      <tr>
-        <th className="px-6 py-3">
-          <div className="flex items-center gap-1">
-            Data Agendada
-            <SortButton isAsc={consultsSortAsc} onToggle={() => { setConsultsSortAsc(!consultsSortAsc); setConsultsPage(1); }} />
-          </div>
-        </th>
-        <th className="px-6 py-3">Faltam</th>
-        <th className="px-6 py-3">Paciente</th>
-        <th className="px-6 py-3">Responsável</th>
-        <th className="px-6 py-3 text-right">Ação</th>
-      </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-      {approachingConsults.length === 0 ? (
-        <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhuma consulta próxima agendada.</td></tr>
-      ) : (
-        paginate(approachingConsults, consultsPage).map((dose: Dose) => {
-        const patient = getPatient(dose.treatmentId);
-        const hasDate = !!dose.consultationDate;
-        let daysLeft = 0;
-        if (hasDate) {
-          const consultDate = new Date(dose.consultationDate!);
-          daysLeft = diffInDays(consultDate, TODAY);
-        }
-        return (
-          <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`)} className="hover:bg-purple-50/20 cursor-pointer transition-colors">
-          <td className="px-6 py-4 font-bold text-purple-800">
-            {hasDate ? formatDate(dose.consultationDate) : <span className="text-orange-600 animate-pulse">Pendente / A Agendar</span>}
-          </td>
-          <td className="px-6 py-4">
-            {hasDate ? (
-            <span className="flex items-center text-xs font-bold bg-purple-100 text-purple-700 px-2 py-1 rounded w-fit">
-              <Clock size={12} className="mr-1" /> {daysLeft} dias
-            </span>
-            ) : (
-            <button
-              onClick={(e) => handleOpenConsultModal(e, dose)}
-              className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 transition-colors"
-            >
-              Agendar
-            </button>
-            )}
-          </td>
-          <td className="px-6 py-4 font-medium text-slate-800">{patient?.fullName || dose.treatment?.patient?.fullName || '-'}</td>
-          <td className="px-6 py-4 text-slate-600">{patient?.guardian?.fullName || '-'}</td>
-          <td className="px-6 py-4 text-right">
-            <div className="flex items-center justify-end gap-2">
-            {!hasDate && (
-              <button
-              onClick={(e) => handleOpenConsultModal(e, dose)}
-              className="inline-flex items-center text-purple-600 hover:text-purple-800 font-bold text-xs"
-              >
-              <Calendar size={14} className="mr-1" /> Agendar Agora
-              </button>
-            )}
-            <button
-              onClick={(e) => {
-              e.stopPropagation();
-              handleMarkConsultCompleted(dose.id);
-              }}
-              className="inline-flex items-center text-emerald-600 hover:text-emerald-800 font-bold text-xs bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded transition-colors"
-            >
-              <CheckCircle2 size={14} className="mr-1" /> Concluir
-            </button>
-            </div>
-          </td>
-          </tr>
-        )
-        })
-      )}
-      </tbody>
-    </table>
-    <Pagination
-      currentPage={consultsPage}
-      totalPages={getTotalPages(approachingConsults.length)}
-      onPageChange={setConsultsPage}
-    />
-    </SectionCard>
-
-    {/* Upcoming Scheduled Doses */}
-    <SectionCard id="section-upcoming-doses" title="Próximas Doses" icon={<Syringe size={18} className="text-teal-600" />} countBadge={upcomingScheduledDoses.length} badgeColor="bg-teal-100 text-teal-800" headerBg="bg-teal-50/30">
+    {/* Upcoming Scheduled Doses (filtered to next 7 days per March 2026 spec 4.2) */}
+    <SectionCard id="section-upcoming-doses" title="Próximas Doses (próximos 7 dias)" icon={<Syringe size={18} className="text-teal-600" />} countBadge={upcomingScheduledDoses.length} badgeColor="bg-teal-100 text-teal-800" headerBg="bg-teal-50/30">
     <table className="w-full text-sm text-left">
       <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
       <tr>
@@ -1476,67 +1357,6 @@ const Dashboard: React.FC = () => {
       currentPage={upcomingDosesPage}
       totalPages={getTotalPages(upcomingScheduledDoses.length)}
       onPageChange={setUpcomingDosesPage}
-    />
-    </SectionCard>
-
-    {/* Overdue Doses */}
-    <SectionCard id="section-overdue" title="Doses em Atraso" icon={<AlertCircle size={18} className="text-red-600" />} countBadge={overdueDoses.length} badgeColor="bg-red-100 text-red-800" headerBg="bg-red-50/30">
-    <table className="w-full text-sm text-left">
-      <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
-      <tr>
-        <th className="px-6 py-3">Paciente</th>
-        <th className="px-6 py-3">Contato</th>
-        <th className="px-6 py-3">
-          <div className="flex items-center gap-1">
-            Atraso (Últ. Dose)
-            <SortButton isAsc={overdueSortAsc} onToggle={() => { setOverdueSortAsc(!overdueSortAsc); setOverduePage(1); }} />
-          </div>
-        </th>
-        <th className="px-6 py-3 text-right">Ação</th>
-      </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100">
-      {overdueDoses.length === 0 ? (
-        <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Nenhuma dose atrasada.</td></tr>
-      ) : (
-        paginate(overdueDoses, overduePage).map((dose: Dose) => {
-        const patient = getPatient(dose.treatmentId);
-        // For PENDING doses, use applicationDate; for APPLIED, use calculatedNextDate
-        const isPending = dose.status === DoseStatus.PENDING;
-        // Use addDays to normalize dates and avoid timezone issues
-        const overdueDate = isPending ? addDays(dose.applicationDate, 0) : addDays(dose.calculatedNextDate, 0);
-        const daysDiff = diffInDays(overdueDate, TODAY);
-        return (
-          <tr key={dose.id} onClick={() => navigate(`/tratamento/${dose.treatmentId}`)} className="hover:bg-red-50/20 cursor-pointer transition-colors group">
-          <td className="px-6 py-4">
-            <div className="font-bold text-slate-900">{patient?.fullName || dose.treatment?.patient?.fullName || 'Desconhecido'}</div>
-            <div className="text-xs text-slate-500">{patient?.mainDiagnosis}</div>
-          </td>
-          <td className="px-6 py-4">
-            <div className="text-slate-700">{patient?.guardian?.fullName || '-'}</div>
-            <div className="text-xs font-mono text-slate-500">{patient?.guardian?.phonePrimary}</div>
-          </td>
-          <td className="px-6 py-4">
-            <div className="flex flex-col gap-1">
-              <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold text-xs w-fit">{Math.abs(daysDiff)} dias</span>
-              {isPending && <span className="text-[10px] text-orange-600 font-medium">Dose {dose.cycleNumber} pendente</span>}
-            </div>
-          </td>
-          <td className="px-6 py-4 text-right">
-            <span className="inline-flex items-center text-slate-400 group-hover:text-pink-600 transition-colors">
-            Abrir <ChevronRight size={16} className="ml-1" />
-            </span>
-          </td>
-          </tr>
-        );
-        })
-      )}
-      </tbody>
-    </table>
-    <Pagination
-      currentPage={overduePage}
-      totalPages={getTotalPages(overdueDoses.length)}
-      onPageChange={setOverduePage}
     />
     </SectionCard>
 
@@ -1633,10 +1453,21 @@ const Dashboard: React.FC = () => {
         </div>
         <div className="md:col-span-2 flex items-end gap-2">
           <div className={`flex-1 ${editSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40 pointer-events-none' : ''}`}>
-          <label className="block text-sm font-medium text-slate-700 mb-1">3. Nota</label>
-          <input type="range" min="0" max="10" step="1" value={editScore} onChange={e => setEditScore(Number(e.target.value))} className="w-full accent-pink-600" disabled={editSurveyStatus !== SurveyStatus.ANSWERED} />
+          <label className="block text-sm font-medium text-slate-700 mb-1">3. Nota (1-10)</label>
+          {/* March 2026 bug fix: dropdown with empty default; null => "não avaliado" */}
+          <select
+            value={editScore === null ? '' : String(editScore)}
+            onChange={e => setEditScore(e.target.value === '' ? null : Number(e.target.value))}
+            className="w-full border-slate-300 rounded-lg"
+            disabled={editSurveyStatus !== SurveyStatus.ANSWERED}
+          >
+            <option value="">— Selecione</option>
+            {[1,2,3,4,5,6,7,8,9,10].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
           </div>
-          <span className={`w-10 h-10 flex items-center justify-center bg-white border border-slate-200 font-bold rounded-lg ${editSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40' : ''}`}>{editScore}</span>
+          <span className={`w-10 h-10 flex items-center justify-center bg-white border border-slate-200 font-bold rounded-lg ${editSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40' : ''}`}>{editScore ?? '—'}</span>
         </div>
         <div className="md:col-span-3">
           <label className="block text-sm font-medium text-slate-700 mb-1">4. Comentário</label>

@@ -41,6 +41,7 @@ const STATUS_LABELS: Record<DoseStatus, string> = {
   [DoseStatus.APPLIED]: 'Aplicado',
   [DoseStatus.APPLIED_LATE]: 'Aplicado com Atraso',
   [DoseStatus.NOT_ACCEPTED]: 'Recusado',
+  [DoseStatus.CONFIRM_APPLICATION]: 'Confirmar Aplicação',
 };
 
 const STATUS_COLORS: Record<DoseStatus, string> = {
@@ -48,6 +49,7 @@ const STATUS_COLORS: Record<DoseStatus, string> = {
   [DoseStatus.APPLIED]: 'bg-green-100 text-green-700 border-green-200',
   [DoseStatus.APPLIED_LATE]: 'bg-amber-100 text-amber-700 border-amber-200',
   [DoseStatus.NOT_ACCEPTED]: 'bg-red-100 text-red-700 border-red-200',
+  [DoseStatus.CONFIRM_APPLICATION]: 'bg-pink-100 text-pink-700 border-pink-200',
 };
 
 const NursingList: React.FC = () => {
@@ -105,9 +107,10 @@ const NursingList: React.FC = () => {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - npsDays);
 
+    // March 2026 bug fix: ignore null/undefined scores (não avaliado) — only count real 1-10 evaluations
     const answeredDoses = doses.filter(d =>
       d.surveyStatus === SurveyStatus.ANSWERED &&
-      d.surveyScore !== undefined &&
+      d.surveyScore !== undefined && d.surveyScore !== null && d.surveyScore > 0 &&
       new Date(d.applicationDate) >= cutoffDate
     );
 
@@ -471,8 +474,8 @@ const NursingList: React.FC = () => {
                   <p className="text-xs text-slate-400">{item.cep}</p>
                 </div>
 
-                {/* Survey Score (if available) */}
-                {item.surveyScore !== undefined && (
+                {/* Survey Score (if available) — March 2026: hide when null/0 (não avaliado) */}
+                {item.surveyScore != null && item.surveyScore > 0 && (
                   <div className="md:col-span-2 bg-amber-50 border border-amber-100 rounded-lg p-3">
                     <div className="flex items-center gap-2">
                       <Star size={16} className="text-amber-500 fill-amber-500" />
@@ -533,8 +536,8 @@ const NursingList: React.FC = () => {
               </div>
             )}
 
-            {/* Survey Score (Read Only) */}
-            {selectedItem.surveyScore !== undefined && (
+            {/* Survey Score (Read Only) — March 2026: hide when null/0 (não avaliado) */}
+            {selectedItem.surveyScore != null && selectedItem.surveyScore > 0 && (
               <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
                 <p className="text-xs font-bold text-amber-700 uppercase mb-2">Nota da Pesquisa de Satisfacao</p>
                 <div className="flex items-center gap-2">

@@ -2,9 +2,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { patientsApi, treatmentsApi, protocolsApi, dosesApi, dismissedLogsApi, patientEventsApi, settingsApi, clinicalNotesApi, PatientEvent } from '../services/api';
-import { formatDate, getTreatmentStatusColor, addDays, diffInDays } from '../constants';
+import { formatDate, getTreatmentStatusColor, addDays, diffInDays, formatConsultationPeriod } from '../constants';
 import { User, MapPin, FileText, Activity, ArrowRight, UploadCloud, X, File, Download, Trash2, CheckCircle2, Pill, Edit, AlertCircle, Loader2, Syringe, Save, MessageCircle, Clock, RefreshCw, History, Plus, Edit2, Calendar } from 'lucide-react';
 import { ConsentDocument, Treatment, SurveyStatus, TreatmentStatus, DoseStatus, ProtocolCategory, PatientFull, Protocol, Dose, ClinicalNote } from '../types';
+import FortnightSelector from '../components/ui/FortnightSelector';
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -23,11 +24,18 @@ const PatientDetail: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Treatment Modal State
+  // Treatment Modal State (March 2026: 3-phase wizard)
   const [isTreatmentModalOpen, setIsTreatmentModalOpen] = useState(false);
   const [newProtocolId, setNewProtocolId] = useState('');
   const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [plannedDoses, setPlannedDoses] = useState(3);
+  // Phase 2: required, default 0 by design (forces conscious entry)
+  const [plannedDoses, setPlannedDoses] = useState<number>(0);
+  // Phase 1: auto-register Dose 1 with CONFIRM_APPLICATION status (default checked)
+  const [autoCreateDose1, setAutoCreateDose1] = useState(true);
+  // Phase 3: structured next consultation forecast (Quinzena selector)
+  const [nextConsultMonth, setNextConsultMonth] = useState<number | null>(null);
+  const [nextConsultYear, setNextConsultYear] = useState<number | null>(null);
+  const [nextConsultFortnight, setNextConsultFortnight] = useState<1 | 2 | null>(null);
   const [isSavingTreatment, setIsSavingTreatment] = useState(false);
 
   // Edit Patient Modal State
@@ -650,6 +658,12 @@ const PatientDetail: React.FC = () => {
     e.preventDefault();
     if (!id || !newProtocolId) return;
 
+    // Phase 2 validation: planned doses must be > 0 for medication protocols (per spec)
+    if (isMedicationProtocol && plannedDoses <= 0) {
+      alert('Informe a quantidade de Doses Planejadas (campo obrigatório).');
+      return;
+    }
+
     setIsSavingTreatment(true);
 
     try {
@@ -659,12 +673,25 @@ const PatientDetail: React.FC = () => {
         status: TreatmentStatus.ONGOING,
         startDate: newStartDate,
         plannedDosesBeforeConsult: Number(plannedDoses),
+        // Phase 1: auto-register Dose 1 (only meaningful for medication protocols)
+        autoCreateDose1: isMedicationProtocol && autoCreateDose1,
+        // Phase 3: structured forecast — only sent when all 3 fields filled
+        ...(nextConsultMonth && nextConsultYear && nextConsultFortnight ? {
+          nextConsultationMonth: nextConsultMonth,
+          nextConsultationYear: nextConsultYear,
+          nextConsultationFortnight: nextConsultFortnight,
+        } : {}),
       });
 
       await loadData();
       setIsTreatmentModalOpen(false);
       setNewProtocolId('');
       setNewStartDate(new Date().toISOString().split('T')[0]);
+      setPlannedDoses(0);
+      setAutoCreateDose1(true);
+      setNextConsultMonth(null);
+      setNextConsultYear(null);
+      setNextConsultFortnight(null);
     } catch (err: any) {
       console.error('Error creating treatment:', err);
       alert('Erro ao criar tratamento: ' + (err.message || 'Erro desconhecido'));
@@ -1217,9 +1244,18 @@ const PatientDetail: React.FC = () => {
                             </span>
                           )}
 
-                          {treatment.nextConsultationDate && (
+                          {/* March 2026: prefer the new structured Quinzena format if present */}
+                          {(treatment.nextConsultationMonth && treatment.nextConsultationYear && treatment.nextConsultationFortnight) ? (
                             <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">
-                              Prox. Consulta: {formatDate(treatment.nextConsultationDate)}
+                              Próx. Consulta: {formatConsultationPeriod(
+                                treatment.nextConsultationMonth,
+                                treatment.nextConsultationYear,
+                                treatment.nextConsultationFortnight,
+                              )}
+                            </span>
+                          ) : treatment.nextConsultationDate && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">
+                              Próx. Consulta: {formatDate(treatment.nextConsultationDate)}
                             </span>
                           )}
                         </div>
@@ -1548,20 +1584,26 @@ const PatientDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Modal New Treatment */}
+      {/* Modal New Treatment — March 2026 wizard (3 phases) */}
       {isTreatmentModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl overflow-hidden flex flex-col max-h-[92vh]">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-lg text-slate-800">Iniciar Novo Tratamento</h3>
+              <div>
+                <span className="inline-block bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full mr-2">+ NOVO</span>
+                <h3 className="font-bold text-lg text-slate-800 inline">Iniciar Tratamento</h3>
+              </div>
               <button onClick={() => setIsTreatmentModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={24} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTreatment} className="p-6 space-y-6">
+            <form onSubmit={handleSaveTreatment} className="p-6 space-y-5 overflow-y-auto">
+              {/* Protocol select */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Protocolo / Diagnostico</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Protocolo / Diagnóstico <span className="text-red-500">*</span>
+                </label>
                 <select
                   required
                   value={newProtocolId}
@@ -1576,21 +1618,64 @@ const PatientDetail: React.FC = () => {
                 <p className="text-xs text-slate-500 mt-1">Configure novos em "Protocolos" no menu.</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Data de Inicio</label>
-                  <input
-                    type="date"
-                    required
-                    min="2020-01-01"
-                    max="2030-12-31"
-                    value={newStartDate}
-                    onChange={e => setNewStartDate(e.target.value)}
-                    className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                  />
+              {/* Phase 1: Start date + auto-create Dose 1 checkbox */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Data de Início <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  min="2020-01-01"
+                  max="2030-12-31"
+                  value={newStartDate}
+                  onChange={e => setNewStartDate(e.target.value)}
+                  className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
+                />
+
+                {/* Phase 1: Auto-register Dose 1 (only for medication protocols) */}
+                {(isMedicationProtocol || !newProtocolId) && (
+                  <label
+                    className={`mt-3 flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      autoCreateDose1
+                        ? 'bg-emerald-50 border-emerald-300'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={autoCreateDose1}
+                      onChange={(e) => setAutoCreateDose1(e.target.checked)}
+                      className="mt-0.5 w-5 h-5 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-sm font-bold text-slate-800">Dose 1 aplicada na Data Início</div>
+                      <div className="text-xs text-slate-600 mt-0.5">
+                        Registra automaticamente a 1ª dose ao criar o tratamento (status "Confirmar Aplicação").
+                      </div>
+                    </div>
+                  </label>
+                )}
+              </div>
+
+              {/* Phase 2: Doses Planejadas (required, default 0 by design) */}
+              <div className={!isMedicationProtocol && newProtocolId ? "opacity-50" : ""}>
+                <div className="flex justify-between items-baseline mb-1">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Doses Planejadas <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-xs font-semibold text-pink-600">Obrigatório</span>
                 </div>
-                <div className={!isMedicationProtocol && newProtocolId ? "opacity-50" : ""}>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Doses por Ciclo (Consulta)</label>
+                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setPlannedDoses(Math.max(0, plannedDoses - 1))}
+                    disabled={!isMedicationProtocol && newProtocolId !== ''}
+                    className="px-4 py-3 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Diminuir doses planejadas"
+                  >
+                    −
+                  </button>
                   <input
                     type="number"
                     min="0"
@@ -1599,13 +1684,36 @@ const PatientDetail: React.FC = () => {
                     disabled={!isMedicationProtocol && newProtocolId !== ''}
                     value={plannedDoses}
                     onChange={e => setPlannedDoses(Number(e.target.value))}
-                    className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                    className="flex-1 text-center border-0 bg-transparent text-2xl font-bold focus:ring-0 disabled:cursor-not-allowed"
                   />
-                  <span className="text-xs text-slate-500">
-                    {(!isMedicationProtocol && newProtocolId) ? "Nao aplicavel para este protocolo." : "Geralmente 1, 2 ou 3."}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPlannedDoses(plannedDoses + 1)}
+                    disabled={!isMedicationProtocol && newProtocolId !== ''}
+                    className="px-4 py-3 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label="Aumentar doses planejadas"
+                  >
+                    +
+                  </button>
                 </div>
+                <p className="text-xs text-slate-500 mt-1 text-center">
+                  {(!isMedicationProtocol && newProtocolId)
+                    ? "Não aplicável para este protocolo."
+                    : "O valor inicia em 0. Preencha com a quantidade exata."}
+                </p>
               </div>
+
+              {/* Phase 3: Próxima Consulta — month/year + Quinzena selector */}
+              <FortnightSelector
+                month={nextConsultMonth}
+                year={nextConsultYear}
+                fortnight={nextConsultFortnight}
+                onChange={(m, y, f) => {
+                  setNextConsultMonth(m);
+                  setNextConsultYear(y);
+                  setNextConsultFortnight(f);
+                }}
+              />
 
               <div className="pt-2">
                 <button

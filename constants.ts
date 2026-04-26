@@ -15,7 +15,8 @@ export const DOSE_STATUS_LABELS: Record<DoseStatus, string> = {
   [DoseStatus.PENDING]: 'Pendente',
   [DoseStatus.APPLIED]: 'Aplicada',
   [DoseStatus.APPLIED_LATE]: 'Aplicada com Atraso',
-  [DoseStatus.NOT_ACCEPTED]: 'Não Realizada'
+  [DoseStatus.NOT_ACCEPTED]: 'Não Realizada',
+  [DoseStatus.CONFIRM_APPLICATION]: 'Confirmar Aplicação'
 };
 
 export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -119,6 +120,7 @@ export const getStatusColor = (status: DoseStatus | PaymentStatus | string) => {
     case DoseStatus.APPLIED_LATE: return 'bg-amber-100 text-amber-800 border-amber-200';
     case DoseStatus.PENDING: return 'bg-blue-100 text-blue-800 border-blue-200';
     case DoseStatus.NOT_ACCEPTED: return 'bg-slate-100 text-slate-500 border-slate-200';
+    case DoseStatus.CONFIRM_APPLICATION: return 'bg-pink-100 text-pink-800 border-pink-200';
 
     // Payment Status
     case PaymentStatus.PAID: return 'text-green-700 font-bold bg-green-50 border border-green-200';
@@ -163,6 +165,23 @@ export const DIAGNOSIS_COLORS = [
     'bg-red-50 text-red-800 border-red-200',
     'bg-green-50 text-green-800 border-green-200',
 ];
+
+// March 2026: format the structured "Próxima Consulta" forecast as e.g. "Março/2026 - 1ª Quinzena"
+const MONTHS_PT = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+export const formatConsultationPeriod = (
+  month?: number | null,
+  year?: number | null,
+  fortnight?: 1 | 2 | number | null,
+): string => {
+  if (!month || !year || !fortnight) return '';
+  const idx = Math.max(1, Math.min(12, month)) - 1;
+  const ord = fortnight === 1 ? '1ª Quinzena' : '2ª Quinzena';
+  return `${MONTHS_PT[idx]}/${year} - ${ord}`;
+};
 
 // Gera uma cor determinística baseada no nome do diagnóstico, OU usa a cor específica se fornecida
 export const getDiagnosisColor = (name: string, specificColor?: string) => {
