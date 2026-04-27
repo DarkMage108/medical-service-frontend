@@ -420,18 +420,30 @@ const Dashboard: React.FC = () => {
   // ENTREGAR: doses with status PAID + delivery waiting
   // A PAGAR:  doses pending payment (any WAITING_*)
   // ENFERMAGEM: nurse-assigned doses still pending application
+  // Dismissed contacts (via DosesPage's "Concluir / Enviado") must also be excluded here so the
+  // Dashboard counter mirrors the sidebar Doses page. Same contactId scheme as DosesPage:
+  //   `dose_${doseId}_general` for to-deliver / to-pay,
+  //   `dose_${doseId}_late_dose` for overdue, `dose_${doseId}_next_dose` for upcoming.
   const operationalCounters = useMemo(() => {
-    const toDeliver = doses.filter(d => d.paymentStatus === PaymentStatus.PAID && d.deliveryStatus === 'waiting');
-    const toPay = doses.filter(d => [
-      PaymentStatus.WAITING_PIX, PaymentStatus.WAITING_CARD, PaymentStatus.WAITING_BOLETO,
-    ].includes(d.paymentStatus));
+    const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
+    const isDismissed = (doseId: string, trigger: string) =>
+      dismissedSet.has(`dose_${doseId}_${trigger}`);
+
+    const toDeliver = doses
+      .filter(d => d.paymentStatus === PaymentStatus.PAID && d.deliveryStatus === 'waiting')
+      .filter(d => !isDismissed(d.id, 'general'));
+    const toPay = doses
+      .filter(d => [
+        PaymentStatus.WAITING_PIX, PaymentStatus.WAITING_CARD, PaymentStatus.WAITING_BOLETO,
+      ].includes(d.paymentStatus))
+      .filter(d => !isDismissed(d.id, 'general'));
     const nursingPending = doses.filter(d => d.nurse === true && d.status === DoseStatus.PENDING);
     return {
       toDeliver,
       toPay,
       nursingPending,
     };
-  }, [doses]);
+  }, [doses, dismissedLogs]);
 
   // March 2026 — doses awaiting Dose 1 confirmation (CONFIRM_APPLICATION status)
   const confirmApplicationDoses = useMemo(() => {
@@ -521,7 +533,11 @@ const Dashboard: React.FC = () => {
     }
   });
 
-  return result.sort((a, b) => {
+  // March 2026: exclude doses dismissed via the DosesPage popup ("Concluir / Enviado" with LATE_DOSE trigger).
+  const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
+  const filtered = result.filter(d => !dismissedSet.has(`dose_${d.id}_late_dose`));
+
+  return filtered.sort((a, b) => {
     // Sort by the relevant date (applicationDate for PENDING, calculatedNextDate for APPLIED)
     const dateA = a.status === DoseStatus.PENDING ? addDays(a.applicationDate, 0) : addDays(a.calculatedNextDate, 0);
     const dateB = b.status === DoseStatus.PENDING ? addDays(b.applicationDate, 0) : addDays(b.calculatedNextDate, 0);
@@ -532,7 +548,7 @@ const Dashboard: React.FC = () => {
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, treatments, patients, protocols, TODAY]);
+  }, [doses, treatments, patients, protocols, TODAY, dismissedLogs]);
 
   // Upcoming Scheduled Doses (future doses not yet applied)
   // IMPORTANT: Uses SCHEDULED dates from protocol (startDate + frequencyDays * cycleNumber)
@@ -613,33 +629,39 @@ const Dashboard: React.FC = () => {
     }
   });
 
+  // March 2026: exclude doses dismissed via DosesPage popup with NEXT_DOSE trigger.
+  const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
+  const filtered = result.filter(d => !d.doseId || !dismissedSet.has(`dose_${d.doseId}_next_dose`));
+
   // Sort by date (closest first or farthest first based on sort direction)
-  return result.sort((a, b) => {
+  return filtered.sort((a, b) => {
     const diff = a.scheduledDate.getTime() - b.scheduledDate.getTime();
     if (diff !== 0) return upcomingDosesSortAsc ? diff : -diff;
     return a.patientName.localeCompare(b.patientName);
   });
-  }, [treatments, protocols, patients, doses, upcomingDosesSortAsc, TODAY]);
+  }, [treatments, protocols, patients, doses, upcomingDosesSortAsc, TODAY, dismissedLogs]);
 
   // Pending Surveys (excludes WAITING status - only NOT_SENT and SENT are valid)
+  // March 2026: also exclude doses dismissed via SurveyPage popup ("Concluir / Enviado").
   const pendingSurveys = useMemo(() => {
+  const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
   return doses.filter(d => {
     if (!d.nurse) return false;
-    // Exclude if already answered or marked as not answered (these are "closed" states)
     if (d.surveyStatus === SurveyStatus.ANSWERED) return false;
     if (d.surveyStatus === SurveyStatus.NOT_ANSWERED) return false;
-    // Only include NOT_SENT and SENT status (WAITING is deprecated)
     const isPendingStatus = d.surveyStatus === SurveyStatus.SENT || d.surveyStatus === SurveyStatus.NOT_SENT || !d.surveyStatus;
-    return isPendingStatus;
+    if (!isPendingStatus) return false;
+    // Exclude survey-popup dismissed doses
+    if (dismissedSet.has(`survey_${d.id}`)) return false;
+    return true;
   }).sort((a, b) => {
     const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
     if (diff !== 0) return diff;
-    // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, treatments, patients]);
+  }, [doses, treatments, patients, dismissedLogs]);
 
   // Approaching Consults
   const approachingConsults = useMemo(() => {
@@ -674,17 +696,22 @@ const Dashboard: React.FC = () => {
 
   // March 2026 spec 4.5: "Pacientes Ativos por Diagnóstico" moved to /pacientes (PatientList) — memo removed.
 
-  // Consent Missing (only for patients with ongoing treatments)
+  // Consent Missing (only for patients with ongoing treatments).
+  // March 2026: also exclude patients dismissed via ConsentTermsPage popup ("Concluir / Enviado").
   const patientsMissingConsent = useMemo(() => {
+  const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
   return patients.filter(p => {
     if (!patientsWithOngoingTreatmentsSet.has(p.id)) return false;
     const diag = (p.mainDiagnosis || '').toLowerCase();
     const isTarget = diag.includes('puberdade precoce') || diag.includes('baixa estatura');
     if (!isTarget) return false;
     const hasDoc = documents.some(doc => doc.patientId === p.id);
-    return !hasDoc;
+    if (hasDoc) return false;
+    // Hide rows already marked as concluído via the consent message popup
+    if (dismissedSet.has(`consent_${p.id}`)) return false;
+    return true;
   });
-  }, [patients, documents, patientsWithOngoingTreatmentsSet]);
+  }, [patients, documents, patientsWithOngoingTreatmentsSet, dismissedLogs]);
 
   // Activity Window
   const highActivityDoses = useMemo(() => {
