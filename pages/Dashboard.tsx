@@ -7,6 +7,7 @@ import { UserCheck, MessageSquare, Phone, ExternalLink, Activity } from 'lucide-
 import KpiCard from '../components/ui/KpiCard';
 import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
+import { renderTemplate, buildTreatmentVariables } from '../utils/messageVariables';
 import {
   AlertCircle, CheckCircle2, UserX, MessageCircle, ChevronRight, ChevronLeft,
   Calendar, Clock, FileWarning, UploadCloud, Edit, CalendarRange,
@@ -789,6 +790,16 @@ const Dashboard: React.FC = () => {
       referenceDate = parseLocalDate(t.startDate);
     }
 
+    // March 2026: build variable map ONCE per treatment so all milestones get the same resolved
+    // {nome_paciente}, {nome_responsavel}, {nome_medico}, {data_proxima_dose}, {data_proxima_consulta}.
+    const patientForTreatment = patients.find(p => p.id === t.patientId);
+    const treatmentVars = buildTreatmentVariables({
+      treatment: t as any,
+      patient: patientForTreatment,
+      protocol: proto,
+      doses,
+    });
+
     proto.milestones.forEach(m => {
     const contactId = `${t.id}_m_${m.day}`;
 
@@ -798,7 +809,7 @@ const Dashboard: React.FC = () => {
     const diff = diffInDays(contactDate, TODAY);
 
     if (diff >= -60) {
-      const patient = patients.find(p => p.id === t.patientId);
+      const patient = patientForTreatment;
       if (patient) {
       contacts.push({
         id: contactId,
@@ -807,7 +818,7 @@ const Dashboard: React.FC = () => {
         patientGuardian: patient.guardian.fullName,
         patientPhone: patient.guardian.phonePrimary,
         protocolName: proto.name,
-        message: m.message,
+        message: renderTemplate(m.message, treatmentVars),
         date: contactDate,
         diffDays: diff,
         isMonitoring: proto.category === ProtocolCategory.MONITORING,
