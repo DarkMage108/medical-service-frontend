@@ -2,6 +2,7 @@
 import { protocolsApi, medicationsApi } from '../services/api';
 import { Protocol, ProtocolMilestone, ProtocolCategory, MedicationBase } from '../types';
 import { Plus, Trash2, ClipboardList, Clock, Target, MessageCircle, Calendar, AlertCircle, X, Edit2, Pill, MessageSquare, Loader2 } from 'lucide-react';
+import VariablesPanel from '../components/ui/VariablesPanel';
 
 // Helper to convert backend protocol to frontend format
 const convertProtocol = (data: any): Protocol => ({
@@ -76,6 +77,30 @@ const MedicationList: React.FC = () => {
 
   // March 2026: support editing existing milestones (image 15 — missing edit button bug)
   const [editingMilestoneIdx, setEditingMilestoneIdx] = useState<number | null>(null);
+
+  // March 2026: track which message field is currently focused so the Campos Personalizados
+  // panel can insert variables into the right textarea.
+  type MessageField = 'message' | 'milestone' | 'dose1Extra' | 'lastDoseExtra';
+  const [activeField, setActiveField] = useState<MessageField>('message');
+
+  const insertVariable = (tag: string) => {
+    const append = (prev: string) => prev + (prev && !prev.endsWith(' ') && !prev.endsWith('\n') ? ' ' : '') + tag;
+    switch (activeField) {
+      case 'milestone':
+        setNewMileMsg(append);
+        break;
+      case 'dose1Extra':
+        setDose1ExtraMessage(append);
+        break;
+      case 'lastDoseExtra':
+        setLastDoseExtraMessage(append);
+        break;
+      case 'message':
+      default:
+        setMessage(append);
+        break;
+    }
+  };
 
   const handleAddMilestone = () => {
   if (!newMileDay || !newMileMsg) return;
@@ -271,6 +296,10 @@ const MedicationList: React.FC = () => {
     </div>
     )}
 
+    {/* March 2026: Campos Personalizados — disponíveis para inserir nas mensagens do protocolo.
+        Clique numa tag para inserir no campo de mensagem em foco. */}
+    <VariablesPanel onInsert={insertVariable} />
+
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
     <form onSubmit={handleSubmit} className="space-y-6 mb-8 border-b border-slate-100 pb-8">
       <div className="flex justify-between items-center">
@@ -389,9 +418,13 @@ const MedicationList: React.FC = () => {
         rows={2}
         value={message}
         onChange={e => setMessage(e.target.value)}
+        onFocus={() => setActiveField('message')}
         placeholder="Instruções gerais para a equipe ou paciente..."
         className="block w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
         />
+        <p className="text-[10px] text-slate-400 mt-1 italic">
+          Suporta variáveis como {'{nome_paciente}'}, {'{data_proxima_dose}'} — veja o painel "Campos Personalizados" abaixo.
+        </p>
       </div>
       </div>
 
@@ -428,12 +461,13 @@ const MedicationList: React.FC = () => {
           rows={6}
           value={newMileMsg}
           onChange={e => setNewMileMsg(e.target.value)}
-          placeholder={`Olá, [Nome]! Tudo bem?\n\nSeguem informações sobre o tratamento...\n\n💊 *Medicação*: R$1.380`}
+          onFocus={() => setActiveField('milestone')}
+          placeholder={`Olá, {nome_responsavel}! Tudo bem?\n\nLembrete: a próxima dose do(a) {nome_paciente} está prevista para {data_proxima_dose}.`}
           className="block w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500 font-mono"
         />
         <div className="flex flex-col md:flex-row justify-between items-center mt-2 gap-3">
           <p className="text-[10px] text-slate-400">
-          Suporta Emojis (💊, 🛵) e formatação WhatsApp (*negrito*, _itálico_).
+          Suporta Emojis (💊, 🛵), formatação WhatsApp (*negrito*, _itálico_) e variáveis ({'{nome_paciente}'}, etc).
           </p>
           <div className="flex gap-2 w-full md:w-auto">
             {editingMilestoneIdx !== null && (
@@ -583,6 +617,7 @@ const MedicationList: React.FC = () => {
               rows={3}
               value={dose1ExtraMessage}
               onChange={(e) => setDose1ExtraMessage(e.target.value)}
+              onFocus={() => setActiveField('dose1Extra')}
               placeholder="Ex: Boas-vindas ao tratamento, orientações iniciais, o que esperar..."
               className="block w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500"
             />
@@ -623,6 +658,7 @@ const MedicationList: React.FC = () => {
               rows={3}
               value={lastDoseExtraMessage}
               onChange={(e) => setLastDoseExtraMessage(e.target.value)}
+              onFocus={() => setActiveField('lastDoseExtra')}
               placeholder="Ex: Orientações de encerramento, lembrete de retorno, próximos passos..."
               className="block w-full border-slate-300 rounded-lg text-sm focus:ring-pink-500 focus:border-pink-500"
             />

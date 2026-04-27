@@ -63,10 +63,20 @@ const MENU_TO_PATH: Record<string, string> = {
   cashregister: '/caixa',
   diagnoses: '/diagnosticos',
   protocols: '/protocolos',
+  // March 2026 — secondary pages (permission-controlled)
+  'consent-terms': '/termos-consentimento',
+  'doses-page': '/doses',
+  consultations: '/consultas',
+  survey: '/pesquisa-enfermagem',
+  'message-templates': '/modelos-mensagem',
 };
 
 // Order of fallback routes
-const MENU_ORDER = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'cashregister', 'diagnoses', 'protocols'];
+const MENU_ORDER = [
+  'dashboard', 'checklist', 'nursing', 'patients', 'history',
+  'inventory', 'cashregister', 'diagnoses', 'protocols',
+  'consent-terms', 'doses-page', 'consultations', 'survey', 'message-templates',
+];
 
 // Default redirect component - redirects to first accessible route
 const DefaultRedirect: React.FC = () => {
@@ -309,59 +319,55 @@ const AppContent: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      {/* March 2026 — sidebar pages extracted from main dashboard */}
+      {/* March 2026 — sidebar pages extracted from main dashboard, permission-controlled */}
       <Route
         path="/termos-consentimento"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="consent-terms">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <ConsentTermsPage />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/doses"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="doses-page">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <DosesPage />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/consultas"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="consultations">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <ConsultationsPage />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/pesquisa-enfermagem"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="survey">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <SurveyPage />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
       <Route
         path="/modelos-mensagem"
         element={
-          <ProtectedRoute>
-            {layoutUser?.role === UserRole.ADMIN ? (
-              <Layout user={layoutUser!} onLogout={handleLogout}>
-                <MessageTemplates />
-              </Layout>
-            ) : (
-              <Navigate to="/" replace />
-            )}
-          </ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="message-templates">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <MessageTemplates />
+            </Layout>
+          </ProtectedRouteWithPermission>
         }
       />
 

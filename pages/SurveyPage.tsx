@@ -1,53 +1,62 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { dosesApi, patientsApi, treatmentsApi, protocolsApi } from '../services/api';
+import { dosesApi, patientsApi, treatmentsApi, protocolsApi, dismissedLogsApi } from '../services/api';
 import { MessageCircle, Loader2, AlertCircle, MessageSquare, ChevronRight, Star } from 'lucide-react';
-import { Dose, SurveyStatus, PatientFull, Treatment, Protocol, MessageTemplateTrigger } from '../types';
+import { Dose, SurveyStatus, PatientFull, Treatment, Protocol, MessageTemplateTrigger, DismissedLog } from '../types';
 import { formatDate, SURVEY_STATUS_LABELS } from '../constants';
 import MessagePopup from '../components/ui/MessagePopup';
 
 // March 2026 — sidebar page for nursing satisfaction survey pending list (extracted from Dashboard).
+// Stable contactId per dose so dismissed rows stay hidden across refreshes.
+const buildContactId = (doseId: string) => `survey_${doseId}`;
+
 const SurveyPage: React.FC = () => {
   const [doses, setDoses] = useState<Dose[]>([]);
   const [patients, setPatients] = useState<PatientFull[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [dismissedSet, setDismissedSet] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [popupPatient, setPopupPatient] = useState<PatientFull | null>(null);
   const [popupTreatmentId, setPopupTreatmentId] = useState<string | null>(null);
   const [popupDoseId, setPopupDoseId] = useState<string | undefined>(undefined);
+  const [popupContactId, setPopupContactId] = useState<string>('');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        setIsLoading(true);
-        const [dosesRes, patientsRes, treatmentsRes, protocolsRes] = await Promise.all([
-          dosesApi.getAll({ limit: 1000 }),
-          patientsApi.getAll({ limit: 1000 }),
-          treatmentsApi.getAll({ limit: 1000 }),
-          protocolsApi.getAll(),
-        ]);
-        setDoses(dosesRes.data || []);
-        setPatients(patientsRes.data || []);
-        setTreatments(treatmentsRes.data || []);
-        setProtocols(protocolsRes.data || []);
-      } catch (err: any) {
-        setError(err.message || 'Erro ao carregar dados');
-      } finally {
-        setIsLoading(false);
-      }
-    })();
+  const loadData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [dosesRes, patientsRes, treatmentsRes, protocolsRes, dismissedRes] = await Promise.all([
+        dosesApi.getAll({ limit: 1000 }),
+        patientsApi.getAll({ limit: 1000 }),
+        treatmentsApi.getAll({ limit: 1000 }),
+        protocolsApi.getAll(),
+        dismissedLogsApi.getAll(),
+      ]);
+      setDoses(dosesRes.data || []);
+      setPatients(patientsRes.data || []);
+      setTreatments(treatmentsRes.data || []);
+      setProtocols(protocolsRes.data || []);
+      const ids = (dismissedRes.data as DismissedLog[] || []).map(d => d.contactId);
+      setDismissedSet(new Set(ids));
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar dados');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Doses with nurse=true and survey not yet ANSWERED / NOT_ANSWERED
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Doses with nurse=true and survey not yet ANSWERED / NOT_ANSWERED, with dismissed-log filter applied.
   const pendingSurveyDoses = useMemo(() => {
     return doses
       .filter(d => d.nurse === true)
       .filter(d => d.surveyStatus !== SurveyStatus.ANSWERED && d.surveyStatus !== SurveyStatus.NOT_ANSWERED)
+      .filter(d => !dismissedSet.has(buildContactId(d.id)))
       .sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime());
-  }, [doses]);
+  }, [doses, dismissedSet]);
 
   const getPatient = (treatmentId: string) => {
     const t = treatments.find(tr => tr.id === treatmentId);
@@ -129,7 +138,12 @@ const SurveyPage: React.FC = () => {
                   <td className="px-6 py-3 text-right">
                     {patient && (
                       <button
-                        onClick={() => { setPopupPatient(patient); setPopupTreatmentId(dose.treatmentId); setPopupDoseId(dose.id); }}
+                        onClick={() => {
+                          setPopupPatient(patient);
+                          setPopupTreatmentId(dose.treatmentId);
+                          setPopupDoseId(dose.id);
+                          setPopupContactId(buildContactId(dose.id));
+                        }}
                         className="text-blue-600 hover:text-blue-800 font-medium text-xs flex items-center justify-end ml-auto"
                       >
                         <MessageSquare size={12} className="mr-1" />
@@ -145,10 +159,15 @@ const SurveyPage: React.FC = () => {
         </table>
       </div>
 
-      {popupPatient && popupTreatmentId && (
+      {popupPatient && popupTreatmentId && popupContactId && (
         <MessagePopup
           open
-          onClose={() => { setPopupPatient(null); setPopupTreatmentId(null); setPopupDoseId(undefined); }}
+          onClose={() => {
+            setPopupPatient(null);
+            setPopupTreatmentId(null);
+            setPopupDoseId(undefined);
+            setPopupContactId('');
+          }}
           treatmentId={popupTreatmentId}
           doseId={popupDoseId}
           patientId={popupPatient.id}
@@ -158,6 +177,8 @@ const SurveyPage: React.FC = () => {
           defaultTrigger={MessageTemplateTrigger.SURVEY_PENDING}
           title="Aguardando Resposta da Pesquisa"
           treatmentLink={`/tratamento/${popupTreatmentId}`}
+          contactId={popupContactId}
+          onMarkSent={loadData}
         />
       )}
     </div>

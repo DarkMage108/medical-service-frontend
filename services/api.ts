@@ -600,8 +600,9 @@ export const messageTemplatesApi = {
     return apiFetch<{ data: Array<{ tag: string; key: string; returns: string; source: string; example: string }> }>(`/message-templates/variables`);
   },
 
-  // Resolve a template (or ad-hoc content) for a given treatment — returns rendered text
-  resolve: async (data: { templateId?: string; content?: string; treatmentId: string; doseId?: string }) => {
+  // Resolve a template (or ad-hoc content) — returns rendered text.
+  // Accepts EITHER treatmentId (preferred, richer context) OR patientId (fallback for patients without active treatment).
+  resolve: async (data: { templateId?: string; content?: string; treatmentId?: string; patientId?: string; doseId?: string }) => {
     return apiFetch<{ rendered: string; raw: string }>(`/message-templates/resolve`, {
       method: 'POST',
       body: JSON.stringify(data),

@@ -1,12 +1,16 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { dosesApi, patientsApi, treatmentsApi, protocolsApi } from '../services/api';
+import { dosesApi, patientsApi, treatmentsApi, protocolsApi, dismissedLogsApi } from '../services/api';
 import { Syringe, Loader2, AlertCircle, MessageSquare, ChevronRight } from 'lucide-react';
-import { Dose, DoseStatus, PaymentStatus, PatientFull, Treatment, Protocol, MessageTemplateTrigger } from '../types';
-import { formatDate, addDays, diffInDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '../constants';
+import { Dose, DoseStatus, PaymentStatus, PatientFull, Treatment, Protocol, MessageTemplateTrigger, DismissedLog } from '../types';
+import { formatDate, diffInDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS } from '../constants';
 import MessagePopup from '../components/ui/MessagePopup';
 
 // March 2026 — extracted from main Dashboard. Sidebar page combining "Doses em Atraso" + "Próximas Doses" + filters.
+// Stable contactId per dose+trigger so dismissed rows stay hidden across refreshes.
+const buildContactId = (doseId: string, trigger: MessageTemplateTrigger) =>
+  `dose_${doseId}_${trigger.toLowerCase()}`;
+
 const DosesPage: React.FC = () => {
   const location = useLocation();
   const initialFilter = (location.state as any)?.filter as string | undefined;
@@ -15,6 +19,7 @@ const DosesPage: React.FC = () => {
   const [patients, setPatients] = useState<PatientFull[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [dismissedSet, setDismissedSet] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'overdue' | 'upcoming' | 'to-deliver' | 'to-pay' | 'all'>(
@@ -26,29 +31,33 @@ const DosesPage: React.FC = () => {
   const [popupTreatmentId, setPopupTreatmentId] = useState<string | null>(null);
   const [popupDoseId, setPopupDoseId] = useState<string | undefined>(undefined);
   const [popupTrigger, setPopupTrigger] = useState<MessageTemplateTrigger>(MessageTemplateTrigger.NEXT_DOSE);
+  const [popupContactId, setPopupContactId] = useState<string>('');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [dosesRes, patientsRes, treatmentsRes, protocolsRes] = await Promise.all([
+      const [dosesRes, patientsRes, treatmentsRes, protocolsRes, dismissedRes] = await Promise.all([
         dosesApi.getAll({ limit: 1000 }),
         patientsApi.getAll({ limit: 1000 }),
         treatmentsApi.getAll({ limit: 1000 }),
         protocolsApi.getAll(),
+        dismissedLogsApi.getAll(),
       ]);
       setDoses(dosesRes.data || []);
       setPatients(patientsRes.data || []);
       setTreatments(treatmentsRes.data || []);
       setProtocols(protocolsRes.data || []);
+      const ids = (dismissedRes.data as DismissedLog[] || []).map(d => d.contactId);
+      setDismissedSet(new Set(ids));
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar doses');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const today = useMemo(() => {
     const t = new Date();
@@ -58,15 +67,19 @@ const DosesPage: React.FC = () => {
 
   const filteredDoses = useMemo(() => {
     let list = doses;
+    let trigger: MessageTemplateTrigger = MessageTemplateTrigger.NEXT_DOSE;
     switch (filter) {
       case 'overdue':
         list = doses.filter(d => d.status === DoseStatus.PENDING && new Date(d.applicationDate) < today);
+        trigger = MessageTemplateTrigger.LATE_DOSE;
         break;
       case 'upcoming':
         list = doses.filter(d => d.status === DoseStatus.PENDING && new Date(d.applicationDate) >= today);
+        trigger = MessageTemplateTrigger.NEXT_DOSE;
         break;
       case 'to-deliver':
         list = doses.filter(d => d.paymentStatus === PaymentStatus.PAID && d.deliveryStatus === 'waiting');
+        trigger = MessageTemplateTrigger.GENERAL;
         break;
       case 'to-pay':
         list = doses.filter(d => [
@@ -74,12 +87,14 @@ const DosesPage: React.FC = () => {
           PaymentStatus.WAITING_CARD,
           PaymentStatus.WAITING_BOLETO,
         ].includes(d.paymentStatus));
+        trigger = MessageTemplateTrigger.GENERAL;
         break;
     }
-    return list.sort((a, b) =>
-      new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime()
-    );
-  }, [doses, filter, today]);
+    // Hide rows already marked as concluído for this dose+trigger combo
+    return list
+      .filter(d => !dismissedSet.has(buildContactId(d.id, trigger)))
+      .sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
+  }, [doses, filter, today, dismissedSet]);
 
   const getPatient = (treatmentId: string) => {
     const t = treatments.find(tr => tr.id === treatmentId);
@@ -97,6 +112,7 @@ const DosesPage: React.FC = () => {
     setPopupTreatmentId(dose.treatmentId);
     setPopupDoseId(dose.id);
     setPopupTrigger(trigger);
+    setPopupContactId(buildContactId(dose.id, trigger));
   };
 
   if (isLoading) {
@@ -179,7 +195,9 @@ const DosesPage: React.FC = () => {
                 const overdueDays = dose.status === DoseStatus.PENDING
                   ? Math.max(0, diffInDays(today, dose.applicationDate))
                   : 0;
-                const trigger = filter === 'overdue' ? MessageTemplateTrigger.LATE_DOSE : MessageTemplateTrigger.NEXT_DOSE;
+                const trigger = filter === 'overdue'
+                  ? MessageTemplateTrigger.LATE_DOSE
+                  : (filter === 'upcoming' ? MessageTemplateTrigger.NEXT_DOSE : MessageTemplateTrigger.GENERAL);
                 return (
                   <tr key={dose.id} className="hover:bg-slate-50">
                     <td className="px-6 py-3 font-medium text-slate-700">
@@ -221,10 +239,15 @@ const DosesPage: React.FC = () => {
         </div>
       </div>
 
-      {popupPatient && popupTreatmentId && (
+      {popupPatient && popupTreatmentId && popupContactId && (
         <MessagePopup
           open
-          onClose={() => { setPopupPatient(null); setPopupTreatmentId(null); setPopupDoseId(undefined); }}
+          onClose={() => {
+            setPopupPatient(null);
+            setPopupTreatmentId(null);
+            setPopupDoseId(undefined);
+            setPopupContactId('');
+          }}
           treatmentId={popupTreatmentId}
           doseId={popupDoseId}
           patientId={popupPatient.id}
@@ -234,6 +257,8 @@ const DosesPage: React.FC = () => {
           defaultTrigger={popupTrigger}
           title={popupTrigger === MessageTemplateTrigger.LATE_DOSE ? 'Dose Atrasada' : 'Próxima Dose'}
           treatmentLink={`/tratamento/${popupTreatmentId}`}
+          contactId={popupContactId}
+          onMarkSent={loadData}
         />
       )}
     </div>

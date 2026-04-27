@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { messageTemplatesApi } from '../services/api';
 import { MessageTemplate, MessageTemplateTrigger, TemplateVariableDef } from '../types';
-import { MessageSquare, Plus, Edit2, Trash2, X, AlertCircle, Loader2, Save, Copy, Check } from 'lucide-react';
+import { MessageSquare, Plus, Edit2, Trash2, X, AlertCircle, Loader2, Save } from 'lucide-react';
+import VariablesPanel from '../components/ui/VariablesPanel';
 
 // March 2026 spec — Admin page for configurable manual-send WhatsApp templates.
 // See [E:/1/16.png] for the popup that uses these templates and [E:/1/17.png] for the variable list.
@@ -29,7 +30,6 @@ const MessageTemplates: React.FC = () => {
   const [variables, setVariables] = useState<TemplateVariableDef[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   // Form state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -120,16 +120,6 @@ const MessageTemplates: React.FC = () => {
     }
   };
 
-  const handleCopyVariable = async (tag: string) => {
-    try {
-      await navigator.clipboard.writeText(tag);
-      setCopiedTag(tag);
-      setTimeout(() => setCopiedTag(null), 1500);
-    } catch {
-      // Clipboard not available — silently ignore
-    }
-  };
-
   const insertVariable = (tag: string) => {
     setFormContent(prev => prev + (prev && !prev.endsWith(' ') ? ' ' : '') + tag);
   };
@@ -163,71 +153,8 @@ const MessageTemplates: React.FC = () => {
         </div>
       )}
 
-      {/* Variables panel */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-5 py-4 bg-gradient-to-r from-violet-100 to-violet-50 border-b border-violet-200 flex items-center justify-between">
-          <div className="flex items-center">
-            <span className="bg-violet-600 text-white rounded-lg p-2 mr-3">
-              <MessageSquare size={18} />
-            </span>
-            <div>
-              <h3 className="font-bold text-slate-800">Campos Personalizados</h3>
-              <p className="text-xs text-slate-500">
-                Use variáveis nas mensagens pré-prontas para auto-preencher dados do paciente e tratamento.
-              </p>
-            </div>
-          </div>
-          <span className="bg-violet-200 text-violet-700 text-xs font-bold px-2 py-1 rounded-full">
-            Variáveis Disponíveis: {variables.length}
-          </span>
-        </div>
-
-        <div className="p-5">
-          <p className="text-xs text-slate-500 mb-3 text-right">Clique para copiar uma tag</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b">
-                <tr>
-                  <th className="px-3 py-2 text-left">Variável (Tag)</th>
-                  <th className="px-3 py-2 text-left">Nome Técnico</th>
-                  <th className="px-3 py-2 text-left">Retorna</th>
-                  <th className="px-3 py-2 text-left">Fonte</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {variables.map(v => (
-                  <tr key={v.tag} className="hover:bg-slate-50">
-                    <td className="px-3 py-3">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyVariable(v.tag)}
-                        className="inline-flex items-center bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 rounded-md px-2.5 py-1 font-mono text-xs transition-colors"
-                        title="Copiar tag"
-                      >
-                        {copiedTag === v.tag ? (
-                          <><Check size={12} className="mr-1" /> Copiado!</>
-                        ) : (
-                          <><Copy size={12} className="mr-1" /> {v.tag}</>
-                        )}
-                      </button>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs text-slate-600">{v.key}</td>
-                    <td className="px-3 py-3">
-                      <p className="text-slate-700">{v.returns}</p>
-                      <p className="text-xs text-slate-400 italic">Ex: {v.example}</p>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-block bg-slate-100 text-slate-700 text-xs font-medium px-2 py-1 rounded">
-                        {v.source}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      {/* Variables panel — reusable component, also used in Protocolos */}
+      <VariablesPanel />
 
       {/* Form */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">

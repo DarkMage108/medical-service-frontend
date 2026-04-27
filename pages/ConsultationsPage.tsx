@@ -1,43 +1,52 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { treatmentsApi, patientsApi, protocolsApi } from '../services/api';
+import { treatmentsApi, patientsApi, protocolsApi, dismissedLogsApi } from '../services/api';
 import { Calendar, Loader2, AlertCircle, MessageSquare, ChevronRight } from 'lucide-react';
-import { Treatment, PatientFull, Protocol, MessageTemplateTrigger } from '../types';
+import { Treatment, PatientFull, Protocol, MessageTemplateTrigger, DismissedLog } from '../types';
 import { formatDate, formatConsultationPeriod } from '../constants';
 import MessagePopup from '../components/ui/MessagePopup';
 
 // March 2026 — sidebar page for upcoming consultation dates (extracted from Dashboard).
+// Stable contactId per treatment+forecast-month so dismissed rows stay hidden across refreshes.
+const buildContactId = (treatmentId: string, month?: number | null, year?: number | null) =>
+  `consult_${treatmentId}_${year ?? 0}_${month ?? 0}`;
+
 const ConsultationsPage: React.FC = () => {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [patients, setPatients] = useState<PatientFull[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [dismissedSet, setDismissedSet] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [popupPatient, setPopupPatient] = useState<PatientFull | null>(null);
   const [popupTreatmentId, setPopupTreatmentId] = useState<string | null>(null);
+  const [popupContactId, setPopupContactId] = useState<string>('');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        setIsLoading(true);
-        const [treatmentsRes, patientsRes, protocolsRes] = await Promise.all([
-          treatmentsApi.getAll({ limit: 1000, status: 'ONGOING' }),
-          patientsApi.getAll({ limit: 1000 }),
-          protocolsApi.getAll(),
-        ]);
-        setTreatments(treatmentsRes.data || []);
-        setPatients(patientsRes.data || []);
-        setProtocols(protocolsRes.data || []);
-      } catch (err: any) {
-        setError(err.message || 'Erro ao carregar dados');
-      } finally {
-        setIsLoading(false);
-      }
-    })();
+  const loadData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [treatmentsRes, patientsRes, protocolsRes, dismissedRes] = await Promise.all([
+        treatmentsApi.getAll({ limit: 1000, status: 'ONGOING' }),
+        patientsApi.getAll({ limit: 1000 }),
+        protocolsApi.getAll(),
+        dismissedLogsApi.getAll(),
+      ]);
+      setTreatments(treatmentsRes.data || []);
+      setPatients(patientsRes.data || []);
+      setProtocols(protocolsRes.data || []);
+      const ids = (dismissedRes.data as DismissedLog[] || []).map(d => d.contactId);
+      setDismissedSet(new Set(ids));
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar dados');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  // Treatments with a forecast (Quinzena or exact date) sorted chronologically.
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Treatments with a forecast (Quinzena or exact date), filtered by dismissed logs, sorted chronologically.
   const consultationItems = useMemo(() => {
     return treatments
       .filter(t => t.nextConsultationDate || (t.nextConsultationMonth && t.nextConsultationYear && t.nextConsultationFortnight))
@@ -46,16 +55,26 @@ const ConsultationsPage: React.FC = () => {
         const protocol = protocols.find(p => p.id === t.protocolId);
         // Sort key: prefer exact date; otherwise approximate from Quinzena (day 8 or 23 mid-quinzena)
         let sortDate: Date;
+        let monthKey: number | null = null;
+        let yearKey: number | null = null;
         if (t.nextConsultationDate) {
-          sortDate = new Date(t.nextConsultationDate);
+          const d = new Date(t.nextConsultationDate);
+          sortDate = d;
+          monthKey = d.getMonth() + 1;
+          yearKey = d.getFullYear();
         } else {
           const day = t.nextConsultationFortnight === 1 ? 8 : 23;
           sortDate = new Date(t.nextConsultationYear!, (t.nextConsultationMonth! - 1), day);
+          monthKey = t.nextConsultationMonth!;
+          yearKey = t.nextConsultationYear!;
         }
-        return { treatment: t, patient, protocol, sortDate };
+        const contactId = buildContactId(t.id, monthKey, yearKey);
+        return { treatment: t, patient, protocol, sortDate, contactId };
       })
+      // Hide rows already marked as concluído for this forecast month
+      .filter(item => !dismissedSet.has(item.contactId))
       .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
-  }, [treatments, patients, protocols]);
+  }, [treatments, patients, protocols, dismissedSet]);
 
   if (isLoading) {
     return (
@@ -105,8 +124,8 @@ const ConsultationsPage: React.FC = () => {
           <tbody className="divide-y divide-slate-100">
             {consultationItems.length === 0 ? (
               <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">Nenhuma consulta prevista.</td></tr>
-            ) : consultationItems.map(({ treatment, patient, protocol }) => (
-              <tr key={treatment.id} className="hover:bg-slate-50">
+            ) : consultationItems.map(({ treatment, patient, protocol, contactId }) => (
+              <tr key={contactId} className="hover:bg-slate-50">
                 <td className="px-6 py-3 font-medium text-slate-700">
                   {treatment.nextConsultationMonth && treatment.nextConsultationYear && treatment.nextConsultationFortnight
                     ? formatConsultationPeriod(treatment.nextConsultationMonth, treatment.nextConsultationYear, treatment.nextConsultationFortnight)
@@ -123,7 +142,11 @@ const ConsultationsPage: React.FC = () => {
                 <td className="px-6 py-3 text-right">
                   {patient && (
                     <button
-                      onClick={() => { setPopupPatient(patient); setPopupTreatmentId(treatment.id); }}
+                      onClick={() => {
+                        setPopupPatient(patient);
+                        setPopupTreatmentId(treatment.id);
+                        setPopupContactId(contactId);
+                      }}
                       className="text-purple-600 hover:text-purple-800 font-medium text-xs flex items-center justify-end ml-auto"
                     >
                       <MessageSquare size={12} className="mr-1" />
@@ -138,10 +161,10 @@ const ConsultationsPage: React.FC = () => {
         </table>
       </div>
 
-      {popupPatient && popupTreatmentId && (
+      {popupPatient && popupTreatmentId && popupContactId && (
         <MessagePopup
           open
-          onClose={() => { setPopupPatient(null); setPopupTreatmentId(null); }}
+          onClose={() => { setPopupPatient(null); setPopupTreatmentId(null); setPopupContactId(''); }}
           treatmentId={popupTreatmentId}
           patientId={popupPatient.id}
           patientName={popupPatient.fullName}
@@ -150,6 +173,8 @@ const ConsultationsPage: React.FC = () => {
           defaultTrigger={MessageTemplateTrigger.SCHEDULE_CONSULTATION}
           title="Agendar Consulta"
           treatmentLink={`/tratamento/${popupTreatmentId}`}
+          contactId={popupContactId}
+          onMarkSent={loadData}
         />
       )}
     </div>

@@ -13,7 +13,7 @@ interface LayoutProps {
   onLogout: () => void;
 }
 
-// Menu key to icon mapping
+// Menu key to icon mapping (includes both core and March 2026 secondary pages)
 const MENU_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
   checklist: ListTodo,
@@ -24,6 +24,12 @@ const MENU_ICONS: Record<string, LucideIcon> = {
   cashregister: DollarSign,
   diagnoses: Stethoscope,
   protocols: ClipboardList,
+  // March 2026 secondary pages
+  'consent-terms': FileWarning,
+  'doses-page': Syringe,
+  consultations: Calendar,
+  survey: MessageCircle,
+  'message-templates': MessageSquare,
 };
 
 // Menu key to path mapping
@@ -37,6 +43,12 @@ const MENU_PATHS: Record<string, string> = {
   cashregister: '/caixa',
   diagnoses: '/diagnosticos',
   protocols: '/protocolos',
+  // March 2026 secondary pages
+  'consent-terms': '/termos-consentimento',
+  'doses-page': '/doses',
+  consultations: '/consultas',
+  survey: '/pesquisa-enfermagem',
+  'message-templates': '/modelos-mensagem',
 };
 
 // Menu key to label mapping
@@ -50,37 +62,22 @@ const MENU_LABELS: Record<string, string> = {
   cashregister: 'CAIXA',
   diagnoses: 'Diagnosticos',
   protocols: 'Protocolos',
+  // March 2026 secondary pages
+  'consent-terms': 'Termos Consent.',
+  'doses-page': 'Doses',
+  consultations: 'Consultas',
+  survey: 'Pesquisa Enf.',
+  'message-templates': 'Modelos Msg',
 };
 
-// March 2026 — sidebar pages extracted from main dashboard
-const SECONDARY_NAV_ITEMS = [
-  {
-    key: 'consent-terms',
-    label: 'Termos Consent.',
-    path: '/termos-consentimento',
-    icon: FileWarning,
-  },
-  {
-    key: 'doses-page',
-    label: 'Doses',
-    path: '/doses',
-    icon: Syringe,
-  },
-  {
-    key: 'consultations',
-    label: 'Consultas',
-    path: '/consultas',
-    icon: Calendar,
-  },
-  {
-    key: 'survey',
-    label: 'Pesquisa Enf.',
-    path: '/pesquisa-enfermagem',
-    icon: MessageCircle,
-  },
+// Sort order — primary KPI section first, then March 2026 secondary pages
+const MENU_ORDER = [
+  'dashboard', 'checklist', 'nursing', 'patients', 'history',
+  'inventory', 'cashregister', 'diagnoses', 'protocols',
+  'consent-terms', 'doses-page', 'consultations', 'survey', 'message-templates',
 ];
 
-// Static nav items for admin only
+// Static nav items for admin only (always visible to admin, not in permissions table)
 const ADMIN_NAV_ITEMS = [
   {
     key: 'users',
@@ -95,12 +92,6 @@ const ADMIN_NAV_ITEMS = [
     icon: Shield,
   },
   {
-    key: 'message-templates',
-    label: 'Modelos Msg',
-    path: '/modelos-mensagem',
-    icon: MessageSquare,
-  },
-  {
     key: 'settings',
     label: 'Configuracoes',
     path: '/configuracoes',
@@ -112,7 +103,8 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   const location = useLocation();
   const { permissions, isLoading: permissionsLoading } = usePermissions();
 
-  // Build nav items from permissions
+  // Build nav items from permissions (March 2026: includes the 5 new sidebar pages
+  // which are now permission-controlled in the PermissionsManager)
   const navItems = React.useMemo(() => {
     const items: Array<{ key: string; label: string; path: string; icon: LucideIcon }> = [];
 
@@ -128,14 +120,10 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
       }
     });
 
-    // Sort items in a logical order
-    const order = ['dashboard', 'checklist', 'nursing', 'patients', 'history', 'inventory', 'cashregister', 'diagnoses', 'protocols'];
-    items.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+    // Sort items in the canonical order
+    items.sort((a, b) => MENU_ORDER.indexOf(a.key) - MENU_ORDER.indexOf(b.key));
 
-    // March 2026 — extracted dashboard sections (visible to all authenticated users)
-    items.push(...SECONDARY_NAV_ITEMS);
-
-    // Add admin-only menus
+    // Add admin-only menus (Usuários, Permissões, Configurações — never in permission table)
     if (user.role === UserRole.ADMIN) {
       items.push(...ADMIN_NAV_ITEMS);
     }

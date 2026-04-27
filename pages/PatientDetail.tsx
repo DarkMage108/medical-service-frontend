@@ -921,9 +921,9 @@ const PatientDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Timeline Events */}
-      {patient.active && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden">
+      {/* Timeline Events — March 2026: visível para pacientes ativos E inativos.
+          Agendar Evento Manual deve funcionar independente do status do paciente. */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-hidden">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold text-slate-700 flex items-center">
               <Clock size={18} className="mr-2 text-pink-500" />
@@ -1044,7 +1044,6 @@ const PatientDetail: React.FC = () => {
             </div>
           )}
         </div>
-      )}
 
       {/* Completed Events History - Horizontal Timeline */}
       {completedEvents.length > 0 && (

@@ -10,10 +10,10 @@ import { MessageSquare, X, Loader2, Check, ExternalLink, ArrowRight } from 'luci
 interface MessagePopupProps {
   open: boolean;
   onClose: () => void;
-  // Treatment context for variable resolution
-  treatmentId: string;
+  // Treatment context for variable resolution. Optional — falls back to patientId for patients without active treatment.
+  treatmentId?: string;
   doseId?: string;
-  // Patient identification (March 2026: required to log the manual contact correctly)
+  // Patient identification (March 2026: required to log the manual contact correctly + fallback variable resolution)
   patientId: string;
   patientName: string;
   guardianName?: string;
@@ -26,6 +26,9 @@ interface MessagePopupProps {
   title?: string;
   // Optional link to navigate "Ir para Tratamento"
   treatmentLink?: string;
+  // March 2026: stable contactId so the row stays dismissed across refreshes.
+  // Each sidebar page must pass a deterministic id (e.g., `consult_${treatmentId}_${month}_${year}`).
+  contactId: string;
 }
 
 const stripPhone = (phone?: string): string => {
@@ -46,6 +49,7 @@ const MessagePopup: React.FC<MessagePopupProps> = ({
   onMarkSent,
   title = 'Detalhes da Mensagem',
   treatmentLink,
+  contactId,
 }) => {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -74,14 +78,16 @@ const MessagePopup: React.FC<MessagePopupProps> = ({
   }, [open, defaultTrigger]);
 
   const resolveTemplate = async (templateId: string) => {
-    if (!templateId || !treatmentId) return;
+    if (!templateId) return;
     setIsResolving(true);
     try {
-      const res = await messageTemplatesApi.resolve({
-        templateId,
-        treatmentId,
-        doseId,
-      });
+      // Prefer treatmentId (full variable set including next dose / consultation).
+      // Fall back to patientId for patients without active treatment (e.g. consent term).
+      const res = await messageTemplatesApi.resolve(
+        treatmentId
+          ? { templateId, treatmentId, doseId }
+          : { templateId, patientId },
+      );
       setContent(res.rendered);
     } catch (err: any) {
       console.error('Failed to resolve template:', err);
@@ -106,21 +112,37 @@ const MessagePopup: React.FC<MessagePopupProps> = ({
 
   const handleMarkSent = async () => {
     setIsMarking(true);
+    let dismissed = false;
     try {
-      // Log the manual contact so it doesn't reappear in pendings
-      await dismissedLogsApi.createManual({
-        patientId,
-        patientName,
-        patientPhone: guardianPhone,
-        message: content,
+      // March 2026: use a stable contactId so the row stays hidden across refreshes.
+      // The sidebar page filters its rows against the dismissed-logs list using the same id.
+      await dismissedLogsApi.dismiss(contactId, {
+        text: content,
+        classification: 'Geral',
       });
-      if (onMarkSent) await onMarkSent();
-      onClose();
+      dismissed = true;
     } catch (err: any) {
-      console.error('Failed to mark sent:', err);
-    } finally {
-      setIsMarking(false);
+      // P2002 / 409 — already dismissed, treat as success.
+      const msg = String(err?.message || '');
+      if (msg.includes('already exists') || msg.includes('Conflict') || msg.includes('409')) {
+        dismissed = true;
+      } else {
+        console.error('Falha ao marcar como concluído:', err);
+        alert('Não foi possível marcar como enviado: ' + (err?.message || 'Erro desconhecido'));
+      }
     }
+
+    if (dismissed) {
+      // Always reload + close on success — even if the reload itself fails (network blip),
+      // the local close should still happen so the UI feels responsive.
+      try {
+        if (onMarkSent) await onMarkSent();
+      } catch (reloadErr) {
+        console.warn('Reload after mark-sent failed (popup will still close):', reloadErr);
+      }
+      onClose();
+    }
+    setIsMarking(false);
   };
 
   if (!open) return null;
