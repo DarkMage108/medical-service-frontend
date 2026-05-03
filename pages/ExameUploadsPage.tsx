@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { FileUp, Loader2, AlertCircle, Eye, FileText, Clock, CheckCircle2, RefreshCw, X, Wand2, Upload, Search } from 'lucide-react';
+import { FileUp, Loader2, AlertCircle, Eye, FileText, Clock, CheckCircle2, RefreshCw, X, Wand2, Upload, Search, Trash2, Download, AlertTriangle, UserCheck, UserX } from 'lucide-react';
 import { useToast } from '../components/ui/Toast';
+import { patientsApi } from '../services/api';
 
 const VPS_BASE = 'https://api.endocrinokids.com.br/api';
 const ADMIN_KEY = 'endoped-exames-2026';
@@ -9,18 +10,27 @@ interface ExameUpload {
   id: number;
   patient_id: number;
   patient_name: string;
+  admin_patient_id: number | null;
   original_name: string;
   content_type: string;
   status: string;
   transcription: string | null;
   uploaded_at: string;
+  patient_name_doc: string | null;
+  name_match: string | null;
+}
+
+interface PatientOption {
+  id: number;
+  nome: string;
+  patient_id: number | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: typeof Clock }> = {
-  pending:     { label: 'Pendente',    cls: 'bg-amber-50 text-amber-700 border-amber-200',    icon: Clock },
-  transcribed: { label: 'Transcrito',  cls: 'bg-blue-50 text-blue-700 border-blue-200',       icon: FileText },
-  reviewed:    { label: 'Revisado',    cls: 'bg-teal-50 text-teal-700 border-teal-200',       icon: CheckCircle2 },
-  imported:    { label: 'Importado',   cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
+  pending:      { label: 'Pendente',    cls: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
+  transcribed:  { label: 'Transcrito',  cls: 'bg-blue-50 text-blue-700 border-blue-200',          icon: FileText },
+  reviewed:     { label: 'Revisado',    cls: 'bg-teal-50 text-teal-700 border-teal-200',          icon: CheckCircle2 },
+  verificado:   { label: 'Verificado',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
 };
 
 const adminFetch = (path: string, opts: RequestInit = {}) =>
@@ -28,11 +38,6 @@ const adminFetch = (path: string, opts: RequestInit = {}) =>
     ...opts,
     headers: { 'x-admin-key': ADMIN_KEY, ...opts.headers },
   });
-
-interface PatientOption {
-  id: number;
-  nome: string;
-}
 
 const ExameUploadsPage: React.FC = () => {
   const { toast } = useToast();
@@ -43,7 +48,9 @@ const ExameUploadsPage: React.FC = () => {
   const [viewingFile, setViewingFile] = useState<{ id: number; url: string; type: string } | null>(null);
   const [viewingTranscription, setViewingTranscription] = useState<ExameUpload | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
+  // Upload form state
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<number | ''>('');
   const [patientSearch, setPatientSearch] = useState('');
@@ -51,12 +58,35 @@ const ExameUploadsPage: React.FC = () => {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Admin platform patients (for registration check)
+  const [adminPatientNames, setAdminPatientNames] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     adminFetch('/admin/pacientes')
       .then(r => r.json())
       .then(d => setPatients(d.patients || []))
       .catch(() => {});
+    patientsApi.getAll()
+      .then((res: any) => {
+        const list = res?.data?.data || res?.data || [];
+        const names = new Set<string>(list.map((p: any) => (p.fullName || '').toUpperCase().trim()));
+        setAdminPatientNames(names);
+      })
+      .catch(() => {});
   }, []);
+
+  const hasAdminRegistration = (patientName: string): boolean => {
+    if (!patientName || adminPatientNames.size === 0) return false;
+    const upper = patientName.toUpperCase().trim();
+    if (adminPatientNames.has(upper)) return true;
+    const parts = upper.split(/\s+/);
+    for (const name of adminPatientNames) {
+      const adminParts = name.split(/\s+/);
+      const common = parts.filter(p => adminParts.includes(p));
+      if (common.length >= 2) return true;
+    }
+    return false;
+  };
 
   const filteredPatients = patients.filter(p =>
     p.nome.toLowerCase().includes(patientSearch.toLowerCase())
@@ -66,7 +96,7 @@ const ExameUploadsPage: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !selectedPatient) return;
     if (file.size > 10 * 1024 * 1024) {
-      toast('Arquivo muito grande. Máximo 10MB.', 'error');
+      toast('Arquivo muito grande. Maximo 10MB.', 'error');
       return;
     }
     setUploading(true);
@@ -80,10 +110,11 @@ const ExameUploadsPage: React.FC = () => {
         body: formData,
       });
       if (!resp.ok) throw new Error('Erro no upload');
-      toast('Exame enviado com sucesso!', 'success');
+      toast('Exame enviado! Transcricao automatica em andamento...', 'success');
       setSelectedPatient('');
       setPatientSearch('');
       setShowUploadForm(false);
+      setTimeout(() => loadUploads(), 3000);
       loadUploads();
     } catch {
       toast('Erro ao enviar exame.', 'error');
@@ -116,13 +147,19 @@ const ExameUploadsPage: React.FC = () => {
       const resp = await adminFetch(`/admin/exames/uploads/${id}/transcribe`, { method: 'POST' });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
-        throw new Error(data.detail || 'Erro na transcrição');
+        throw new Error(data.detail || 'Erro na transcricao');
       }
       const data = await resp.json();
-      setUploads(prev => prev.map(u => u.id === id ? { ...u, transcription: data.transcription, status: data.status } : u));
-      toast('Transcrição concluída!', 'success');
+      setUploads(prev => prev.map(u => u.id === id ? {
+        ...u,
+        transcription: data.transcription,
+        status: data.status,
+        patient_name_doc: data.patient_name_doc,
+        name_match: data.name_match,
+      } : u));
+      toast('Transcricao concluida!', 'success');
     } catch (err: any) {
-      toast(err.message || 'Erro na transcrição', 'error');
+      toast(err.message || 'Erro na transcricao', 'error');
     } finally {
       setTranscribing(null);
     }
@@ -146,15 +183,48 @@ const ExameUploadsPage: React.FC = () => {
     }
   };
 
+  const handleDelete = async (upload: ExameUpload) => {
+    if (!window.confirm(`Excluir o exame "${upload.original_name}" de ${upload.patient_name}?`)) return;
+    setDeleting(upload.id);
+    try {
+      const resp = await adminFetch(`/admin/exames/uploads/${upload.id}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error('Erro ao excluir');
+      setUploads(prev => prev.filter(u => u.id !== upload.id));
+      toast('Exame excluido', 'success');
+    } catch {
+      toast('Erro ao excluir exame', 'error');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   const handleViewFile = async (upload: ExameUpload) => {
     try {
       const resp = await adminFetch(`/admin/exames/uploads/${upload.id}/file`);
-      if (!resp.ok) throw new Error('Arquivo não encontrado');
+      if (!resp.ok) throw new Error('Arquivo nao encontrado');
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       setViewingFile({ id: upload.id, url, type: upload.content_type });
     } catch {
       toast('Erro ao abrir arquivo', 'error');
+    }
+  };
+
+  const handleDownload = async (upload: ExameUpload) => {
+    try {
+      const resp = await adminFetch(`/admin/exames/uploads/${upload.id}/download`);
+      if (!resp.ok) throw new Error('Erro');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = upload.original_name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast('Erro ao baixar arquivo', 'error');
     }
   };
 
@@ -200,7 +270,7 @@ const ExameUploadsPage: React.FC = () => {
           <FileUp size={24} className="text-pink-500" />
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Exames Enviados</h1>
-            <p className="text-sm text-slate-500">Exames enviados pelos pacientes pelo portal</p>
+            <p className="text-sm text-slate-500">Exames enviados pelos pacientes e secretaria</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -280,6 +350,7 @@ const ExameUploadsPage: React.FC = () => {
               Paciente selecionado: <span className="font-bold text-slate-700">{patientSearch}</span>
             </p>
           )}
+          <p className="mt-2 text-[10px] text-slate-400">A transcricao e verificacao de nome serao feitas automaticamente apos o envio.</p>
         </div>
       )}
 
@@ -295,23 +366,62 @@ const ExameUploadsPage: React.FC = () => {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Paciente</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Cadastro</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Arquivo</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Nome no Doc</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Data Envio</th>
                   <th className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Ações</th>
+                  <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Acoes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {uploads.map(u => {
                   const sc = STATUS_CONFIG[u.status] || STATUS_CONFIG.pending;
                   const StatusIcon = sc.icon;
+                  const registered = hasAdminRegistration(u.patient_name);
                   return (
                     <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3">
                         <span className="text-sm font-semibold text-slate-800">{u.patient_name}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm text-slate-600">{u.original_name}</span>
+                        {registered ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <UserCheck size={11} />
+                            Cadastrado
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+                            <UserX size={11} />
+                            Sem cadastro
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-slate-600 max-w-[200px] truncate block">{u.original_name}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {u.name_match === 'match' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
+                            <CheckCircle2 size={13} />
+                            {u.patient_name_doc}
+                          </span>
+                        )}
+                        {u.name_match === 'mismatch' && (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-red-600">
+                            <AlertTriangle size={13} />
+                            {u.patient_name_doc}
+                          </span>
+                        )}
+                        {u.name_match === 'not_found' && (
+                          <span className="text-xs text-slate-400 italic">Nao encontrado</span>
+                        )}
+                        {(!u.name_match || u.name_match === 'unknown') && u.status === 'pending' && (
+                          <span className="text-xs text-slate-300">Aguardando transcricao</span>
+                        )}
+                        {(!u.name_match || u.name_match === 'unknown') && u.status !== 'pending' && (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-sm text-slate-500">{formatDate(u.uploaded_at)}</span>
@@ -322,7 +432,7 @@ const ExameUploadsPage: React.FC = () => {
                             <StatusIcon size={12} />
                             {sc.label}
                           </span>
-                          {u.status !== 'imported' && (
+                          {u.status !== 'verificado' && (
                             <select
                               value={u.status}
                               onChange={e => handleStatusChange(u.id, e.target.value)}
@@ -332,25 +442,32 @@ const ExameUploadsPage: React.FC = () => {
                               <option value="pending">Pendente</option>
                               <option value="transcribed">Transcrito</option>
                               <option value="reviewed">Revisado</option>
-                              <option value="imported">Importado</option>
+                              <option value="verificado">Verificado</option>
                             </select>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleViewFile(u)}
                             className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Ver arquivo"
+                            title="Visualizar"
                           >
                             <Eye size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDownload(u)}
+                            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Baixar"
+                          >
+                            <Download size={16} />
                           </button>
                           {u.transcription ? (
                             <button
                               onClick={() => setViewingTranscription(u)}
                               className="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
-                              title="Ver transcrição"
+                              title="Ver transcricao"
                             >
                               <FileText size={16} />
                             </button>
@@ -358,16 +475,24 @@ const ExameUploadsPage: React.FC = () => {
                             <button
                               onClick={() => handleTranscribe(u.id)}
                               disabled={transcribing === u.id}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white rounded-lg text-xs font-bold transition-colors"
+                              className="flex items-center gap-1 px-2 py-1.5 bg-pink-500 hover:bg-pink-600 disabled:bg-pink-300 text-white rounded-lg text-[11px] font-bold transition-colors"
                               title="Transcrever com IA"
                             >
                               {transcribing === u.id ? (
-                                <><Loader2 size={14} className="animate-spin" /> Transcrevendo...</>
+                                <Loader2 size={13} className="animate-spin" />
                               ) : (
-                                <><Wand2 size={14} /> Transcrever</>
+                                <><Wand2 size={13} /> Transcrever</>
                               )}
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDelete(u)}
+                            disabled={deleting === u.id}
+                            className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -406,8 +531,24 @@ const ExameUploadsPage: React.FC = () => {
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <div>
-                <h3 className="text-lg font-bold text-slate-800">Transcrição</h3>
+                <h3 className="text-lg font-bold text-slate-800">Transcricao</h3>
                 <p className="text-sm text-slate-500">{viewingTranscription.original_name} — {viewingTranscription.patient_name}</p>
+                {viewingTranscription.name_match === 'mismatch' && (
+                  <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1 bg-red-50 border border-red-200 rounded-lg">
+                    <AlertTriangle size={14} className="text-red-500" />
+                    <span className="text-xs font-bold text-red-700">
+                      Nome no documento ({viewingTranscription.patient_name_doc}) diferente do cadastro ({viewingTranscription.patient_name})
+                    </span>
+                  </div>
+                )}
+                {viewingTranscription.name_match === 'match' && (
+                  <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <CheckCircle2 size={14} className="text-emerald-500" />
+                    <span className="text-xs font-bold text-emerald-700">
+                      Nome no documento confere: {viewingTranscription.patient_name_doc}
+                    </span>
+                  </div>
+                )}
               </div>
               <button onClick={() => setViewingTranscription(null)} className="p-2 hover:bg-slate-100 rounded-lg">
                 <X size={20} className="text-slate-400" />
