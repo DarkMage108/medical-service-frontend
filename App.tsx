@@ -3,28 +3,34 @@ import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { PermissionsProvider, usePermissions } from './contexts/PermissionsContext';
 import Layout from './components/Layout';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import PatientList from './pages/PatientList';
-import PatientDetail from './pages/PatientDetail';
-import TreatmentDetail from './pages/TreatmentDetail';
-import DiagnosisList from './pages/DiagnosisList';
-import MedicationList from './pages/MedicationList';
-import HistoryList from './pages/HistoryList';
-import InventoryList from './pages/InventoryList';
-import CashRegister from './pages/CashRegister';
-import PermissionsManager from './pages/PermissionsManager';
-import UserManagement from './pages/UserManagement';
-import Profile from './pages/Profile';
-import Checklist from './pages/Checklist';
-import NursingList from './pages/NursingList';
-import SettingsPage from './pages/SettingsPage';
-import MessageTemplates from './pages/MessageTemplates';
-import ConsentTermsPage from './pages/ConsentTermsPage';
-import DosesPage from './pages/DosesPage';
-import ConsultationsPage from './pages/ConsultationsPage';
-import SurveyPage from './pages/SurveyPage';
+const Login = React.lazy(() => import('./pages/Login'));
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const PatientList = React.lazy(() => import('./pages/PatientList'));
+const PatientDetail = React.lazy(() => import('./pages/PatientDetail'));
+const TreatmentDetail = React.lazy(() => import('./pages/TreatmentDetail'));
+const DiagnosisList = React.lazy(() => import('./pages/DiagnosisList'));
+const MedicationList = React.lazy(() => import('./pages/MedicationList'));
+const HistoryList = React.lazy(() => import('./pages/HistoryList'));
+const InventoryList = React.lazy(() => import('./pages/InventoryList'));
+const CashRegister = React.lazy(() => import('./pages/CashRegister'));
+const PermissionsManager = React.lazy(() => import('./pages/PermissionsManager'));
+const UserManagement = React.lazy(() => import('./pages/UserManagement'));
+const Profile = React.lazy(() => import('./pages/Profile'));
+const NursingList = React.lazy(() => import('./pages/NursingList'));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage'));
+const MessageTemplates = React.lazy(() => import('./pages/MessageTemplates'));
+const ConsentTermsPage = React.lazy(() => import('./pages/ConsentTermsPage'));
+const DosesPage = React.lazy(() => import('./pages/DosesPage'));
+const ConsultationsPage = React.lazy(() => import('./pages/ConsultationsPage'));
+const SurveyPage = React.lazy(() => import('./pages/SurveyPage'));
+const PublicSurveyPage = React.lazy(() => import('./pages/PublicSurveyPage'));
+const QADashboard = React.lazy(() => import('./pages/QADashboard'));
+const CuradoriaPage = React.lazy(() => import('./pages/CuradoriaPage'));
+const TeleconsultaPage = React.lazy(() => import('./pages/TeleconsultaPage'));
+const ExameUploadsPage = React.lazy(() => import('./pages/ExameUploadsPage'));
 import { Loader2 } from 'lucide-react';
+import ErrorBoundary from './components/ui/ErrorBoundary';
+import { ToastProvider } from './components/ui/Toast';
 import { UserRole } from './types';
 
 // Loading component
@@ -55,7 +61,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 // Menu key to path mapping for redirects
 const MENU_TO_PATH: Record<string, string> = {
   dashboard: '/',
-  checklist: '/checklist',
   nursing: '/enfermagem',
   patients: '/pacientes',
   history: '/historico',
@@ -73,7 +78,7 @@ const MENU_TO_PATH: Record<string, string> = {
 
 // Order of fallback routes
 const MENU_ORDER = [
-  'dashboard', 'checklist', 'nursing', 'patients', 'history',
+  'dashboard', 'nursing', 'patients', 'history',
   'inventory', 'cashregister', 'diagnoses', 'protocols',
   'consent-terms', 'doses-page', 'consultations', 'survey', 'message-templates',
 ];
@@ -147,6 +152,7 @@ const AppContent: React.FC = () => {
   } : null;
 
   return (
+    <React.Suspense fallback={<LoadingScreen />}>
     <Routes>
       {/* Public route */}
       <Route
@@ -155,6 +161,9 @@ const AppContent: React.FC = () => {
           isAuthenticated ? <Navigate to="/" replace /> : <Login />
         }
       />
+
+      {/* Public survey page (no auth required) */}
+      <Route path="/pesquisa" element={<PublicSurveyPage />} />
 
       {/* Protected routes with permission checks */}
       <Route
@@ -247,16 +256,7 @@ const AppContent: React.FC = () => {
           </ProtectedRouteWithPermission>
         }
       />
-      <Route
-        path="/checklist"
-        element={
-          <ProtectedRouteWithPermission menuKey="checklist">
-            <Layout user={layoutUser!} onLogout={handleLogout}>
-              <Checklist />
-            </Layout>
-          </ProtectedRouteWithPermission>
-        }
-      />
+
       <Route
         path="/enfermagem"
         element={
@@ -371,21 +371,76 @@ const AppContent: React.FC = () => {
         }
       />
 
+
+      <Route
+        path="/assistente-ia"
+        element={
+          <ProtectedRoute>
+            <ProtectedRouteWithPermission menuKey="qa-dashboard">
+              <Layout user={layoutUser!} onLogout={handleLogout}>
+                <QADashboard />
+              </Layout>
+            </ProtectedRouteWithPermission>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/curadoria"
+        element={
+          <ProtectedRoute>
+            <ProtectedRouteWithPermission menuKey="curadoria">
+              <Layout user={layoutUser!} onLogout={handleLogout}>
+                <CuradoriaPage />
+              </Layout>
+            </ProtectedRouteWithPermission>
+          </ProtectedRoute>
+        }
+      />
+
+
+      <Route
+        path="/teleconsulta"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <TeleconsultaPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/exames-enviados"
+        element={
+          <ProtectedRoute>
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <ExameUploadsPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Catch all - redirect to first accessible route */}
       <Route path="*" element={<DefaultRedirect />} />
     </Routes>
+    </React.Suspense>
   );
 };
 
 const App: React.FC = () => {
   return (
-    <Router>
-      <AuthProvider>
-        <PermissionsProvider>
-          <AppContent />
-        </PermissionsProvider>
-      </AuthProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <AuthProvider>
+          <PermissionsProvider>
+            <ToastProvider>
+              <AppContent />
+            </ToastProvider>
+          </PermissionsProvider>
+        </AuthProvider>
+      </Router>
+    </ErrorBoundary>
   );
 };
 

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings, DollarSign, MessageSquare, FileWarning, Calendar, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Users, LogOut, Stethoscope, ClipboardList, UserCircle, History, Package, Shield, LucideIcon, ListTodo, Syringe, UsersRound, Settings, DollarSign, MessageSquare, FileWarning, Calendar, MessageCircle, Brain, FileText, Video, FileUp } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { ROLE_LABELS } from '../constants';
 import { usePermissions } from '../contexts/PermissionsContext';
@@ -16,7 +16,6 @@ interface LayoutProps {
 // Menu key to icon mapping (includes both core and March 2026 secondary pages)
 const MENU_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
-  checklist: ListTodo,
   nursing: Syringe,
   patients: Users,
   history: History,
@@ -30,12 +29,14 @@ const MENU_ICONS: Record<string, LucideIcon> = {
   consultations: Calendar,
   survey: MessageCircle,
   'message-templates': MessageSquare,
+  'qa-dashboard': Brain,
+  'curadoria': FileText,
+  teleconsulta: Video,
 };
 
 // Menu key to path mapping
 const MENU_PATHS: Record<string, string> = {
   dashboard: '/',
-  checklist: '/checklist',
   nursing: '/enfermagem',
   patients: '/pacientes',
   history: '/historico',
@@ -49,12 +50,14 @@ const MENU_PATHS: Record<string, string> = {
   consultations: '/consultas',
   survey: '/pesquisa-enfermagem',
   'message-templates': '/modelos-mensagem',
+  'qa-dashboard': '/assistente-ia',
+  'curadoria': '/curadoria',
+  teleconsulta: '/teleconsulta',
 };
 
 // Menu key to label mapping
 const MENU_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
-  checklist: 'Checklist',
   nursing: 'Enfermagem',
   patients: 'Pacientes',
   history: 'Central de Mensagens',
@@ -68,16 +71,30 @@ const MENU_LABELS: Record<string, string> = {
   consultations: 'Consultas',
   survey: 'Pesquisa Enf.',
   'message-templates': 'Modelos Msg',
+  'qa-dashboard': 'Assistente IA',
+  'curadoria': 'Curadoria',
+  teleconsulta: 'Teleconsultas',
 };
 
 // Sort order — primary KPI section first, then March 2026 secondary pages
 const MENU_ORDER = [
-  'dashboard', 'checklist', 'nursing', 'patients', 'history',
+  'dashboard', 'nursing', 'patients', 'history',
   'inventory', 'cashregister', 'diagnoses', 'protocols',
   'consent-terms', 'doses-page', 'consultations', 'survey', 'message-templates',
+  'qa-dashboard', 'curadoria', 'teleconsulta',
 ];
 
 // Static nav items for admin only (always visible to admin, not in permissions table)
+// Visible to admin AND doctor
+const ADMIN_DOCTOR_NAV_ITEMS: { key: string; label: string; path: string; icon: LucideIcon }[] = [
+  {
+    key: 'exame-uploads',
+    label: 'Exames Enviados',
+    path: '/exames-enviados',
+    icon: FileUp,
+  },
+];
+
 const ADMIN_NAV_ITEMS = [
   {
     key: 'users',
@@ -122,6 +139,11 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
 
     // Sort items in the canonical order
     items.sort((a, b) => MENU_ORDER.indexOf(a.key) - MENU_ORDER.indexOf(b.key));
+
+    // Add admin+doctor menus (Assistente IA)
+    if (user.role === UserRole.ADMIN || user.role === UserRole.DOCTOR) {
+      items.push(...ADMIN_DOCTOR_NAV_ITEMS);
+    }
 
     // Add admin-only menus (Usuários, Permissões, Configurações — never in permission table)
     if (user.role === UserRole.ADMIN) {
