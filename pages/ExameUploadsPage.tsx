@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { FileUp, Loader2, AlertCircle, Eye, FileText, Clock, CheckCircle2, RefreshCw, X, Wand2 } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { FileUp, Loader2, AlertCircle, Eye, FileText, Clock, CheckCircle2, RefreshCw, X, Wand2, Upload, Search } from 'lucide-react';
 import { useToast } from '../components/ui/Toast';
 
 const VPS_BASE = 'https://api.endocrinokids.com.br/api';
@@ -29,6 +29,11 @@ const adminFetch = (path: string, opts: RequestInit = {}) =>
     headers: { 'x-admin-key': ADMIN_KEY, ...opts.headers },
   });
 
+interface PatientOption {
+  id: number;
+  nome: string;
+}
+
 const ExameUploadsPage: React.FC = () => {
   const { toast } = useToast();
   const [uploads, setUploads] = useState<ExameUpload[]>([]);
@@ -38,6 +43,55 @@ const ExameUploadsPage: React.FC = () => {
   const [viewingFile, setViewingFile] = useState<{ id: number; url: string; type: string } | null>(null);
   const [viewingTranscription, setViewingTranscription] = useState<ExameUpload | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<number | null>(null);
+
+  const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<number | ''>('');
+  const [patientSearch, setPatientSearch] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    adminFetch('/admin/pacientes')
+      .then(r => r.json())
+      .then(d => setPatients(d.patients || []))
+      .catch(() => {});
+  }, []);
+
+  const filteredPatients = patients.filter(p =>
+    p.nome.toLowerCase().includes(patientSearch.toLowerCase())
+  );
+
+  const handleAdminUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedPatient) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast('Arquivo muito grande. Máximo 10MB.', 'error');
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('patient_id', String(selectedPatient));
+      const resp = await fetch(`${VPS_BASE}/admin/exames/upload`, {
+        method: 'POST',
+        headers: { 'x-admin-key': ADMIN_KEY },
+        body: formData,
+      });
+      if (!resp.ok) throw new Error('Erro no upload');
+      toast('Exame enviado com sucesso!', 'success');
+      setSelectedPatient('');
+      setPatientSearch('');
+      setShowUploadForm(false);
+      loadUploads();
+    } catch {
+      toast('Erro ao enviar exame.', 'error');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const loadUploads = useCallback(async () => {
     try {
@@ -149,14 +203,85 @@ const ExameUploadsPage: React.FC = () => {
             <p className="text-sm text-slate-500">Exames enviados pelos pacientes pelo portal</p>
           </div>
         </div>
-        <button
-          onClick={loadUploads}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
-        >
-          <RefreshCw size={16} />
-          Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowUploadForm(f => !f)}
+            className="flex items-center gap-2 px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <Upload size={16} />
+            Enviar Exame
+          </button>
+          <button
+            onClick={loadUploads}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+          >
+            <RefreshCw size={16} />
+            Atualizar
+          </button>
+        </div>
       </div>
+
+      {showUploadForm && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <h3 className="text-sm font-bold text-slate-700 mb-3">Enviar exame de um paciente</h3>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 relative">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar paciente..."
+                  value={patientSearch}
+                  onChange={e => { setPatientSearch(e.target.value); setSelectedPatient(''); }}
+                  className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-400"
+                />
+              </div>
+              {patientSearch && !selectedPatient && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {filteredPatients.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-400">Nenhum paciente encontrado</div>
+                  ) : (
+                    filteredPatients.slice(0, 20).map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => { setSelectedPatient(p.id); setPatientSearch(p.nome); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-pink-50 hover:text-pink-700 transition-colors"
+                      >
+                        {p.nome}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleAdminUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!selectedPatient || uploading}
+                className="flex items-center gap-2 px-5 py-2.5 bg-pink-500 hover:bg-pink-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+              >
+                {uploading ? (
+                  <><Loader2 size={16} className="animate-spin" /> Enviando...</>
+                ) : (
+                  <><FileUp size={16} /> Selecionar Arquivo</>
+                )}
+              </button>
+            </div>
+          </div>
+          {selectedPatient && (
+            <p className="mt-2 text-xs text-slate-500">
+              Paciente selecionado: <span className="font-bold text-slate-700">{patientSearch}</span>
+            </p>
+          )}
+        </div>
+      )}
 
       {uploads.length === 0 ? (
         <div className="text-center py-20">
