@@ -1,13 +1,15 @@
 ﻿
 import React, { useState, useMemo, useEffect } from 'react';
+import { useToast } from '../components/ui/Toast';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi } from '../services/api';
 import { formatDate, getStatusColor, addDays, diffInDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS, formatConsultationPeriod } from '../constants';
 import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem } from '../types';
 import FortnightSelector from '../components/ui/FortnightSelector';
-import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw } from 'lucide-react';
 
 const TreatmentDetail: React.FC = () => {
+  const { toast } = useToast();
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const [showDoseForm, setShowDoseForm] = useState(false);
@@ -41,8 +43,7 @@ const TreatmentDetail: React.FC = () => {
   const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
   const [editingCycleNumber, setEditingCycleNumber] = useState<number | null>(null);
   const [isSavingDose, setIsSavingDose] = useState(false);
-  // March 2026: 3-step wizard state for Edit Dose
-  const [doseStep, setDoseStep] = useState<1 | 2 | 3>(1);
+  // Dose form no longer uses step wizard — single-page form with collapsible sections
   // Application tracking — populated from dose.appliedBy when editing
   const [doseAppliedByName, setDoseAppliedByName] = useState<string>('');
   const [doseAppliedAt, setDoseAppliedAt] = useState<string>('');
@@ -52,7 +53,7 @@ const TreatmentDetail: React.FC = () => {
   const [doseLot, setDoseLot] = useState('');
   const [selectedInventoryId, setSelectedInventoryId] = useState('');
 
-  const [dosePurchased, setDosePurchased] = useState<boolean>(true);
+  const [dosePurchased, setDosePurchased] = useState<boolean>(false);
   const [doseDeliveryStatus, setDoseDeliveryStatus] = useState<'waiting' | 'delivered' | ''>('');
 
   const [doseStatus, setDoseStatus] = useState<DoseStatus | ''>('');
@@ -123,6 +124,17 @@ const TreatmentDetail: React.FC = () => {
     loadData();
   }, [id]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('openDose') === '1' && doses.length > 0 && !showDoseForm) {
+      const dose1 = doses.find((d: Dose) => d.cycleNumber === 1);
+      if (dose1) {
+        handleEditDose(dose1);
+      }
+      window.history.replaceState({}, '', location.pathname);
+    }
+  }, [doses]);
+
   // Available Inventory Lots for this Protocol
   const availableLots = useMemo(() => {
     if (!protocol) return [];
@@ -160,7 +172,6 @@ const TreatmentDetail: React.FC = () => {
   const handleOpenEditDose = (dose: Dose) => {
     setEditingDoseId(dose.id);
     setEditingCycleNumber(dose.cycleNumber || null);
-    setDoseStep(1);
     setDoseDate(dose.applicationDate.split('T')[0]);
     setDoseScheduledDate(dose.scheduledDate ? dose.scheduledDate.split('T')[0] : dose.applicationDate.split('T')[0]);
     setDoseLot(dose.lotNumber || '');
@@ -172,7 +183,7 @@ const TreatmentDetail: React.FC = () => {
     setDoseIsLast(dose.isLastBeforeConsult || false);
     setDoseConsultDate(dose.consultationDate ? dose.consultationDate.split('T')[0] : '');
 
-    setDosePurchased(dose.purchased !== undefined ? dose.purchased : true);
+    setDosePurchased(dose.purchased !== undefined ? dose.purchased : false);
     setDoseDeliveryStatus(dose.deliveryStatus || '');
 
     // March 2026: keep existing nurse selection when editing; new doses default to 'yes'
@@ -205,7 +216,6 @@ const TreatmentDetail: React.FC = () => {
   const resetDoseForm = () => {
     setEditingDoseId(null);
     setEditingCycleNumber(null);
-    setDoseStep(1);
     setDoseDate(new Date().toISOString().split('T')[0]);
     setDoseScheduledDate('');
     setDoseLot('');
@@ -215,12 +225,11 @@ const TreatmentDetail: React.FC = () => {
     setDosePaymentMethod('');
     setDosePaymentDate('');
     setDoseDeliveryStatus('');
-    setDosePurchased(true);
+    setDosePurchased(false);
     setDoseIsLast(false);
     setDoseConsultDate('');
-    // March 2026 spec: defaults — Enfermeira "Sim", Pesquisa "Aguardando"
-    setDoseNurseSelection('yes');
-    setDoseSurveyStatus(SurveyStatus.WAITING);
+    setDoseNurseSelection('');
+    setDoseSurveyStatus(SurveyStatus.NOT_SENT);
     setDoseSurveyScore(null);
     setDoseSurveyComment('');
     setDoseAppliedByName('');
@@ -288,34 +297,24 @@ const TreatmentDetail: React.FC = () => {
     e.preventDefault();
     if (!id || !protocol) return;
 
-    // March 2026 spec: CONFIRM_APPLICATION is a visual-only auto-created status — payment/nurse fields are optional.
-    const isConfirmApplication = doseStatus === DoseStatus.CONFIRM_APPLICATION;
+    if (!doseStatus) { toast("Selecione o Status da Dose", "warning"); return; }
 
-    if (!doseStatus) { alert("Selecione o Status da Dose"); setDoseStep(1); return; }
-
-    if (!isConfirmApplication) {
-      if (dosePurchased && !dosePayment) { alert("Selecione a Situação do Pagamento"); setDoseStep(2); return; }
-      // Forma de pagamento sempre obrigatória; data do pagamento obrigatória APENAS quando "PAGO".
-      if (dosePurchased) {
-        if (!dosePaymentMethod) {
-          alert("Selecione a Forma de Pagamento");
-          setDoseStep(2);
-          return;
-        }
-        if (dosePayment === PaymentStatus.PAID && !dosePaymentDate) {
-          alert("Informe a Data do Pagamento (obrigatório quando status é PAGO)");
-          setDoseStep(2);
-          return;
-        }
-      }
-      if (!doseNurseSelection) { alert("Informe se houve acompanhamento da Enfermeira"); setDoseStep(3); return; }
-
-      // Only require inventory lot if purchased, there are available lots, and it's a new dose
-      if (dosePurchased && availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
-        alert("Selecione um lote disponivel no estoque.");
-        setDoseStep(1);
+    if (dosePurchased && !dosePayment) { toast("Selecione a Situação do Pagamento", "warning"); return; }
+    if (dosePurchased) {
+      if (!dosePaymentMethod) {
+        toast("Selecione a Forma de Pagamento", "warning");
         return;
       }
+      if (dosePayment === PaymentStatus.PAID && !dosePaymentDate) {
+        toast("Informe a Data do Pagamento", "warning");
+        return;
+      }
+    }
+    if (!doseNurseSelection) { toast("Informe se houve acompanhamento da Enfermeira", "warning"); return; }
+
+    if (dosePurchased && availableLots.length > 0 && !selectedInventoryId && !editingDoseId) {
+      toast("Selecione um lote disponivel no estoque", "warning");
+      return;
     }
 
     setIsSavingDose(true);
@@ -331,7 +330,7 @@ const TreatmentDetail: React.FC = () => {
       if (!editingDoseId) {
         const existingDoseForCycle = doses.find(d => d.cycleNumber === cycleNumber);
         if (existingDoseForCycle) {
-          alert(`Ja existe uma dose registrada para o ciclo ${cycleNumber}. Edite a dose existente.`);
+          toast(`Ja existe uma dose para o ciclo ${cycleNumber}. Edite a dose existente.`, 'warning');
           setIsSavingDose(false);
           return;
         }
@@ -347,7 +346,7 @@ const TreatmentDetail: React.FC = () => {
         purchased: dosePurchased,
         deliveryStatus: dosePurchased ? (doseDeliveryStatus as any) : undefined,
         status: doseStatus,
-        paymentStatus: dosePurchased ? (dosePayment as PaymentStatus) : undefined,
+        paymentStatus: dosePurchased && dosePayment ? (dosePayment as PaymentStatus) : null,
         // Dados financeiros sempre enviados (obrigatórios para CAIXA)
         paymentMethod: dosePaymentMethod || undefined,
         paymentDate: dosePaymentDate ? new Date(dosePaymentDate).toISOString() : undefined,
@@ -371,7 +370,7 @@ const TreatmentDetail: React.FC = () => {
       resetDoseForm();
     } catch (err: any) {
       console.error('Error saving dose:', err);
-      alert('Erro ao salvar dose: ' + (err.message || 'Erro desconhecido'));
+      toast('Erro ao salvar dose: ' + (err.message || 'Erro'), 'error');
     } finally {
       setIsSavingDose(false);
     }
@@ -416,7 +415,7 @@ const TreatmentDetail: React.FC = () => {
       setIsEditing(false);
     } catch (err: any) {
       console.error('Error updating treatment:', err);
-      alert('Erro ao atualizar tratamento: ' + (err.message || 'Erro desconhecido'));
+      toast('Erro ao atualizar tratamento: ' + (err.message || 'Erro'), 'error');
     } finally {
       setIsSavingTreatment(false);
     }
@@ -547,7 +546,7 @@ const TreatmentDetail: React.FC = () => {
           </Link>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-slate-800">Gestao de Tratamento</h1>
+              <h1 className="text-2xl font-bold text-slate-800">Gestão de Tratamento</h1>
               <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${getTreatmentStatusColor(treatment.status)}`}>
                 {treatment.status}
               </span>
@@ -897,7 +896,7 @@ const TreatmentDetail: React.FC = () => {
         )}
       </div>
 
-      {/* Add/Edit Dose Form — March 2026: 3-step wizard (Medicamento / Pagamento / Enfermeira) */}
+      {/* Add/Edit Dose Form — single-page with collapsible sections */}
       {showDoseForm && (
         <div id="dose-form-container" className="bg-white border border-slate-200 rounded-xl p-6 animate-in fade-in slide-in-from-top-4 shadow-md">
           <div className="flex justify-between items-center mb-1">
@@ -920,37 +919,11 @@ const TreatmentDetail: React.FC = () => {
             </button>
           </div>
 
-          {/* Stepper indicator */}
-          <div className="flex items-center mt-4 mb-6">
-            {([
-              { n: 1, label: 'Medicamento' },
-              { n: 2, label: 'Pagamento' },
-              { n: 3, label: 'Enfermeira' },
-            ] as const).map((s, idx) => (
-              <React.Fragment key={s.n}>
-                <button
-                  type="button"
-                  onClick={() => setDoseStep(s.n as 1 | 2 | 3)}
-                  className="flex flex-col items-center group"
-                >
-                  <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-                    doseStep === s.n
-                      ? 'bg-slate-800 text-white'
-                      : doseStep > s.n
-                        ? 'bg-emerald-500 text-white'
-                        : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {doseStep > s.n ? <Check size={16} /> : s.n}
-                  </span>
-                  <span className={`text-xs mt-1 ${doseStep === s.n ? 'font-bold text-slate-800' : 'text-slate-500'}`}>
-                    {s.label}
-                  </span>
-                </button>
-                {idx < 2 && (
-                  <span className={`flex-1 h-0.5 mx-2 ${doseStep > s.n ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-                )}
-              </React.Fragment>
-            ))}
+          {/* Section indicators */}
+          <div className="flex items-center gap-2 mt-4 mb-6 flex-wrap">
+            <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 px-3 py-1 rounded-full">Medicamento</span>
+            {dosePurchased && <span className="text-[10px] font-bold uppercase tracking-widest bg-green-50 text-green-700 px-3 py-1 rounded-full">Pagamento</span>}
+            <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 px-3 py-1 rounded-full">Enfermeira</span>
           </div>
 
           {/* Application Data highlight card — visible whenever we know who applied */}
@@ -960,12 +933,6 @@ const TreatmentDetail: React.FC = () => {
                 <UserCheck size={14} className="mr-1.5" /> Dados da Aplicação
               </p>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                {doseAppliedByName && (
-                  <div>
-                    <span className="text-xs text-slate-500 block">Aplicada por</span>
-                    <span className="font-semibold text-slate-800">{doseAppliedByName}</span>
-                  </div>
-                )}
                 {doseAppliedAt && (
                   <div>
                     <span className="text-xs text-slate-500 block">Em</span>
@@ -978,10 +945,9 @@ const TreatmentDetail: React.FC = () => {
 
           <form onSubmit={handleSaveDose} className="space-y-6">
 
-            {/* ============= STEP 1: Medicamento ============= */}
-            {doseStep === 1 && (
-              <>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Medicamento</p>
+            {/* ============= Medicamento ============= */}
+            <>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Medicamento</p>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">Compra de Medicamento?</label>
@@ -1053,19 +1019,13 @@ const TreatmentDetail: React.FC = () => {
                   </div>
                 </div>
               </>
-            )}
 
-            {/* ============= STEP 2: Pagamento e Entrega ============= */}
-            {doseStep === 2 && (
+            {/* ============= Pagamento e Entrega (auto-hides when no purchase) ============= */}
+            {dosePurchased && (
               <>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Pagamento & Entrega</p>
-
-                {!dosePurchased ? (
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600">
-                    Esta dose não envolveu compra de medicamento. Avance para a etapa Enfermeira.
-                  </div>
-                ) : (
-                  <>
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Pagamento & Entrega</p>
+                </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Situação Pagamento <span className="text-red-500">*</span></label>
                       <select
@@ -1137,15 +1097,14 @@ const TreatmentDetail: React.FC = () => {
                         <option value="delivered">Entregue</option>
                       </select>
                     </div>
-                  </>
-                )}
               </>
             )}
 
-            {/* ============= STEP 3: Enfermeira ============= */}
-            {doseStep === 3 && (
-              <>
+            {/* ============= Enfermeira ============= */}
+            <>
+              <div className="border-t border-slate-100 pt-4">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Acompanhamento & Satisfação</p>
+              </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
                   <div className="md:col-span-1">
@@ -1235,38 +1194,26 @@ const TreatmentDetail: React.FC = () => {
                     </div>
                   )}
                 </div>
-              </>
-            )}
+            </>
 
-            {/* Step nav buttons */}
+            {/* Form buttons */}
             <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
               <button
                 type="button"
-                onClick={() => doseStep > 1 ? setDoseStep((doseStep - 1) as 1 | 2 | 3) : (setShowDoseForm(false), resetDoseForm())}
+                onClick={() => { setShowDoseForm(false); resetDoseForm(); }}
                 className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg flex items-center"
               >
-                {doseStep > 1 ? <><ArrowLeft size={16} className="mr-1.5" /> Voltar</> : 'Cancelar'}
+                Cancelar
               </button>
 
-              {doseStep < 3 ? (
-                <button
-                  type="button"
-                  onClick={() => setDoseStep((doseStep + 1) as 1 | 2 | 3)}
-                  className="flex items-center px-5 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-                >
-                  Próximo
-                  <ChevronRight size={16} className="ml-1.5" />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={isSavingDose}
-                  className="flex items-center px-5 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow"
-                >
-                  {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
-                  {editingDoseId ? (isSavingDose ? 'Atualizando...' : 'Atualizar Dose') : (isSavingDose ? 'Salvando...' : 'Salvar Dose')}
-                </button>
-              )}
+              <button
+                type="submit"
+                disabled={isSavingDose}
+                className="flex items-center px-5 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow"
+              >
+                {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
+                {editingDoseId ? (isSavingDose ? 'Atualizando...' : 'Atualizar Dose') : (isSavingDose ? 'Salvando...' : 'Salvar Dose')}
+              </button>
             </div>
           </form>
           <div className="mt-4 text-xs text-slate-500 flex items-center">
@@ -1337,10 +1284,12 @@ const TreatmentDetail: React.FC = () => {
                   <td className="px-6 py-4">
                     {dose.purchased === false ? (
                       <span className="text-slate-400 text-xs italic">N/A</span>
-                    ) : (
+                    ) : dose.paymentStatus ? (
                       <span className={`inline-block px-2 py-1 rounded-md border ${getStatusColor(dose.paymentStatus)}`}>
-                        {PAYMENT_STATUS_LABELS[dose.paymentStatus] || dose.paymentStatus}
+                        {PAYMENT_STATUS_LABELS[dose.paymentStatus]}
                       </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs italic">—</span>
                     )}
                   </td>
                   <td className="px-6 py-4">
