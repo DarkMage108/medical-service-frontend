@@ -1,6 +1,7 @@
-﻿import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useToast } from '../components/ui/Toast';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, dismissedLogsApi, patientEventsApi, PatientEventWithPatient } from '../services/api';
+import { dashboardApi, dosesApi, patientsApi, treatmentsApi, protocolsApi, documentsApi, dismissedLogsApi, patientEventsApi, invoicesApi, messageTemplatesApi, PatientEventWithPatient } from '../services/api';
 import { DoseStatus, SurveyStatus, Dose, TreatmentStatus, ProtocolCategory, PaymentStatus, DismissedLog, ConsentDocument, Patient, PatientFull, Treatment, Protocol } from '../types';
 import { getStatusColor, diffInDays, formatDate, getDiagnosisColor, addDays, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS } from '../constants';
 import { UserCheck, MessageSquare, Phone, ExternalLink, Activity } from 'lucide-react';
@@ -9,10 +10,10 @@ import SectionCard from '../components/ui/SectionCard';
 import Modal from '../components/ui/Modal';
 import { renderTemplate, buildTreatmentVariables } from '../utils/messageVariables';
 import {
-  AlertCircle, CheckCircle2, UserX, MessageCircle, ChevronRight, ChevronLeft,
+  AlertCircle, CheckCircle2, MessageCircle, ChevronRight, ChevronLeft, UserPlus,
   Calendar, Clock, FileWarning, UploadCloud, Edit, CalendarRange,
   Syringe, Bike, Copy, Check, Stethoscope, Save, Loader2, User, X,
-  ArrowUp, ArrowDown
+  ArrowUp, ArrowDown, Receipt, Search, CalendarX2
 } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -53,6 +54,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
   // Data States
+  const { toast } = useToast();
   const [doses, setDoses] = useState<Dose[]>([]);
   const [patients, setPatients] = useState<PatientFull[]>([]);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
@@ -60,6 +62,7 @@ const Dashboard: React.FC = () => {
   const [documents, setDocuments] = useState<ConsentDocument[]>([]);
   const [dismissedLogs, setDismissedLogs] = useState<DismissedLog[]>([]);
   const [manualEvents, setManualEvents] = useState<PatientEventWithPatient[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,7 +105,63 @@ const Dashboard: React.FC = () => {
   const [editSurveyStatus, setEditSurveyStatus] = useState<SurveyStatus | ''>('');
   const [editScore, setEditScore] = useState<number | null>(null);
   const [editComment, setEditComment] = useState('');
-  const [editPurchased, setEditPurchased] = useState(true);
+  const [editPurchased, setEditPurchased] = useState(false);
+
+  // Duplicate Appointments
+  const [dupDias, setDupDias] = useState(365);
+  const [dupData, setDupData] = useState<any[]>([]);
+  const [dupLoading, setDupLoading] = useState(false);
+
+  useEffect(() => {
+    setDupLoading(true);
+    fetch(
+      `https://api.endocrinokids.com.br/api/secretaria/consultas-duplicadas?dias=${dupDias}`,
+      { headers: { 'x-admin-key': 'endoped-qa-81313b4c9ec6be950adde720c03d57aa' } }
+    )
+      .then(r => r.json())
+      .then(d => setDupData(d.consultas || []))
+      .catch(() => setDupData([]))
+      .finally(() => setDupLoading(false));
+  }, [dupDias]);
+
+  // Patient Search
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
+  const [patientSearchResults, setPatientSearchResults] = useState<any[]>([]);
+  const [patientSearchLoading, setPatientSearchLoading] = useState(false);
+  const patientSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePatientSearch = useCallback((query: string) => {
+    setPatientSearchQuery(query);
+    if (patientSearchTimer.current) clearTimeout(patientSearchTimer.current);
+    if (query.trim().length < 2) {
+      setPatientSearchResults([]);
+      return;
+    }
+    setPatientSearchLoading(true);
+    patientSearchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://api.endocrinokids.com.br/api/secretaria/busca-rapida?q=${encodeURIComponent(query.trim())}`,
+          { headers: { 'x-admin-key': 'endoped-qa-81313b4c9ec6be950adde720c03d57aa' } }
+        );
+        const data = await res.json();
+        setPatientSearchResults(data.pacientes || []);
+      } catch {
+        setPatientSearchResults([]);
+      } finally {
+        setPatientSearchLoading(false);
+      }
+    }, 400);
+  }, []);
+
+  // Nota Fiscal states
+  const [nfPromptOpen, setNfPromptOpen] = useState(false);
+  const [nfPromptDoseId, setNfPromptDoseId] = useState<string | null>(null);
+  const [nfFormOpen, setNfFormOpen] = useState(false);
+  const [nfPrefill, setNfPrefill] = useState<any>(null);
+  const [nfLoading, setNfLoading] = useState(false);
+  const [nfForm, setNfForm] = useState({ guardianName: '', guardianEmail: '', childName: '', cpf: '', cep: '', address: '' });
+  const [nfSaving, setNfSaving] = useState(false);
 
   // Pagination States (10 items per page) — March 2026: only Activity, Messages, UpcomingDoses remain on dashboard
   const ITEMS_PER_PAGE = 10;
@@ -128,7 +187,8 @@ const Dashboard: React.FC = () => {
     protocolsRes,
     documentsRes,
     dismissedRes,
-    manualEventsRes
+    manualEventsRes,
+    invoicesRes
     ] = await Promise.all([
     dosesApi.getAll({ limit: 1000 }),
     patientsApi.getAll({ limit: 1000 }),
@@ -136,7 +196,8 @@ const Dashboard: React.FC = () => {
     protocolsApi.getAll(),
     documentsApi.getAll(),
     dismissedLogsApi.getAll(),
-    patientEventsApi.getAll()
+    patientEventsApi.getAll(),
+    invoicesApi.getAll()
     ]);
 
     setDoses(dosesRes.data || []);
@@ -146,6 +207,7 @@ const Dashboard: React.FC = () => {
     setDocuments(documentsRes.data || []);
     setDismissedLogs(dismissedRes.data || []);
     setManualEvents(manualEventsRes.data || []);
+    setInvoices(invoicesRes.data || []);
   } catch (err: any) {
     setError(err.message || 'Erro ao carregar dados');
     console.error('Failed to load dashboard data:', err);
@@ -160,15 +222,114 @@ const Dashboard: React.FC = () => {
 
   // Quick Update Handler
   const handleQuickUpdate = async (doseId: string, field: 'status' | 'paymentStatus' | 'deliveryStatus' | 'surveyStatus', value: string) => {
+    if (field === 'paymentStatus' && !window.confirm('Confirma alteração do status financeiro?')) return;
     try {
       const updates = { [field]: value };
       const updated = await dosesApi.update(doseId, updates);
       setDoses(prev => prev.map(d => d.id === doseId ? { ...d, ...updated } : d));
+      if (field === 'paymentStatus' && value === 'PAID') {
+        setNfPromptDoseId(doseId);
+        setNfPromptOpen(true);
+      }
     } catch (err: any) {
       console.error('Error updating dose:', err);
       setError(err.message || 'Erro ao atualizar dose');
     }
   };
+
+  const handleNfYes = async () => {
+    if (!nfPromptDoseId) return;
+    setNfPromptOpen(false);
+    setNfLoading(true);
+    try {
+      const prefill = await invoicesApi.prefill(nfPromptDoseId);
+      setNfPrefill(prefill);
+      setNfForm({
+        guardianName: prefill.guardianName || '',
+        guardianEmail: prefill.guardianEmail || '',
+        childName: prefill.childName || '',
+        cpf: prefill.cpf || '',
+        cep: prefill.cep || '',
+        address: prefill.address || '',
+      });
+      setNfFormOpen(true);
+    } catch (err: any) {
+      toast('Erro ao carregar dados: ' + (err.message || ''), 'error');
+    } finally {
+      setNfLoading(false);
+    }
+  };
+
+  const handleNfSubmit = async () => {
+    if (!nfPromptDoseId) return;
+    if (!nfForm.guardianName.trim() || !nfForm.childName.trim()) {
+      toast('Nome do responsável e da criança são obrigatórios', 'error');
+      return;
+    }
+    setNfSaving(true);
+    try {
+      await invoicesApi.create({
+        doseId: nfPromptDoseId,
+        guardianName: nfForm.guardianName.trim(),
+        guardianEmail: nfForm.guardianEmail.trim() || undefined,
+        childName: nfForm.childName.trim(),
+        cpf: nfForm.cpf.trim() || undefined,
+        cep: nfForm.cep.trim() || undefined,
+        address: nfForm.address.trim() || undefined,
+      });
+      toast('Nota fiscal criada com sucesso!', 'success');
+      setNfFormOpen(false);
+      setNfPromptDoseId(null);
+      // Reload invoices
+      try { const r = await invoicesApi.getAll(); setInvoices(r.data || []); } catch {}
+    } catch (err: any) {
+      toast('Erro ao criar NF: ' + (err.message || ''), 'error');
+    } finally {
+      setNfSaving(false);
+    }
+  };
+
+  const NF_STATUS_LABELS: Record<string, string> = {
+    PENDING_DATA: 'Dados Pendentes',
+    DATA_SENT: 'Enviado',
+    CONFIRMED: 'Confirmado',
+    ISSUED: 'NF Emitida',
+    DELIVERED: 'Entregue',
+  };
+  const NF_STATUS_COLORS: Record<string, string> = {
+    PENDING_DATA: 'bg-amber-100 text-amber-700',
+    DATA_SENT: 'bg-blue-100 text-blue-700',
+    CONFIRMED: 'bg-purple-100 text-purple-700',
+    ISSUED: 'bg-emerald-100 text-emerald-700',
+    DELIVERED: 'bg-slate-100 text-slate-600',
+  };
+  const NF_NEXT_STATUS: Record<string, string> = {
+    PENDING_DATA: 'DATA_SENT',
+    DATA_SENT: 'CONFIRMED',
+    CONFIRMED: 'ISSUED',
+    ISSUED: 'DELIVERED',
+  };
+  const NF_ACTION_LABELS: Record<string, string> = {
+    PENDING_DATA: 'Enviar ao Responsável',
+    DATA_SENT: 'Confirmado pelo Resp.',
+    CONFIRMED: 'NF Emitida',
+    ISSUED: 'Entregue ao Resp.',
+  };
+
+  const handleNfAdvance = async (invoiceId: string, currentStatus: string) => {
+    const nextStatus = NF_NEXT_STATUS[currentStatus];
+    if (!nextStatus) return;
+    try {
+      await invoicesApi.update(invoiceId, { status: nextStatus });
+      const r = await invoicesApi.getAll();
+      setInvoices(r.data || []);
+      toast('Status da NF atualizado!', 'success');
+    } catch (err: any) {
+      toast('Erro: ' + (err.message || ''), 'error');
+    }
+  };
+
+  const pendingInvoices = invoices.filter(i => i.status !== 'DELIVERED');
 
   // Helpers
   const getPatient = (treatmentId: string) => {
@@ -205,7 +366,7 @@ const Dashboard: React.FC = () => {
     setIsCopied(false);
     setIsDelivered(false);
   } else {
-    alert('Endereço não cadastrado para este paciente.');
+    toast('Endereço não cadastrado para este paciente', 'warning');
   }
   };
 
@@ -225,12 +386,15 @@ const Dashboard: React.FC = () => {
   const handleConfirmDelivery = async (e: React.ChangeEvent<HTMLInputElement>) => {
   if (e.target.checked && selectedDoseId) {
     setIsDelivered(true);
-    // Update both paymentStatus to PAID and deliveryStatus to delivered
-    await handleQuickUpdate(selectedDoseId, 'paymentStatus', PaymentStatus.PAID);
-    await handleQuickUpdate(selectedDoseId, 'deliveryStatus', 'delivered');
+    const doseIdForNf = selectedDoseId;
+    await dosesApi.update(selectedDoseId, { paymentStatus: 'PAID' });
+    await dosesApi.update(selectedDoseId, { deliveryStatus: 'delivered' });
+    setDoses(prev => prev.map(d => d.id === doseIdForNf ? { ...d, paymentStatus: 'PAID' as any, deliveryStatus: 'delivered' } : d));
     setTimeout(() => {
     setAddressModalOpen(false);
     setIsDelivered(false);
+    setNfPromptDoseId(doseIdForNf);
+    setNfPromptOpen(true);
     }, 800);
   }
   };
@@ -249,7 +413,7 @@ const Dashboard: React.FC = () => {
   if (!file || !uploadTargetPatientId) return;
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    alert(`O arquivo é muito grande. O limite máximo é de ${MAX_FILE_SIZE_MB}MB.`);
+    toast(`Arquivo muito grande. Limite: ${MAX_FILE_SIZE_MB}MB`, 'warning');
     return;
   }
 
@@ -260,7 +424,7 @@ const Dashboard: React.FC = () => {
   ];
 
   if (!allowedTypes.includes(file.type)) {
-    alert('Formato inválido. Apenas PDF ou Word.');
+    toast('Formato invalido. Apenas PDF ou Word', 'warning');
     return;
   }
 
@@ -377,10 +541,16 @@ const Dashboard: React.FC = () => {
   };
 
   // Message Modal Logic
-  const handleOpenMessageModal = (contact: any) => {
+  const handleOpenMessageModal = async (contact: any) => {
   setSelectedContact(contact);
   setIsMessageCopied(false);
   setMessageModalOpen(true);
+  if (contact.message?.includes('{link_confirmacao_gh}') && contact.treatmentId) {
+    try {
+      const res = await messageTemplatesApi.resolve({ content: contact.message, treatmentId: contact.treatmentId });
+      setSelectedContact((prev: any) => prev?.id === contact.id ? { ...prev, message: res.rendered } : prev);
+    } catch {}
+  }
   };
 
   const handleCopyMessage = () => {
@@ -393,6 +563,7 @@ const Dashboard: React.FC = () => {
 
   const handleDismissContact = async (e: React.MouseEvent | null, contactId: string) => {
   if (e) e.stopPropagation();
+  if (!window.confirm('Confirma que a mensagem foi enviada ao paciente?')) return;
   try {
     await dismissedLogsApi.dismiss(contactId);
     setDismissedLogs(prev => [...prev, { id: `dismissed_${Date.now()}`, contactId, dismissedAt: new Date().toISOString() }]);
@@ -434,34 +605,17 @@ const Dashboard: React.FC = () => {
       .filter(d => d.paymentStatus === PaymentStatus.PAID && d.deliveryStatus === 'waiting')
       .filter(d => !isDismissed(d.id, 'general'));
     const toPay = doses
-      .filter(d => [
+      .filter(d => d.purchased !== false && [
         PaymentStatus.WAITING_PIX, PaymentStatus.WAITING_CARD, PaymentStatus.WAITING_BOLETO,
       ].includes(d.paymentStatus))
       .filter(d => !isDismissed(d.id, 'general'));
-    const nursingPending = doses.filter(d => d.nurse === true && d.status === DoseStatus.PENDING);
+    const nursingPending = doses.filter(d => d.nurse === true && (d.status === DoseStatus.PENDING || d.status === DoseStatus.SCHEDULED || d.status === DoseStatus.CONFIRM_APPLICATION));
     return {
       toDeliver,
       toPay,
       nursingPending,
     };
   }, [doses, dismissedLogs]);
-
-  // March 2026 — doses awaiting Dose 1 confirmation (CONFIRM_APPLICATION status)
-  const confirmApplicationDoses = useMemo(() => {
-    return doses.filter(d => d.status === DoseStatus.CONFIRM_APPLICATION);
-  }, [doses]);
-
-  const patientStats = useMemo(() => {
-  const total = patients.length;
-  // Get patient IDs that have ongoing treatments
-  const patientsWithOngoingTreatments = new Set(
-    treatments
-      .filter(t => t.status === TreatmentStatus.ONGOING)
-      .map(t => t.patientId)
-  );
-  const active = patientsWithOngoingTreatments.size;
-  return { active, inactive: total - active };
-  }, [patients, treatments]);
 
   // Overdue Doses - based on SCHEDULED dates from protocol, not added dose dates
   // A dose is overdue if its SCHEDULED date (startDate + frequencyDays * cycleNumber) is in the past
@@ -501,10 +655,10 @@ const Dashboard: React.FC = () => {
         scheduledDate = addDays(startDate, frequencyDays * i);
       }
 
-      // Check if this scheduled date is in the past
-      const daysUntilScheduled = diffInDays(scheduledDate, TODAY);
+      const overdueDays = diffInDays(TODAY, scheduledDate);
+      const minOverdue = cycleNumber === 1 ? 20 : 1;
 
-      if (daysUntilScheduled < 0) {
+      if (overdueDays >= minOverdue) {
         // This dose's scheduled date has passed - check if it was applied
         const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
 
@@ -521,7 +675,7 @@ const Dashboard: React.FC = () => {
               cycleNumber,
               applicationDate: scheduledDate.toISOString(),
               status: DoseStatus.PENDING,
-              paymentStatus: PaymentStatus.WAITING_PIX,
+              paymentStatus: null,
               isVirtual: true,
               calculatedNextDate: scheduledDate.toISOString()
             };
@@ -534,14 +688,15 @@ const Dashboard: React.FC = () => {
     }
   });
 
-  // March 2026: exclude doses dismissed via the DosesPage popup ("Concluir / Enviado" with LATE_DOSE trigger).
   const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
-  const filtered = result.filter(d => !dismissedSet.has(`dose_${d.id}_late_dose`));
+  const filtered = result
+    .filter(d => (d as any).confirmationStatus !== 'SENT_2')
+    .filter(d => !dismissedSet.has(`dose_${d.id}_late_dose`));
 
   return filtered.sort((a, b) => {
     // Sort by the relevant date (applicationDate for PENDING, calculatedNextDate for APPLIED)
-    const dateA = a.status === DoseStatus.PENDING ? addDays(a.applicationDate, 0) : addDays(a.calculatedNextDate, 0);
-    const dateB = b.status === DoseStatus.PENDING ? addDays(b.applicationDate, 0) : addDays(b.calculatedNextDate, 0);
+    const dateA = (a.status === DoseStatus.PENDING || a.status === DoseStatus.SCHEDULED) ? addDays(a.applicationDate, 0) : addDays(a.calculatedNextDate, 0);
+    const dateB = (b.status === DoseStatus.PENDING || b.status === DoseStatus.SCHEDULED) ? addDays(b.applicationDate, 0) : addDays(b.calculatedNextDate, 0);
     const diff = dateA.getTime() - dateB.getTime();
     if (diff !== 0) return diff;
     // Secondary sort by patient name when dates are equal
@@ -648,6 +803,7 @@ const Dashboard: React.FC = () => {
   const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
   return doses.filter(d => {
     if (!d.nurse) return false;
+    if (d.purchased === false) return false;
     if (d.surveyStatus === SurveyStatus.ANSWERED) return false;
     if (d.surveyStatus === SurveyStatus.NOT_ANSWERED) return false;
     const isPendingStatus = d.surveyStatus === SurveyStatus.SENT || d.surveyStatus === SurveyStatus.NOT_SENT || !d.surveyStatus;
@@ -666,25 +822,38 @@ const Dashboard: React.FC = () => {
 
   // Approaching Consults
   const approachingConsults = useMemo(() => {
-  return doses.filter(d => {
-    if (!d.isLastBeforeConsult) return false;
-    // Exclude if consultation scheduling is marked as completed
-    if (d.consultationScheduled) return false;
-    if (!d.consultationDate) return true;
-    const consultDate = new Date(d.consultationDate);
-    const diff = diffInDays(consultDate, TODAY);
-    return diff >= 0 && diff <= 30;
-  }).sort((a, b) => {
-    if (!a.consultationDate) return -1;
-    if (!b.consultationDate) return 1;
-    const diff = new Date(a.consultationDate).getTime() - new Date(b.consultationDate).getTime();
-    if (diff !== 0) return diff;
-    // Secondary sort by patient name when dates are equal
-    const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
-    const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
-    return patientA.localeCompare(patientB);
+  const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
+  // Build set of treatments that have a consultation forecast
+  const forecastTreatments = new Map<string, { month: number; year: number }>();
+  treatments.forEach(t => {
+    if (t.nextConsultationDate) {
+    const d = new Date(t.nextConsultationDate);
+    forecastTreatments.set(t.id, { month: d.getMonth() + 1, year: d.getFullYear() });
+    } else if (t.nextConsultationMonth && t.nextConsultationYear && t.nextConsultationFortnight) {
+    forecastTreatments.set(t.id, { month: t.nextConsultationMonth, year: t.nextConsultationYear });
+    }
   });
-  }, [doses, treatments, patients]);
+  // Build scheduledMap: treatmentId -> has consultationDate from dose
+  const scheduledMap = new Map<string, boolean>();
+  doses.forEach(d => {
+    if (!d.isLastBeforeConsult) return;
+    if (d.consultationDate || d.consultationScheduled) scheduledMap.set(d.treatmentId, true);
+  });
+  // Only include treatments with forecast, not scheduled, not dismissed
+  return Array.from(forecastTreatments.entries())
+    .filter(([tid, info]) => {
+    if (scheduledMap.get(tid)) return false;
+    const contactId = `consult_${tid}_${info.year}_${info.month}`;
+    if (dismissedSet.has(contactId)) return false;
+    return true;
+    })
+    .map(([tid]) => {
+    const t = treatments.find(tr => tr.id === tid);
+    const patient = t ? patients.find(p => p.id === t.patientId) : null;
+    return { treatmentId: tid, patientName: patient?.fullName || '', treatment: t };
+    })
+    .sort((a, b) => a.patientName.localeCompare(b.patientName));
+  }, [doses, treatments, patients, dismissedLogs]);
 
   // Get patient IDs with ongoing treatments (for filtering active patients)
   const patientsWithOngoingTreatmentsSet = useMemo(() => {
@@ -703,11 +872,11 @@ const Dashboard: React.FC = () => {
   const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
   return patients.filter(p => {
     if (!patientsWithOngoingTreatmentsSet.has(p.id)) return false;
-    const diag = (p.mainDiagnosis || '').toLowerCase();
-    const isTarget = diag.includes('puberdade precoce') || diag.includes('baixa estatura');
+    const allDiags = [p.mainDiagnosis, ...(p.secondaryDiagnoses || [])].map(d => (d || '').toLowerCase());
+    const isTarget = allDiags.some(d => d.includes('puberdade precoce') || d.includes('baixa estatura'));
     if (!isTarget) return false;
-    const hasDoc = documents.some(doc => doc.patientId === p.id);
-    if (hasDoc) return false;
+    const hasSigned = documents.some(doc => doc.patientId === p.id && doc.status === 'SIGNED');
+    if (hasSigned) return false;
     // Hide rows already marked as concluído via the consent message popup
     if (dismissedSet.has(`consent_${p.id}`)) return false;
     return true;
@@ -716,29 +885,25 @@ const Dashboard: React.FC = () => {
 
   // Activity Window
   const highActivityDoses = useMemo(() => {
-  const startRange = new Date();
-  startRange.setDate(startRange.getDate() - 7);
-  const endRange = new Date();
-  endRange.setDate(endRange.getDate() + 7);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const startRange = new Date(now);
+  startRange.setDate(startRange.getDate() - 14);
+  const endRange = new Date(now);
+  endRange.setDate(endRange.getDate() + 14);
+
   return doses.filter(d => {
-    // Check if there was no purchase (purchased is explicitly false or paymentStatus is null/undefined)
-    const noPurchase = d.purchased === false || (!d.paymentStatus && d.purchased !== true);
-    // If dose is APPLIED and either PAID or no purchase, remove from list
-    const paymentResolved = d.paymentStatus === PaymentStatus.PAID || noPurchase;
-    if ((d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE) && paymentResolved) {
-    return false;
-    }
     const appDate = new Date(d.applicationDate);
-    const inRange = appDate >= startRange && appDate <= endRange;
-    const isOld = appDate < startRange;
-    const hasPendingStatus = d.status === DoseStatus.PENDING;
-    // Only consider payment pending if there was a purchase (purchased is true and has a payment status)
-    const hasPendingPayment = !noPurchase && d.paymentStatus !== PaymentStatus.PAID;
-    return inRange || (isOld && (hasPendingStatus || hasPendingPayment));
+    if (appDate < startRange || appDate > endRange) return false;
+
+    const noPurchase = d.purchased === false || (!d.paymentStatus && d.purchased !== true);
+    const paymentResolved = d.paymentStatus === PaymentStatus.PAID || noPurchase || d.paymentStatus == null;
+    const isFullyDone = (d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE) && paymentResolved;
+
+    return !isFullyDone;
   }).sort((a, b) => {
     const diff = new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime();
     if (diff !== 0) return activitySortAsc ? diff : -diff;
-    // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
@@ -865,8 +1030,15 @@ const Dashboard: React.FC = () => {
   });
   }, [treatments, protocols, patients, dismissedLogs, doses, manualEvents, messagesSortAsc]);
 
+  const messagesToday = upcomingContacts.filter(c => c.diffDays === 0).length;
+  const messagesOverdue = upcomingContacts.filter(c => c.diffDays < 0).length;
+  const messagesActionable = messagesToday + messagesOverdue;
+
   const scrollToSection = (id: string) => {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   };
 
   // Pagination helper
@@ -963,6 +1135,79 @@ const Dashboard: React.FC = () => {
     onChange={handleFileChange}
     />
 
+    {/* Quick-action: Add new patient */}
+    <button
+      onClick={() => navigate('/pacientes?new=1')}
+      className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-pink-600 to-pink-500 text-white px-6 py-4 rounded-xl hover:from-pink-700 hover:to-pink-600 transition-all shadow-lg shadow-pink-200 active:scale-[0.99]"
+    >
+      <UserPlus size={22} />
+      <span className="text-lg font-bold">Adicionar Novo Paciente</span>
+    </button>
+
+    {/* Patient Search */}
+    <SectionCard id="section-patient-search" title="Verificar Dados Paciente" icon={<Search size={18} className="text-violet-600" />} headerBg="bg-violet-50/30">
+      <div className="p-4">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={patientSearchQuery}
+            onChange={(e) => handlePatientSearch(e.target.value)}
+            placeholder="Digite o nome ou celular do responsável..."
+            className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-violet-500 focus:border-violet-500"
+          />
+        </div>
+        {patientSearchLoading && (
+          <div className="flex items-center gap-2 mt-3 text-sm text-slate-500">
+            <Loader2 size={14} className="animate-spin" /> Buscando...
+          </div>
+        )}
+        {!patientSearchLoading && patientSearchResults.length > 0 && (
+          <div className="mt-3 border border-slate-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Paciente</th>
+                  <th className="px-3 py-2">Responsável</th>
+                  <th className="px-3 py-2">Telefone</th>
+                  <th className="px-3 py-2">Última Consulta</th>
+                  <th className="px-3 py-2">Próxima Consulta</th>
+                  <th className="px-3 py-2">Diagnóstico</th>
+                  <th className="px-3 py-2">Idade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {patientSearchResults.map((p: any, idx: number) => {
+                  const fmtDate = (v: string | null) => {
+                    if (!v) return '—';
+                    const [date, time] = v.split(' ');
+                    const [y, m, d] = date.split('-');
+                    return `${d}/${m}/${y}${time ? ` ${time}` : ''}`;
+                  };
+                  return (
+                    <tr key={idx} className="hover:bg-violet-50/30">
+                      <td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">{p.nome}</td>
+                      <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">{p.responsavel || '—'}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="font-mono text-xs text-slate-600 whitespace-nowrap">{p.telefone || '—'}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">{fmtDate(p.ultima_consulta)}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">{fmtDate(p.proxima_consulta)}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600">{p.diagnostico || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">{p.idade || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!patientSearchLoading && patientSearchQuery.trim().length >= 2 && patientSearchResults.length === 0 && (
+          <p className="mt-3 text-sm text-slate-400 text-center py-2">Nenhum paciente encontrado.</p>
+        )}
+      </div>
+    </SectionCard>
+
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
     <h1 className="text-2xl font-bold text-slate-800">Painel de Controle</h1>
     </div>
@@ -979,27 +1224,63 @@ const Dashboard: React.FC = () => {
     {/* 3 new action counters — daily operational queues */}
     <div>
       <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ação Operacional</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <KpiCard
-          title="Entregar"
-          subtitle="Pago + Aguardando Entrega"
-          value={operationalCounters.toDeliver.length}
-          icon={<Bike size={20} className="text-orange-600" />} accentColor="orange"
-          onClick={() => navigate('/doses', { state: { filter: 'to-deliver' } })}
+          title="Mensagens"
+          subtitle={messagesOverdue > 0 ? `${messagesToday} hoje · ${messagesOverdue} atrasadas` : `${messagesToday} hoje`}
+          value={messagesActionable}
+          icon={<MessageSquare size={16} className="text-indigo-600" />}
+          accentColor={messagesOverdue > 0 ? 'red' : 'indigo'}
+          highlight
+          onClick={() => scrollToSection('section-messages')}
         />
         <KpiCard
           title="A Pagar"
           subtitle="Doses pendentes de pagamento"
           value={operationalCounters.toPay.length}
-          icon={<AlertCircle size={20} className="text-amber-600" />} accentColor="amber"
+          icon={<AlertCircle size={16} className="text-amber-600" />} accentColor="amber"
+          highlight
           onClick={() => navigate('/doses', { state: { filter: 'to-pay' } })}
+        />
+        <KpiCard
+          title="Entregar"
+          subtitle="Pago + Aguardando Entrega"
+          value={operationalCounters.toDeliver.length}
+          icon={<Bike size={20} className="text-orange-600" />} accentColor="orange"
+          highlight
+          onClick={() => navigate('/doses', { state: { filter: 'to-deliver' } })}
         />
         <KpiCard
           title="Enfermagem"
           subtitle="Aguardando aplicação"
           value={operationalCounters.nursingPending.length}
-          icon={<Syringe size={20} className="text-rose-600" />} accentColor="rose"
+          icon={<Syringe size={16} className="text-rose-600" />} accentColor="rose"
+          highlight
           onClick={() => navigate('/enfermagem')}
+        />
+        <KpiCard
+          title="Agendar Consulta" value={approachingConsults.length}
+          icon={<Calendar size={16} className="text-purple-600" />} accentColor="purple"
+          highlight
+          onClick={() => navigate('/consultas')}
+        />
+        <KpiCard
+          title="Consultas Duplicadas"
+          subtitle="Futuras duplicadas"
+          value={new Set(dupData.map((d: any) => d.nome_completo)).size}
+          icon={<CalendarX2 size={16} className="text-red-600" />}
+          accentColor={dupData.length > 0 ? 'red' : 'gray'}
+          highlight
+          onClick={() => scrollToSection('section-dup-appointments')}
+        />
+        <KpiCard
+          title="Emitir NF"
+          subtitle="Pendentes de entrega"
+          value={pendingInvoices.length}
+          icon={<Receipt size={16} className="text-amber-600" />}
+          accentColor={pendingInvoices.length > 0 ? 'amber' : 'gray'}
+          highlight
+          onClick={() => scrollToSection('section-invoices')}
         />
       </div>
     </div>
@@ -1007,106 +1288,35 @@ const Dashboard: React.FC = () => {
     {/* General KPIs */}
     <div>
       <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Indicadores Gerais</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2.5">
         <KpiCard
-          title="Pacientes Ativos" subtitle="Em acompanhamento" value={patientStats.active}
-          icon={<UserCheck size={20} className="text-green-600" />} accentColor="green"
-          onClick={() => navigate('/pacientes', { state: { statusFilter: 'active' } })}
-        />
-        <KpiCard
-          title="Pacientes Inativos" subtitle="Sem tratamento vigente" value={patientStats.inactive}
-          icon={<UserX size={20} className="text-gray-600" />} accentColor="gray"
-          onClick={() => navigate('/pacientes', { state: { statusFilter: 'inactive' } })}
-        />
-        <KpiCard
-          title="Termos Pendentes" value={patientsMissingConsent.length}
-          icon={<FileWarning size={20} className="text-cyan-600" />} accentColor="cyan"
+          title="Termos Pendentes" value={documents.filter(d => d.status === 'PENDING').length}
+          icon={<FileWarning size={16} className="text-cyan-600" />} accentColor="cyan"
           onClick={() => navigate('/termos-consentimento')}
         />
         <KpiCard
           title="Doses em Atraso" value={overdueDoses.length}
-          icon={<AlertCircle size={20} className="text-red-600" />} accentColor="red"
+          icon={<AlertCircle size={16} className="text-red-600" />} accentColor="red"
           onClick={() => navigate('/doses', { state: { filter: 'overdue' } })}
         />
+
         <KpiCard
-          title="Agendar Consulta" value={approachingConsults.length}
-          icon={<Calendar size={20} className="text-purple-600" />} accentColor="purple"
-          onClick={() => navigate('/consultas')}
-        />
-        <KpiCard
-          title="Pesquisa Enfermeira" value={pendingSurveys.length}
-          icon={<MessageCircle size={20} className="text-blue-600" />} accentColor="blue"
+          title="Pesquisa Enfermeira" subtitle="Aguardando resposta" value={pendingSurveys.length}
+          icon={<MessageCircle size={16} className="text-blue-600" />} accentColor="blue"
           onClick={() => navigate('/pesquisa-enfermagem')}
         />
         <KpiCard
-          title="Próximas Doses (7d)" subtitle="Próximos 7 dias" value={upcomingScheduledDoses.length}
-          icon={<Syringe size={20} className="text-teal-600" />} accentColor="teal"
+          title="Próximas Doses (14d)" subtitle="Próximos 14 dias" value={upcomingScheduledDoses.length}
+          icon={<Syringe size={16} className="text-teal-600" />} accentColor="teal"
           onClick={() => scrollToSection('section-upcoming-doses')}
         />
-        <KpiCard
-          title="Confirmar Aplicação" subtitle="Dose 1 aguardando" value={confirmApplicationDoses.length}
-          icon={<CheckCircle2 size={20} className="text-pink-600" />} accentColor="pink"
-          onClick={() => scrollToSection('section-confirm-application')}
-        />
+
       </div>
     </div>
 
-    {/* ============= Confirmar Aplicação table (March 2026 — patients with auto-created Dose 1 awaiting confirmation) ============= */}
-    {confirmApplicationDoses.length > 0 && (
-      <SectionCard
-        id="section-confirm-application"
-        title="Pacientes Aguardando Confirmação da Dose 1"
-        icon={<CheckCircle2 size={18} className="text-pink-600" />}
-        countBadge={confirmApplicationDoses.length}
-        badgeColor="bg-pink-100 text-pink-800"
-        headerBg="bg-pink-50/30"
-      >
-        <div className="p-2 bg-pink-50 text-pink-800 text-xs text-center border-b border-pink-100">
-          A 1ª dose foi auto-registrada. A enfermagem deve completar lote/pagamento e atualizar para "Aplicada".
-        </div>
-        <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
-            <tr>
-              <th className="px-6 py-3">Paciente</th>
-              <th className="px-6 py-3">Responsável</th>
-              <th className="px-6 py-3">Data Início</th>
-              <th className="px-6 py-3">Protocolo</th>
-              <th className="px-6 py-3 text-right">Ação</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {confirmApplicationDoses.map(dose => {
-              const treatment = treatments.find(t => t.id === dose.treatmentId);
-              const patient = treatment ? patients.find(p => p.id === treatment.patientId) : null;
-              const protocol = treatment ? protocols.find(p => p.id === treatment.protocolId) : null;
-              return (
-                <tr key={dose.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-3 font-medium text-slate-700">{patient?.fullName || '—'}</td>
-                  <td className="px-6 py-3 text-slate-600">{patient?.guardian?.fullName || '—'}</td>
-                  <td className="px-6 py-3">{formatDate(dose.applicationDate)}</td>
-                  <td className="px-6 py-3 text-slate-600">{protocol?.name || '—'}</td>
-                  <td className="px-6 py-3 text-right">
-                    {treatment && (
-                      <button
-                        onClick={() => navigate(`/tratamento/${treatment.id}`, { state: { editDoseId: dose.id } })}
-                        className="text-pink-600 hover:text-pink-800 font-medium text-xs flex items-center justify-end ml-auto"
-                      >
-                        Confirmar Aplicação
-                        <ChevronRight size={14} className="ml-0.5" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </SectionCard>
-    )}
-
     {/* Activity Window */}
     <SectionCard
-    title="Janela de Atividade (Doses +/- 7 dias)"
+    title="Janela de Atividade (Doses +/- 14 dias)"
     icon={<CalendarRange size={18} className="text-amber-600" />}
     countBadge={highActivityDoses.length} badgeColor="bg-amber-100 text-amber-800" headerBg="bg-amber-50/30"
     >
@@ -1133,7 +1343,7 @@ const Dashboard: React.FC = () => {
       </thead>
       <tbody className="divide-y divide-slate-100">
       {highActivityDoses.length === 0 ? (
-        <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-400">Nenhuma pendência operacional para a semana.</td></tr>
+        <tr><td colSpan={8} className="px-6 py-8 text-center text-slate-400">Nenhuma pendência operacional no momento.</td></tr>
       ) : (
         paginate(highActivityDoses, activityPage).map((dose: Dose) => {
         const patient = getPatientByTreatmentId(dose.treatmentId);
@@ -1172,8 +1382,8 @@ const Dashboard: React.FC = () => {
             </span>
           </td>
           <td className="px-6 py-4">
-            {dose.purchased === false ? (
-            <span className="text-slate-400 text-xs italic">N/A</span>
+            {dose.purchased === false || dose.paymentStatus == null ? (
+            <span className="text-slate-400 text-xs italic">{dose.purchased === false ? 'N/A' : '—'}</span>
             ) : dose.paymentStatus === PaymentStatus.PAID ? (
             <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(dose.paymentStatus)}`}>
               {PAYMENT_STATUS_LABELS[dose.paymentStatus]}
@@ -1226,6 +1436,7 @@ const Dashboard: React.FC = () => {
 
     {/* Upcoming Messages */}
     <SectionCard
+    id="section-messages"
     title="Próximas Mensagens"
     icon={<MessageSquare size={18} className="text-indigo-600" />}
     countBadge={upcomingContacts.length} badgeColor="bg-indigo-100 text-indigo-800" headerBg="bg-indigo-50/30"
@@ -1255,11 +1466,11 @@ const Dashboard: React.FC = () => {
         <tr
           key={contact.id}
           onClick={() => handleOpenMessageModal(contact)}
-          className="hover:bg-indigo-50/20 cursor-pointer transition-colors"
+          className={`${contact.diffDays < 0 ? 'bg-red-50' : ''} hover:bg-indigo-50/20 cursor-pointer transition-colors`}
         >
           <td className="px-6 py-4 font-bold text-slate-800">
           {formatDate(contact.date.toISOString())}
-          <span className="block text-xs font-normal text-slate-500">
+          <span className={`block text-xs ${contact.diffDays < 0 ? 'font-semibold text-red-600' : 'font-normal text-slate-500'}`}>
             {contact.diffDays === 0 ? 'Hoje' : (contact.diffDays > 0 ? `Em ${contact.diffDays} dias` : `Há ${Math.abs(contact.diffDays)} dias`)}
           </span>
           </td>
@@ -1282,10 +1493,17 @@ const Dashboard: React.FC = () => {
           )}
           </td>
           <td className="px-6 py-4">
+          {contact.message.includes('portal.endocrinokids.com.br/c/') ? (
+          <div className="flex items-center text-red-800 font-bold bg-red-50 px-3 py-1.5 rounded-lg border border-red-200">
+            <MessageCircle size={14} className="mr-2 flex-shrink-0 text-red-600" />
+            <span className="truncate max-w-[250px]">{contact.message}</span>
+          </div>
+          ) : (
           <div className="flex items-center text-indigo-700 font-medium bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
             <MessageCircle size={14} className="mr-2 flex-shrink-0" />
             <span className="truncate max-w-[250px]">{contact.message}</span>
           </div>
+          )}
           </td>
           <td className="px-6 py-4 text-right">
           <button
@@ -1322,7 +1540,7 @@ const Dashboard: React.FC = () => {
         - Pacientes Ativos por Diagnóstico
         - Pacientes Ativos / Inativos
         Main dashboard now keeps: KPIs, Activity Window, Próximas Mensagens,
-        operational counters (ENTREGAR/A PAGAR/ENFERMAGEM), Confirmar Aplicação,
+        operational counters (ENTREGAR/A PAGAR/ENFERMAGEM),
         and Próximas Doses (filtered to next 7 days). */}
 
     {/* Upcoming Scheduled Doses (filtered to next 7 days per March 2026 spec 4.2) */}
@@ -1398,6 +1616,119 @@ const Dashboard: React.FC = () => {
     />
     </SectionCard>
 
+    {/* Notas Fiscais Pendentes */}
+    {pendingInvoices.length > 0 && (
+    <SectionCard id="section-invoices" title="Notas Fiscais — Acompanhamento" icon={<Receipt size={18} className="text-amber-600" />} countBadge={pendingInvoices.length} badgeColor="bg-amber-100 text-amber-800" headerBg="bg-amber-50/30">
+    <table className="w-full text-sm text-left">
+      <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+      <tr>
+        <th className="px-5 py-3">Criança</th>
+        <th className="px-5 py-3">Responsável</th>
+        <th className="px-5 py-3">CPF</th>
+        <th className="px-5 py-3">Status</th>
+        <th className="px-5 py-3">Data</th>
+        <th className="px-5 py-3 text-right">Ação</th>
+      </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+      {pendingInvoices.map((inv: any) => (
+        <tr key={inv.id} className="hover:bg-amber-50/30">
+        <td className="px-5 py-3">
+          <div className="font-medium text-slate-800">{inv.childName}</div>
+          <div className="text-[10px] text-slate-400">{inv.dose?.treatment?.protocol?.name || ''}</div>
+        </td>
+        <td className="px-5 py-3">
+          <div className="text-slate-700">{inv.guardianName}</div>
+          <div className="text-[10px] text-slate-400">{inv.guardianEmail || ''}</div>
+        </td>
+        <td className="px-5 py-3 text-slate-600 font-mono text-xs">{inv.cpf || '—'}</td>
+        <td className="px-5 py-3">
+          <span className={`px-2 py-1 rounded-full text-xs font-bold ${NF_STATUS_COLORS[inv.status] || 'bg-slate-100'}`}>
+          {NF_STATUS_LABELS[inv.status] || inv.status}
+          </span>
+        </td>
+        <td className="px-5 py-3 text-xs text-slate-500">{new Date(inv.createdAt).toLocaleDateString('pt-BR')}</td>
+        <td className="px-5 py-3 text-right">
+          {NF_NEXT_STATUS[inv.status] && (
+          <button
+            onClick={() => handleNfAdvance(inv.id, inv.status)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
+          >
+            <CheckCircle2 size={12} />
+            {NF_ACTION_LABELS[inv.status]}
+          </button>
+          )}
+        </td>
+        </tr>
+      ))}
+      </tbody>
+    </table>
+    </SectionCard>
+    )}
+
+    {/* Duplicate Appointments */}
+    <SectionCard id="section-dup-appointments" title="Consultas Futuras Duplicadas" icon={<CalendarX2 size={18} className="text-red-500" />} countBadge={dupData.length > 0 ? new Set(dupData.map((d: any) => d.nome_completo)).size : 0} badgeColor="bg-red-100 text-red-800" headerBg="bg-red-50/30">
+      <div className="p-4">
+        <div className="flex gap-2 mb-3">
+          {[30, 60, 90, 0].map(d => (
+            <button
+              key={d}
+              onClick={() => setDupDias(d || 365)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                (d === 0 ? dupDias === 365 : dupDias === d)
+                  ? 'bg-red-600 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {d === 0 ? 'Todos' : `${d} dias`}
+            </button>
+          ))}
+        </div>
+        {dupLoading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+            <Loader2 size={14} className="animate-spin" /> Carregando...
+          </div>
+        ) : dupData.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-4">Nenhuma consulta duplicada encontrada.</p>
+        ) : (
+          <div className="border border-slate-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-xs text-slate-400 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Paciente</th>
+                  <th className="px-3 py-2">Data</th>
+                  <th className="px-3 py-2">Horário</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Procedimento</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {dupData.map((c: any, idx: number) => {
+                  const [y, m, d] = c.data.split('-');
+                  const statusMap: Record<string, string> = { sc: 'Agendado', co: 'Confirmado', pa: 'Confirmado' };
+                  const statusColor: Record<string, string> = { sc: 'bg-blue-100 text-blue-700', co: 'bg-green-100 text-green-700', pa: 'bg-green-100 text-green-700' };
+                  const isFirstOfGroup = idx === 0 || dupData[idx - 1].nome_completo !== c.nome_completo;
+                  return (
+                    <tr key={idx} className={`hover:bg-red-50/30 ${isFirstOfGroup && idx > 0 ? 'border-t-2 border-red-200' : ''}`}>
+                      <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap" title={c.nome_completo}>{c.nome}</td>
+                      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{`${d}/${m}/${y}`}</td>
+                      <td className="px-3 py-2 text-slate-600">{c.hora}</td>
+                      <td className="px-3 py-2">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColor[c.status] || 'bg-slate-100'}`}>
+                          {statusMap[c.status] || c.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-600">{c.procedimento || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </SectionCard>
+
     {/* MODALS */}
     <Modal open={addressModalOpen} onClose={() => setAddressModalOpen(false)} title="Endereço de Entrega" icon={<Bike size={18} className="text-amber-600" />}>
     <div className="mb-4">
@@ -1415,7 +1746,7 @@ const Dashboard: React.FC = () => {
       <MessageCircle size={18} className="mr-2" />
       WhatsApp Responsável
       </button>
-      <button onClick={handleCopyAddress} className={`w-full flex items-center justify-center py-2.5 rounded-lg font-medium transition-colors ${isCopied ? 'bg-slate-600 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}>
+      <button onClick={handleCopyAddress} className={`w-full flex items-center justify-center py-2.5 rounded-lg font-medium transition-colors ${isCopied ? 'bg-slate-600 text-white' : 'bg-pink-600 text-white hover:bg-pink-700'}`}>
       {isCopied ? <Check size={18} className="mr-2" /> : <Copy size={18} className="mr-2" />}
       {isCopied ? 'Endereço Copiado!' : 'Copiar Endereço'}
       </button>
@@ -1516,7 +1847,7 @@ const Dashboard: React.FC = () => {
       </div>
       <div className="flex justify-end pt-6">
       <button type="button" onClick={() => setDoseModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg mr-2">Cancelar</button>
-      <button type="submit" disabled={isSavingDose} className="flex items-center px-6 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
+      <button type="submit" disabled={isSavingDose} className="flex items-center px-6 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50">
         {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
         {isSavingDose ? 'Salvando...' : 'Salvar Alterações'}
       </button>
@@ -1525,7 +1856,7 @@ const Dashboard: React.FC = () => {
     </Modal>
 
     {/* Consultation Modal */}
-    <Modal open={consultModalOpen} onClose={() => setConsultModalOpen(false)} title="Agendar Consulta" icon={<Calendar size={20} className="text-purple-600" />}>
+    <Modal open={consultModalOpen} onClose={() => setConsultModalOpen(false)} title="Agendar Consulta" icon={<Calendar size={16} className="text-purple-600" />}>
     <div className="space-y-4">
       <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
       <p className="text-xs font-bold text-purple-600 uppercase mb-1">Paciente</p>
@@ -1617,6 +1948,103 @@ const Dashboard: React.FC = () => {
       </div>
     )}
     </Modal>
+
+      {/* NF Prompt Modal */}
+      {nfPromptOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-amber-100 rounded-lg"><Receipt size={20} className="text-amber-600" /></div>
+              <h3 className="text-lg font-bold text-slate-800">Emitir Nota Fiscal?</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-5">Deseja iniciar a emissão de nota fiscal para esta dose?</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setNfPromptOpen(false); setNfPromptDoseId(null); }}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium"
+              >Não</button>
+              <button
+                onClick={handleNfYes}
+                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium"
+              >Sim, emitir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NF Loading */}
+      {nfLoading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 flex items-center gap-3">
+            <Loader2 size={20} className="animate-spin text-amber-600" />
+            <span className="text-slate-700">Carregando dados para NF...</span>
+          </div>
+        </div>
+      )}
+
+      {/* NF Form Modal */}
+      {nfFormOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-2 bg-amber-100 rounded-lg"><Receipt size={20} className="text-amber-600" /></div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Dados para Nota Fiscal</h3>
+                <p className="text-xs text-slate-500">Confirme os dados antes de enviar ao responsável</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nome Completo do Responsável *</label>
+                <input type="text" value={nfForm.guardianName} onChange={e => setNfForm(f => ({ ...f, guardianName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Email do Responsável</label>
+                <input type="email" value={nfForm.guardianEmail} onChange={e => setNfForm(f => ({ ...f, guardianEmail: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Nome Completo da Criança *</label>
+                <input type="text" value={nfForm.childName} onChange={e => setNfForm(f => ({ ...f, childName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">CPF</label>
+                  <input type="text" value={nfForm.cpf} onChange={e => setNfForm(f => ({ ...f, cpf: e.target.value }))}
+                    placeholder="000.000.000-00"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">CEP</label>
+                  <input type="text" value={nfForm.cep} onChange={e => setNfForm(f => ({ ...f, cep: e.target.value }))}
+                    placeholder="00000-000"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Endereço</label>
+                <input type="text" value={nfForm.address} onChange={e => setNfForm(f => ({ ...f, address: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-amber-500 focus:border-amber-500" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+              <button onClick={() => { setNfFormOpen(false); setNfPromptDoseId(null); }}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium" disabled={nfSaving}>
+                Cancelar
+              </button>
+              <button onClick={handleNfSubmit}
+                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium disabled:opacity-50 flex items-center gap-2"
+                disabled={nfSaving}>
+                {nfSaving ? <><Loader2 size={14} className="animate-spin" /> Salvando...</> : <><Receipt size={14} /> Confirmar e Criar NF</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
   </div>
   );
