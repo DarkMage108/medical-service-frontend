@@ -2,11 +2,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useToast } from '../components/ui/Toast';
 import { useParams, Link, useLocation } from 'react-router-dom';
-import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi } from '../services/api';
+import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi, invoicesApi } from '../services/api';
 import { formatDate, getStatusColor, addDays, diffInDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS, formatConsultationPeriod } from '../constants';
-import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem } from '../types';
+import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem, InvoiceStatus } from '../types';
 import FortnightSelector from '../components/ui/FortnightSelector';
-import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw, Syringe } from 'lucide-react';
+import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw, Syringe, FileText } from 'lucide-react';
 
 const TreatmentDetail: React.FC = () => {
   const { toast } = useToast();
@@ -70,6 +70,11 @@ const TreatmentDetail: React.FC = () => {
   // March 2026 BUG FIX: default null (not 0) — 0 is not a valid 1-10 score, must be distinguishable from "not evaluated"
   const [doseSurveyScore, setDoseSurveyScore] = useState<number | null>(null);
   const [doseSurveyComment, setDoseSurveyComment] = useState('');
+
+  const [doseInvoiceId, setDoseInvoiceId] = useState<string | null>(null);
+  const [doseInvoiceNotes, setDoseInvoiceNotes] = useState('');
+  const [doseInvoiceStatus, setDoseInvoiceStatus] = useState<InvoiceStatus>(InvoiceStatus.PENDING_DATA);
+  const [isLoadingPrefill, setIsLoadingPrefill] = useState(false);
 
   // Load data from API
   const loadData = async () => {
@@ -197,6 +202,17 @@ const TreatmentDetail: React.FC = () => {
     setDoseAppliedByName((dose as any).appliedBy?.name || '');
     setDoseAppliedAt(dose.appliedAt || '');
 
+    // Load invoice data if exists
+    if (dose.id) {
+      invoicesApi.getByDose(dose.id).then((inv: any) => {
+        if (inv) {
+          setDoseInvoiceId(inv.id);
+          setDoseInvoiceNotes(inv.notes || '');
+          setDoseInvoiceStatus(inv.status || InvoiceStatus.PENDING_DATA);
+        }
+      }).catch(() => {});
+    }
+
     setShowDoseForm(true);
 
     setTimeout(() => {
@@ -236,6 +252,9 @@ const TreatmentDetail: React.FC = () => {
     setDoseSurveyComment('');
     setDoseAppliedByName('');
     setDoseAppliedAt('');
+    setDoseInvoiceId(null);
+    setDoseInvoiceNotes('');
+    setDoseInvoiceStatus(InvoiceStatus.PENDING_DATA);
   };
 
   const handleOpenNewDose = (cycleNumber?: number, scheduledDate?: Date) => {
@@ -361,10 +380,32 @@ const TreatmentDetail: React.FC = () => {
         surveyComment: doseSurveyComment
       };
 
+      let savedDoseId = editingDoseId;
       if (editingDoseId) {
         await dosesApi.update(editingDoseId, doseData);
       } else {
-        await dosesApi.create(doseData);
+        const created = await dosesApi.create(doseData);
+        savedDoseId = created?.id || null;
+      }
+
+      // Save invoice data if payment is PAID and there are NF notes
+      if (savedDoseId && dosePurchased && dosePayment === PaymentStatus.PAID && doseInvoiceNotes.trim()) {
+        try {
+          const invoiceData = {
+            doseId: savedDoseId,
+            guardianName: '',
+            childName: '',
+            notes: doseInvoiceNotes.trim(),
+            status: doseInvoiceStatus,
+          };
+          if (doseInvoiceId) {
+            await invoicesApi.update(doseInvoiceId, invoiceData);
+          } else {
+            await invoicesApi.create(invoiceData);
+          }
+        } catch (invErr) {
+          console.error('Erro ao salvar NF:', invErr);
+        }
       }
 
       await loadData(); // Refresh data
@@ -1156,6 +1197,64 @@ const TreatmentDetail: React.FC = () => {
                         <option value="delivered">Entregue</option>
                       </select>
                     </div>
+
+                    {/* Nota Fiscal — only when PAID */}
+                    {dosePayment === PaymentStatus.PAID && (
+                      <div className="bg-amber-50 p-4 rounded-lg border border-amber-200 mt-2">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+                            <FileText size={14} /> Nota Fiscal
+                          </p>
+                          <button
+                            type="button"
+                            disabled={isLoadingPrefill || !editingDoseId}
+                            onClick={async () => {
+                              if (!editingDoseId) return;
+                              setIsLoadingPrefill(true);
+                              try {
+                                const pf = await invoicesApi.prefill(editingDoseId);
+                                if (pf) {
+                                  const parts = [];
+                                  if (pf.guardianName) parts.push(pf.guardianName);
+                                  if (pf.cpf) parts.push('CPF: ' + pf.cpf);
+                                  if (pf.address) parts.push(pf.address);
+                                  if (pf.cep) parts.push('CEP: ' + pf.cep);
+                                  if (parts.length > 0) setDoseInvoiceNotes(parts.join('\n'));
+                                }
+                              } catch { toast('Dados de NF não encontrados no prontuário', 'warning'); }
+                              setIsLoadingPrefill(false);
+                            }}
+                            className="text-[11px] text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
+                          >
+                            {isLoadingPrefill ? 'Carregando...' : 'Sugerir dados do prontuário'}
+                          </button>
+                        </div>
+
+                        <textarea
+                          rows={3}
+                          value={doseInvoiceNotes}
+                          onChange={(e) => setDoseInvoiceNotes(e.target.value)}
+                          placeholder="Nome completo, CPF, Endereço/CEP para emissão da NF"
+                          className="w-full border-amber-300 rounded-lg focus:ring-amber-500 focus:border-amber-500 text-sm bg-white"
+                        />
+
+                        <div className="mt-2">
+                          <label className="block text-xs font-medium text-slate-600 mb-1">Situação NF</label>
+                          <select
+                            value={doseInvoiceStatus}
+                            onChange={(e) => setDoseInvoiceStatus(e.target.value as InvoiceStatus)}
+                            className="w-full border-amber-300 rounded-lg focus:ring-amber-500 focus:border-amber-500 text-sm bg-white"
+                          >
+                            <option value={InvoiceStatus.PENDING_DATA}>Pendente — Aguardando dados</option>
+                            <option value={InvoiceStatus.DATA_SENT}>Dados enviados</option>
+                            <option value={InvoiceStatus.CONFIRMED}>Dados confirmados</option>
+                            <option value={InvoiceStatus.ISSUED}>NF Emitida</option>
+                            <option value={InvoiceStatus.DELIVERED}>NF Entregue</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
                 {/* Voltar / Avançar buttons */}
                 <div className="flex justify-between pt-4 border-t border-slate-200">
                   <button type="button" onClick={() => setDoseStep(1)} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg flex items-center gap-2">
