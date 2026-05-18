@@ -13,6 +13,7 @@ const TreatmentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const [showDoseForm, setShowDoseForm] = useState(false);
+  const [doseStep, setDoseStep] = useState<1 | 2 | 3>(1);
 
   // Data states
   const [treatment, setTreatment] = useState<Treatment | null>(null);
@@ -229,6 +230,7 @@ const TreatmentDetail: React.FC = () => {
     setDoseIsLast(false);
     setDoseConsultDate('');
     setDoseNurseSelection('');
+    setDoseStep(1);
     setDoseSurveyStatus(SurveyStatus.NOT_SENT);
     setDoseSurveyScore(null);
     setDoseSurveyComment('');
@@ -960,11 +962,19 @@ const TreatmentDetail: React.FC = () => {
             </button>
           </div>
 
-          {/* Section indicators */}
-          <div className="flex items-center gap-2 mt-4 mb-6 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 px-3 py-1 rounded-full">Medicamento</span>
-            {dosePurchased && <span className="text-[10px] font-bold uppercase tracking-widest bg-green-50 text-green-700 px-3 py-1 rounded-full">Pagamento</span>}
-            <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 text-slate-600 px-3 py-1 rounded-full">Enfermeira</span>
+          {/* Step indicators */}
+          <div className="flex items-center gap-2 mt-4 mb-6">
+            <button type="button" onClick={() => setDoseStep(1)} className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${doseStep === 1 ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-300' : 'bg-slate-100 text-slate-500'}`}>1. Medicamento</button>
+            <span className="text-slate-300">&rarr;</span>
+            {dosePurchased ? (
+              <>
+                <button type="button" onClick={() => setDoseStep(2)} className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${doseStep === 2 ? 'bg-green-100 text-green-700 ring-2 ring-green-300' : 'bg-slate-100 text-slate-500'}`}>2. Pagamento</button>
+                <span className="text-slate-300">&rarr;</span>
+                <button type="button" onClick={() => setDoseStep(3)} className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${doseStep === 3 ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300' : 'bg-slate-100 text-slate-500'}`}>3. Enfermeira</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setDoseStep(3)} className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${doseStep === 3 ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300' : 'bg-slate-100 text-slate-500'}`}>2. Enfermeira</button>
+            )}
           </div>
 
           {/* Application Data highlight card — visible whenever we know who applied */}
@@ -986,7 +996,8 @@ const TreatmentDetail: React.FC = () => {
 
           <form onSubmit={handleSaveDose} className="space-y-6">
 
-            {/* ============= Medicamento ============= */}
+            {/* ============= Step 1: Medicamento ============= */}
+            {doseStep === 1 && (
             <>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Medicamento</p>
 
@@ -1059,10 +1070,17 @@ const TreatmentDetail: React.FC = () => {
                     </select>
                   </div>
                 </div>
-              </>
+              {/* Avançar button */}
+              <div className="flex justify-end pt-4 border-t border-slate-200">
+                <button type="button" onClick={() => setDoseStep(dosePurchased ? 2 : 3)} className="px-6 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 font-medium shadow flex items-center gap-2">
+                  Avançar <span>&rarr;</span>
+                </button>
+              </div>
+            </>
+            )}
 
-            {/* ============= Pagamento e Entrega (auto-hides when no purchase) ============= */}
-            {dosePurchased && (
+            {/* ============= Step 2: Pagamento e Entrega ============= */}
+            {doseStep === 2 && dosePurchased && (
               <>
                 <div className="border-t border-slate-100 pt-4">
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Pagamento & Entrega</p>
@@ -1138,10 +1156,20 @@ const TreatmentDetail: React.FC = () => {
                         <option value="delivered">Entregue</option>
                       </select>
                     </div>
+                {/* Voltar / Avançar buttons */}
+                <div className="flex justify-between pt-4 border-t border-slate-200">
+                  <button type="button" onClick={() => setDoseStep(1)} className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg flex items-center gap-2">
+                    <span>&larr;</span> Voltar
+                  </button>
+                  <button type="button" onClick={() => setDoseStep(3)} className="px-6 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 font-medium shadow flex items-center gap-2">
+                    Avançar <span>&rarr;</span>
+                  </button>
+                </div>
               </>
             )}
 
-            {/* ============= Enfermeira ============= */}
+            {/* ============= Step 3: Enfermeira ============= */}
+            {doseStep === 3 && (
             <>
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Enfermeira</p>
@@ -1192,27 +1220,36 @@ const TreatmentDetail: React.FC = () => {
                     </div>
                   )}
                 </div>
-            </>
 
             {/* Form buttons */}
             <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200">
               <button
                 type="button"
-                onClick={() => { setShowDoseForm(false); resetDoseForm(); }}
-                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg flex items-center"
+                onClick={() => setDoseStep(dosePurchased ? 2 : 1)}
+                className="px-5 py-2 text-slate-600 hover:bg-slate-100 rounded-lg flex items-center gap-2"
               >
-                Cancelar
+                <span>&larr;</span> Voltar
               </button>
-
-              <button
-                type="submit"
-                disabled={isSavingDose}
-                className="flex items-center px-5 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow"
-              >
-                {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
-                {editingDoseId ? (isSavingDose ? 'Atualizando...' : 'Atualizar Dose') : (isSavingDose ? 'Salvando...' : 'Salvar Dose')}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowDoseForm(false); resetDoseForm(); }}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingDose}
+                  className="flex items-center px-5 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow"
+                >
+                  {isSavingDose ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />}
+                  {editingDoseId ? (isSavingDose ? 'Atualizando...' : 'Atualizar Dose') : (isSavingDose ? 'Salvando...' : 'Salvar Dose')}
+                </button>
+              </div>
             </div>
+            </>
+            )}
           </form>
           <div className="mt-4 text-xs text-slate-500 flex items-center">
             <Activity size={14} className="mr-1" />
