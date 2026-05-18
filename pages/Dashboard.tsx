@@ -1277,8 +1277,8 @@ const Dashboard: React.FC = () => {
           title="Emitir NF"
           subtitle="Pendentes de entrega"
           value={pendingInvoices.length}
-          icon={<Receipt size={16} className="text-amber-600" />}
-          accentColor={pendingInvoices.length > 0 ? 'amber' : 'gray'}
+          icon={<Receipt size={16} className="text-emerald-600" />}
+          accentColor={pendingInvoices.length > 0 ? 'emerald' : 'gray'}
           highlight
           onClick={() => scrollToSection('section-invoices')}
         />
