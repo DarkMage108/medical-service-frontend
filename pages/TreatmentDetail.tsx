@@ -6,7 +6,7 @@ import { treatmentsApi, dosesApi, patientsApi, protocolsApi, inventoryApi } from
 import { formatDate, getStatusColor, addDays, diffInDays, getTreatmentStatusColor, DOSE_STATUS_LABELS, PAYMENT_STATUS_LABELS, SURVEY_STATUS_LABELS, TREATMENT_STATUS_LABELS, formatConsultationPeriod } from '../constants';
 import { Dose, DoseStatus, PaymentStatus, SurveyStatus, Treatment, TreatmentStatus, ProtocolCategory, PatientFull, Protocol, InventoryItem } from '../types';
 import FortnightSelector from '../components/ui/FortnightSelector';
-import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Calendar, Plus, Save, Edit2, X, Activity, AlignLeft, MessageSquare, Edit, UserCheck, Star, Loader2, AlertTriangle, Package, Truck, CreditCard, Check, RefreshCw, Syringe } from 'lucide-react';
 
 const TreatmentDetail: React.FC = () => {
   const { toast } = useToast();
@@ -528,8 +528,8 @@ const TreatmentDetail: React.FC = () => {
     return (
       <div className="text-center py-20">
         <AlertTriangle size={48} className="mx-auto text-red-300 mb-4" />
-        <h3 className="text-lg font-bold text-slate-700">Tratamento nao encontrado</h3>
-        <p className="text-slate-500 mb-4">{error || 'O tratamento solicitado nao existe.'}</p>
+        <h3 className="text-lg font-bold text-slate-700">Tratamento não encontrado</h3>
+        <p className="text-slate-500 mb-4">{error || 'O tratamento solicitado não existe.'}</p>
         <Link to="/pacientes" className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700">
           Voltar para Pacientes
         </Link>
@@ -635,13 +635,54 @@ const TreatmentDetail: React.FC = () => {
               <div className="border-t border-slate-100 pt-4">
                 <div>
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block flex items-center">
-                    <AlignLeft size={14} className="mr-1" /> Observacoes
+                    <AlignLeft size={14} className="mr-1" /> Observações
                   </label>
                   <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 min-h-[40px]">
-                    {treatment.observations || "Nenhuma observacao registrada."}
+                    {treatment.observations || "Nenhuma observação registrada."}
                   </p>
                 </div>
               </div>
+
+              {/* GH Confirmation Info */}
+              {treatment.ghConfirmationToken && (
+                <div className="border-t border-slate-100 pt-4">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block flex items-center">
+                    <Syringe size={14} className="mr-1" /> Confirmação GH
+                  </label>
+                  <div className={`p-4 rounded-lg border ${treatment.ghStartConfirmed ? 'bg-emerald-50 border-emerald-200' : treatment.ghOptedOut ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'}`}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${treatment.ghStartConfirmed ? 'bg-emerald-100 text-emerald-700' : treatment.ghOptedOut ? 'bg-slate-200 text-slate-600' : 'bg-amber-100 text-amber-700'}`}>
+                        {treatment.ghStartConfirmed ? 'Confirmado' : treatment.ghOptedOut ? 'Opt-out' : 'Aguardando confirmação'}
+                      </span>
+                    </div>
+                    {treatment.ghStartConfirmed && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        {treatment.ghConfirmedBrand && (
+                          <div>
+                            <span className="text-slate-500">Marca:</span>
+                            <span className="ml-2 font-bold text-slate-800">{treatment.ghConfirmedBrand}</span>
+                          </div>
+                        )}
+                        {treatment.ghConfirmedDate && (
+                          <div>
+                            <span className="text-slate-500">Data início:</span>
+                            <span className="ml-2 font-bold text-slate-800">{new Date(treatment.ghConfirmedDate).toLocaleDateString('pt-BR')}</span>
+                          </div>
+                        )}
+                        {treatment.ghConfirmedAt && (
+                          <div>
+                            <span className="text-slate-500">Confirmado em:</span>
+                            <span className="ml-2 font-medium text-slate-600">{new Date(treatment.ghConfirmedAt).toLocaleDateString('pt-BR')}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!treatment.ghStartConfirmed && !treatment.ghOptedOut && (
+                      <p className="text-xs text-amber-700">Link enviado ao responsável. Aguardando resposta.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-200">
@@ -725,7 +766,7 @@ const TreatmentDetail: React.FC = () => {
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Observacoes do Tratamento</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Observações do Tratamento</label>
                 <textarea
                   rows={2}
                   value={editObservations}
@@ -953,7 +994,7 @@ const TreatmentDetail: React.FC = () => {
                   <label className="block text-sm font-medium text-slate-700 mb-2">Compra de Medicamento?</label>
                   <div className="flex gap-3">
                     <label className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all ${dosePurchased ? 'bg-pink-50 border-pink-500 text-pink-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                      <input type="radio" name="purchased" checked={dosePurchased} onChange={() => setDosePurchased(true)} className="sr-only" />
+                      <input type="radio" name="purchased" checked={dosePurchased} onChange={() => { setDosePurchased(true); setDoseDeliveryStatus('waiting'); setDoseNurseSelection('yes'); }} className="sr-only" />
                       Sim
                     </label>
                     <label className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all ${!dosePurchased ? 'bg-slate-100 border-slate-400 text-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
@@ -1103,12 +1144,12 @@ const TreatmentDetail: React.FC = () => {
             {/* ============= Enfermeira ============= */}
             <>
               <div className="border-t border-slate-100 pt-4">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Acompanhamento & Satisfação</p>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Enfermeira</p>
               </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <div className="md:col-span-1">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">1. Enfermeira</label>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div className="max-w-[200px]">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Enfermeira</label>
                     <select
                       required
                       value={doseNurseSelection}
@@ -1119,49 +1160,6 @@ const TreatmentDetail: React.FC = () => {
                       <option value="yes">Sim</option>
                       <option value="no">Não</option>
                     </select>
-                  </div>
-
-                  <div className={`md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 ${doseNurseSelection !== 'yes' ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">2. Pesquisa</label>
-                      <select
-                        value={doseSurveyStatus}
-                        onChange={e => setDoseSurveyStatus(e.target.value as SurveyStatus)}
-                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                      >
-                        <option value="" disabled>Selecione...</option>
-                        {Object.values(SurveyStatus).map(s => <option key={s} value={s}>{SURVEY_STATUS_LABELS[s]}</option>)}
-                      </select>
-                    </div>
-                    <div className="md:col-span-2 flex items-end gap-2">
-                      <div className={`flex-1 transition-opacity ${doseSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40 pointer-events-none' : ''}`}>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">3. Nota (1-10)</label>
-                        <select
-                          value={doseSurveyScore === null ? '' : String(doseSurveyScore)}
-                          onChange={e => setDoseSurveyScore(e.target.value === '' ? null : Number(e.target.value))}
-                          className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                          disabled={doseSurveyStatus !== SurveyStatus.ANSWERED}
-                        >
-                          <option value="">— Selecione</option>
-                          {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                            <option key={n} value={n}>{n}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <span className={`w-10 h-10 flex items-center justify-center bg-white border border-slate-200 font-bold rounded-lg text-slate-700 mb-1 ${doseSurveyStatus !== SurveyStatus.ANSWERED ? 'opacity-40' : ''}`}>
-                        {doseSurveyScore !== null ? doseSurveyScore : '—'}
-                      </span>
-                    </div>
-                    <div className="md:col-span-3">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">4. Comentário</label>
-                      <input
-                        type="text"
-                        value={doseSurveyComment}
-                        onChange={e => setDoseSurveyComment(e.target.value)}
-                        placeholder="Observação sobre o atendimento..."
-                        className="w-full border-slate-300 rounded-lg focus:ring-pink-500 focus:border-pink-500"
-                      />
-                    </div>
                   </div>
                 </div>
 
