@@ -659,30 +659,11 @@ const Dashboard: React.FC = () => {
       const minOverdue = cycleNumber === 1 ? 20 : 1;
 
       if (overdueDays >= minOverdue) {
-        // This dose's scheduled date has passed - check if it was applied
         const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
-
-        if (!existingDose || (existingDose.status !== DoseStatus.APPLIED && existingDose.status !== DoseStatus.APPLIED_LATE)) {
-          // Dose is overdue (either not created or created but not applied)
-          if (existingDose) {
-            // Use the existing dose record
-            result.push(existingDose);
-          } else {
-            // Create a virtual dose to represent the overdue scheduled dose
-            const virtualDose: any = {
-              id: `virtual-${treatment.id}-${cycleNumber}`,
-              treatmentId: treatment.id,
-              cycleNumber,
-              applicationDate: scheduledDate.toISOString(),
-              status: DoseStatus.PENDING,
-              paymentStatus: null,
-              isVirtual: true,
-              calculatedNextDate: scheduledDate.toISOString()
-            };
-            result.push(virtualDose);
-          }
+        if (existingDose && existingDose.status !== DoseStatus.APPLIED && existingDose.status !== DoseStatus.APPLIED_LATE) {
+          result.push(existingDose);
           seenTreatments.add(treatment.id);
-          break; // Only report the first overdue dose per treatment
+          break;
         }
       }
     }
