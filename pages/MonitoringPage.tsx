@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Activity, CheckCircle2, XCircle, AlertTriangle, Clock,
   ChevronDown, ChevronRight, RefreshCw, Shield,
-  Server, Zap,
+  Server, Zap, Syringe, HardDrive, Lock,
+  Send, MessageCircle, TrendingUp, Timer,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -33,6 +34,12 @@ interface Incident {
   preventionNotes: string | null;
 }
 
+interface InfraData {
+  vps?: { diskPercent: number; diskUsed: string; diskTotal: string; memPercent: number; memUsed: string; memTotal: string };
+  do?: { diskPercent: number; diskUsed: string; diskTotal: string; memPercent: number; memUsed: string; memTotal: string };
+  ssl?: { domain: string; daysUntilExpiry: number; expiryDate: string };
+}
+
 interface Report {
   id: number;
   reportDate: string;
@@ -41,10 +48,34 @@ interface Report {
   scripts: Script[];
   n8n: { running?: boolean; errors?: number; samples?: string[] };
   summary: { ok?: number; warn?: number; fail?: number; skip?: number };
+  infrastructure?: InfraData;
   incidents: Incident[];
 }
 
-type TabView = 'overview' | 'incidents' | 'history';
+interface DoseMetrics {
+  pipeline: {
+    pending: number;
+    sent1: number;
+    sent2: number;
+    sent3: number;
+    answered: number;
+    notApplied: number;
+  };
+  last30days: {
+    sent: number;
+    answered: number;
+    conversionRate: number;
+    avgResponseHours: number;
+  };
+  overdueByRange: {
+    under7: number;
+    under14: number;
+    under30: number;
+    over30: number;
+  };
+}
+
+type TabView = 'overview' | 'doses' | 'infra' | 'incidents' | 'history';
 
 function statusIcon(status: string) {
   if (status.includes('OK')) return <CheckCircle2 size={14} className="text-green-500" />;
@@ -72,11 +103,47 @@ function formatDateShort(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
 
+function DiskBar({ percent, used, total, label }: { percent: number; used: string; total: string; label: string }) {
+  const color = percent > 85 ? 'bg-red-500' : percent > 70 ? 'bg-amber-500' : 'bg-green-500';
+  const textColor = percent > 85 ? 'text-red-600' : percent > 70 ? 'text-amber-600' : 'text-green-600';
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-bold text-slate-600">{label}</span>
+        <span className={`text-xs font-bold ${textColor}`}>{percent}%</span>
+      </div>
+      <div className="w-full bg-slate-100 rounded-full h-2.5">
+        <div className={`${color} h-2.5 rounded-full transition-all`} style={{ width: `${Math.min(percent, 100)}%` }} />
+      </div>
+      <p className="text-[10px] text-slate-400 mt-0.5">{used} / {total}</p>
+    </div>
+  );
+}
+
+function PipelineStep({ label, count, color, icon }: { label: string; count: number; color: string; icon: React.ReactNode }) {
+  const styles: Record<string, string> = {
+    slate: 'bg-slate-50 border-slate-200 text-slate-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+    orange: 'bg-orange-50 border-orange-200 text-orange-700',
+    red: 'bg-red-50 border-red-200 text-red-700',
+    green: 'bg-green-50 border-green-200 text-green-700',
+    rose: 'bg-rose-50 border-rose-200 text-rose-700',
+  };
+  return (
+    <div className={`rounded-xl border p-3 text-center ${styles[color] || styles.slate}`}>
+      <div className="flex justify-center mb-1">{icon}</div>
+      <p className="text-2xl font-black">{count}</p>
+      <p className="text-[10px] font-bold uppercase tracking-wide mt-0.5">{label}</p>
+    </div>
+  );
+}
+
 const MonitoringPage: React.FC = () => {
   const [tab, setTab] = useState<TabView>('overview');
   const [report, setReport] = useState<Report | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [doseMetrics, setDoseMetrics] = useState<DoseMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedScript, setExpandedScript] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
@@ -87,12 +154,14 @@ const MonitoringPage: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [latestRes, incidentsRes] = await Promise.all([
+      const [latestRes, incidentsRes, doseRes] = await Promise.all([
         api.get('/monitoring/latest'),
         api.get('/monitoring/incidents'),
+        api.get('/monitoring/dose-metrics'),
       ]);
       setReport(latestRes.data);
       setIncidents(incidentsRes.data || []);
+      setDoseMetrics(doseRes.data || null);
     } catch (err) {
       console.error('Erro ao carregar monitoramento:', err);
     }
@@ -108,9 +177,7 @@ const MonitoringPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
     if (tab === 'history' && reports.length === 0) fetchHistory();
@@ -118,10 +185,7 @@ const MonitoringPage: React.FC = () => {
 
   const handleResolve = async (id: number) => {
     try {
-      await api.patch(`/monitoring/incidents/${id}/resolve`, {
-        resolutionNotes,
-        preventionNotes,
-      });
+      await api.patch(`/monitoring/incidents/${id}/resolve`, { resolutionNotes, preventionNotes });
       setResolvingId(null);
       setResolutionNotes('');
       setPreventionNotes('');
@@ -156,6 +220,8 @@ const MonitoringPage: React.FC = () => {
     );
   }
 
+  const infra = report?.infrastructure;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -167,34 +233,36 @@ const MonitoringPage: React.FC = () => {
           <div>
             <h1 className="text-xl font-bold text-slate-900">Monitoramento do Sistema</h1>
             <p className="text-sm text-slate-500">
-              Status operacional e incidentes
+              Status operacional, infraestrutura e fluxo de doses
               {report && <span className="ml-2 text-xs text-slate-400">· Atualizado {formatDate(report.generatedAt)}</span>}
             </p>
           </div>
         </div>
-        <button
-          onClick={fetchData}
-          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-        >
-          <RefreshCw size={14} />
-          Atualizar
+        <button onClick={fetchData} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">
+          <RefreshCw size={14} /> Atualizar
         </button>
       </div>
 
       {/* Summary cards */}
       {report && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <SummaryCard label="OK" value={report.summary.ok || 0} color="green" icon={<CheckCircle2 size={16} />} />
-          <SummaryCard label="Alertas" value={report.summary.warn || 0} color="amber" icon={<AlertTriangle size={16} />} />
-          <SummaryCard label="Falhas" value={report.summary.fail || 0} color="red" icon={<XCircle size={16} />} />
-          <SummaryCard label="N/A" value={report.summary.skip || 0} color="slate" icon={<Clock size={16} />} />
-          <SummaryCard label="Incidentes Abertos" value={openCount} color={openCount > 0 ? 'red' : 'green'} icon={<Shield size={16} />} />
+          <SummaryCard label="Scripts OK" value={report.summary.ok || 0} color="green" icon={<CheckCircle2 size={16} />} />
+          <SummaryCard label="Falhas" value={report.summary.fail || 0} color={report.summary.fail ? 'red' : 'green'} icon={<XCircle size={16} />} />
+          <SummaryCard label="Incidentes" value={openCount} color={openCount > 0 ? 'red' : 'green'} icon={<Shield size={16} />} />
+          <SummaryCard label="Conversão Doses" value={doseMetrics?.last30days.conversionRate || 0} suffix="%" color={doseMetrics && doseMetrics.last30days.conversionRate > 50 ? 'green' : 'amber'} icon={<TrendingUp size={16} />} />
+          <SummaryCard
+            label="SSL"
+            value={infra?.ssl?.daysUntilExpiry ?? 0}
+            suffix=" dias"
+            color={infra?.ssl ? (infra.ssl.daysUntilExpiry < 14 ? 'red' : infra.ssl.daysUntilExpiry < 30 ? 'amber' : 'green') : 'slate'}
+            icon={<Lock size={16} />}
+          />
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
-        {(['overview', 'incidents', 'history'] as TabView[]).map(t => (
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit flex-wrap">
+        {(['overview', 'doses', 'infra', 'incidents', 'history'] as TabView[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -202,34 +270,29 @@ const MonitoringPage: React.FC = () => {
               tab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            {t === 'overview' && 'Visão Geral'}
+            {t === 'overview' && 'Scripts'}
+            {t === 'doses' && 'Fluxo Doses'}
+            {t === 'infra' && 'Infraestrutura'}
             {t === 'incidents' && `Incidentes${openCount > 0 ? ` (${openCount})` : ''}`}
             {t === 'history' && 'Histórico'}
           </button>
         ))}
       </div>
 
-      {/* Tab content */}
+      {/* ── SCRIPTS TAB ── */}
       {tab === 'overview' && report && (
         <div className="space-y-4">
-          {/* Services */}
           <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-3">
-              <Server size={14} /> Serviços
-            </h3>
+            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-3"><Server size={14} /> Serviços</h3>
             <div className="flex flex-wrap gap-3">
               {report.services.map((svc, i) => (
-                <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
-                  svc.active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                }`}>
+                <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${svc.active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                   <div className={`w-2 h-2 rounded-full ${svc.active ? 'bg-green-500' : 'bg-red-500'}`} />
                   {svc.name}
                 </div>
               ))}
               {report.n8n && (
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
-                  report.n8n.running !== false ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                }`}>
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${report.n8n.running !== false ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                   <Zap size={12} />
                   n8n {report.n8n.errors ? `(${report.n8n.errors} erros)` : ''}
                 </div>
@@ -237,7 +300,6 @@ const MonitoringPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Scripts table */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-700">Scripts Monitorados</h3>
@@ -257,9 +319,7 @@ const MonitoringPage: React.FC = () => {
                   {report.scripts.map((s, i) => (
                     <React.Fragment key={i}>
                       <tr
-                        className={`border-b border-slate-50 ${statusBg(s.status)} ${
-                          s.errorSamples?.length ? 'cursor-pointer hover:bg-slate-50' : ''
-                        }`}
+                        className={`border-b border-slate-50 ${statusBg(s.status)} ${s.errorSamples?.length ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                         onClick={() => s.errorSamples?.length && setExpandedScript(expandedScript === s.name ? null : s.name)}
                       >
                         <td className="px-4 py-2.5 font-medium text-slate-800 flex items-center gap-2">
@@ -269,21 +329,14 @@ const MonitoringPage: React.FC = () => {
                           {s.name}
                         </td>
                         <td className="px-4 py-2.5 text-slate-500 text-xs">{s.schedule}</td>
-                        <td className="px-4 py-2.5">
-                          <span className="inline-flex items-center gap-1.5">
-                            {statusIcon(s.status)}
-                            <span className="text-xs font-medium">{s.status}</span>
-                          </span>
-                        </td>
+                        <td className="px-4 py-2.5"><span className="inline-flex items-center gap-1.5">{statusIcon(s.status)}<span className="text-xs font-medium">{s.status}</span></span></td>
                         <td className="px-4 py-2.5 text-right text-slate-600">{s.lines}</td>
                         <td className={`px-4 py-2.5 text-right font-medium ${s.errors > 0 ? 'text-red-600' : 'text-slate-400'}`}>{s.errors}</td>
                       </tr>
                       {expandedScript === s.name && s.errorSamples?.length > 0 && (
                         <tr className="bg-red-50">
                           <td colSpan={5} className="px-6 py-3">
-                            <pre className="text-xs text-red-700 font-mono whitespace-pre-wrap break-all">
-                              {s.errorSamples.join('\n')}
-                            </pre>
+                            <pre className="text-xs text-red-700 font-mono whitespace-pre-wrap break-all">{s.errorSamples.join('\n')}</pre>
                           </td>
                         </tr>
                       )}
@@ -296,6 +349,132 @@ const MonitoringPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── DOSE FLOW TAB ── */}
+      {tab === 'doses' && doseMetrics && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-4">
+              <Syringe size={14} /> Pipeline de Confirmação
+            </h3>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <PipelineStep label="Pendente" count={doseMetrics.pipeline.pending} color="slate" icon={<Clock size={16} className="text-slate-400" />} />
+              <PipelineStep label="1x Enviado" count={doseMetrics.pipeline.sent1} color="amber" icon={<Send size={16} className="text-amber-500" />} />
+              <PipelineStep label="2x Enviado" count={doseMetrics.pipeline.sent2} color="orange" icon={<Send size={16} className="text-orange-500" />} />
+              <PipelineStep label="3x Enviado" count={doseMetrics.pipeline.sent3} color="red" icon={<Send size={16} className="text-red-500" />} />
+              <PipelineStep label="Respondido" count={doseMetrics.pipeline.answered} color="green" icon={<MessageCircle size={16} className="text-green-500" />} />
+              <PipelineStep label="Não Aplicada" count={doseMetrics.pipeline.notApplied} color="rose" icon={<XCircle size={16} className="text-rose-500" />} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-4">
+                <TrendingUp size={14} /> Últimos 30 Dias
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Enviadas</p>
+                  <p className="text-3xl font-black text-slate-800">{doseMetrics.last30days.sent}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Respondidas</p>
+                  <p className="text-3xl font-black text-green-600">{doseMetrics.last30days.answered}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Taxa de Conversão</p>
+                  <p className={`text-3xl font-black ${doseMetrics.last30days.conversionRate >= 50 ? 'text-green-600' : 'text-amber-600'}`}>
+                    {doseMetrics.last30days.conversionRate}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tempo Médio Resposta</p>
+                  <p className="text-3xl font-black text-slate-700 flex items-baseline gap-1">
+                    {doseMetrics.last30days.avgResponseHours}
+                    <span className="text-sm font-bold text-slate-400">horas</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-4">
+                <Timer size={14} /> Doses em Atraso por Faixa
+              </h3>
+              <div className="space-y-3">
+                <OverdueBar label="< 7 dias" count={doseMetrics.overdueByRange.under7} color="bg-amber-400" />
+                <OverdueBar label="7-14 dias" count={doseMetrics.overdueByRange.under14} color="bg-orange-500" />
+                <OverdueBar label="14-30 dias" count={doseMetrics.overdueByRange.under30} color="bg-red-500" />
+                <OverdueBar label="> 30 dias" count={doseMetrics.overdueByRange.over30} color="bg-red-700" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INFRASTRUCTURE TAB ── */}
+      {tab === 'infra' && (
+        <div className="space-y-4">
+          {infra ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {infra.vps && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-4">
+                      <Server size={14} /> VPS (Hostinger)
+                    </h3>
+                    <div className="space-y-4">
+                      <DiskBar percent={infra.vps.diskPercent} used={infra.vps.diskUsed} total={infra.vps.diskTotal} label="Disco" />
+                      <DiskBar percent={infra.vps.memPercent} used={infra.vps.memUsed} total={infra.vps.memTotal} label="Memória" />
+                    </div>
+                  </div>
+                )}
+                {infra.do && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-4">
+                      <HardDrive size={14} /> DigitalOcean
+                    </h3>
+                    <div className="space-y-4">
+                      <DiskBar percent={infra.do.diskPercent} used={infra.do.diskUsed} total={infra.do.diskTotal} label="Disco" />
+                      <DiskBar percent={infra.do.memPercent} used={infra.do.memUsed} total={infra.do.memTotal} label="Memória" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {infra.ssl && (
+                <div className="bg-white rounded-xl border border-slate-200 p-5">
+                  <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-3">
+                    <Lock size={14} /> Certificado SSL
+                  </h3>
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Domínio</p>
+                      <p className="text-sm font-bold text-slate-800">{infra.ssl.domain}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Expira em</p>
+                      <p className={`text-2xl font-black ${infra.ssl.daysUntilExpiry < 14 ? 'text-red-600' : infra.ssl.daysUntilExpiry < 30 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {infra.ssl.daysUntilExpiry} dias
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Data de Expiração</p>
+                      <p className="text-sm font-bold text-slate-700">{infra.ssl.expiryDate}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+              <HardDrive size={32} className="text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-500">Dados de infraestrutura serão coletados no próximo relatório diário</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── INCIDENTS TAB ── */}
       {tab === 'incidents' && (
         <div className="space-y-4">
           <div className="flex gap-2">
@@ -303,9 +482,7 @@ const MonitoringPage: React.FC = () => {
               <button
                 key={f}
                 onClick={() => setIncidentFilter(f)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
-                  incidentFilter === f ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg ${incidentFilter === f ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 {f === 'open' && 'Abertos'}
                 {f === 'resolved' && 'Resolvidos'}
@@ -326,16 +503,11 @@ const MonitoringPage: React.FC = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        {inc.resolved
-                          ? <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                          : <XCircle size={14} className="text-red-500 shrink-0" />
-                        }
+                        {inc.resolved ? <CheckCircle2 size={14} className="text-green-500 shrink-0" /> : <XCircle size={14} className="text-red-500 shrink-0" />}
                         <span className="text-sm font-bold text-slate-800">{inc.scriptName}</span>
                         <span className="text-xs text-slate-400">{formatDateShort(inc.occurredAt)}</span>
                       </div>
-                      <pre className="text-xs text-slate-600 font-mono whitespace-pre-wrap break-all mt-1 bg-slate-50 rounded-lg p-2">
-                        {inc.errorMessage}
-                      </pre>
+                      <pre className="text-xs text-slate-600 font-mono whitespace-pre-wrap break-all mt-1 bg-slate-50 rounded-lg p-2">{inc.errorMessage}</pre>
                       {inc.resolved && inc.resolutionNotes && (
                         <div className="mt-2 bg-green-50 rounded-lg p-2">
                           <p className="text-xs font-bold text-green-700 mb-0.5">Resolução:</p>
@@ -351,19 +523,9 @@ const MonitoringPage: React.FC = () => {
                     </div>
                     <div className="shrink-0">
                       {inc.resolved ? (
-                        <button
-                          onClick={() => handleUnresolve(inc.id)}
-                          className="text-xs text-slate-400 hover:text-slate-600 font-medium"
-                        >
-                          Reabrir
-                        </button>
+                        <button onClick={() => handleUnresolve(inc.id)} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Reabrir</button>
                       ) : resolvingId === inc.id ? null : (
-                        <button
-                          onClick={() => setResolvingId(inc.id)}
-                          className="px-3 py-1.5 text-xs font-medium bg-green-500 text-white rounded-lg hover:bg-green-600"
-                        >
-                          Resolver
-                        </button>
+                        <button onClick={() => setResolvingId(inc.id)} className="px-3 py-1.5 text-xs font-medium bg-green-500 text-white rounded-lg hover:bg-green-600">Resolver</button>
                       )}
                     </div>
                   </div>
@@ -371,37 +533,15 @@ const MonitoringPage: React.FC = () => {
                     <div className="mt-3 border-t border-slate-100 pt-3 space-y-2">
                       <div>
                         <label className="text-xs font-bold text-slate-600">O que foi feito para resolver?</label>
-                        <textarea
-                          value={resolutionNotes}
-                          onChange={e => setResolutionNotes(e.target.value)}
-                          className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-                          rows={2}
-                          placeholder="Ex: Corrigido import faltante no alerta_dra.py"
-                        />
+                        <textarea value={resolutionNotes} onChange={e => setResolutionNotes(e.target.value)} className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" rows={2} placeholder="Ex: Corrigido import faltante no alerta_dra.py" />
                       </div>
                       <div>
                         <label className="text-xs font-bold text-slate-600">Como prevenir no futuro?</label>
-                        <textarea
-                          value={preventionNotes}
-                          onChange={e => setPreventionNotes(e.target.value)}
-                          className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-                          rows={2}
-                          placeholder="Ex: Adicionar teste de imports no CI"
-                        />
+                        <textarea value={preventionNotes} onChange={e => setPreventionNotes(e.target.value)} className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" rows={2} placeholder="Ex: Adicionar teste de imports no CI" />
                       </div>
                       <div className="flex gap-2">
-                        <button
-                          onClick={() => handleResolve(inc.id)}
-                          className="px-4 py-2 text-xs font-bold bg-green-500 text-white rounded-lg hover:bg-green-600"
-                        >
-                          Confirmar Resolução
-                        </button>
-                        <button
-                          onClick={() => { setResolvingId(null); setResolutionNotes(''); setPreventionNotes(''); }}
-                          className="px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-700"
-                        >
-                          Cancelar
-                        </button>
+                        <button onClick={() => handleResolve(inc.id)} className="px-4 py-2 text-xs font-bold bg-green-500 text-white rounded-lg hover:bg-green-600">Confirmar Resolução</button>
+                        <button onClick={() => { setResolvingId(null); setResolutionNotes(''); setPreventionNotes(''); }} className="px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-700">Cancelar</button>
                       </div>
                     </div>
                   )}
@@ -412,6 +552,7 @@ const MonitoringPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── HISTORY TAB ── */}
       {tab === 'history' && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
@@ -434,18 +575,13 @@ const MonitoringPage: React.FC = () => {
                     <td className="px-4 py-2.5 text-center text-amber-600 font-medium">{r.summary.warn || 0}</td>
                     <td className="px-4 py-2.5 text-center text-red-600 font-bold">{r.summary.fail || 0}</td>
                     <td className="px-4 py-2.5 text-center">
-                      {unresolved > 0
-                        ? <span className="text-red-600 font-bold">{unresolved} aberto{unresolved > 1 ? 's' : ''}</span>
-                        : <span className="text-green-500 text-xs">—</span>
-                      }
+                      {unresolved > 0 ? <span className="text-red-600 font-bold">{unresolved} aberto{unresolved > 1 ? 's' : ''}</span> : <span className="text-green-500 text-xs">—</span>}
                     </td>
                   </tr>
                 );
               })}
               {reports.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm">Nenhum relatório encontrado</td>
-                </tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm">Nenhum relatório encontrado</td></tr>
               )}
             </tbody>
           </table>
@@ -455,7 +591,7 @@ const MonitoringPage: React.FC = () => {
   );
 };
 
-function SummaryCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
+function SummaryCard({ label, value, color, icon, suffix }: { label: string; value: number; color: string; icon: React.ReactNode; suffix?: string }) {
   const colors: Record<string, string> = {
     green: 'bg-green-50 text-green-600 border-green-200',
     amber: 'bg-amber-50 text-amber-600 border-amber-200',
@@ -468,7 +604,23 @@ function SummaryCard({ label, value, color, icon }: { label: string; value: numb
         {icon}
         <span className="text-xs font-bold uppercase tracking-wide">{label}</span>
       </div>
-      <p className="text-2xl font-black">{value}</p>
+      <p className="text-2xl font-black">{value}{suffix || ''}</p>
+    </div>
+  );
+}
+
+function OverdueBar({ label, count, color }: { label: string; count: number; color: string }) {
+  const max = 20;
+  const width = Math.min((count / max) * 100, 100);
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xs font-bold text-slate-500 w-16 text-right">{label}</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-5 relative">
+        {count > 0 && <div className={`${color} h-5 rounded-full transition-all flex items-center justify-end pr-2`} style={{ width: `${Math.max(width, 15)}%` }}>
+          <span className="text-[10px] font-black text-white">{count}</span>
+        </div>}
+        {count === 0 && <span className="absolute left-2 top-0.5 text-[10px] font-bold text-slate-400">0</span>}
+      </div>
     </div>
   );
 }
