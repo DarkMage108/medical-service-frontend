@@ -25,9 +25,15 @@ const ConsultationsPage = React.lazy(() => import('./pages/ConsultationsPage'));
 const SurveyPage = React.lazy(() => import('./pages/SurveyPage'));
 const PublicSurveyPage = React.lazy(() => import('./pages/PublicSurveyPage'));
 const QADashboard = React.lazy(() => import('./pages/QADashboard'));
+const AssistenteIA = React.lazy(() => import('./pages/AssistenteIA'));
 const CuradoriaPage = React.lazy(() => import('./pages/CuradoriaPage'));
 const TeleconsultaPage = React.lazy(() => import('./pages/TeleconsultaPage'));
 const ExameUploadsPage = React.lazy(() => import('./pages/ExameUploadsPage'));
+const ExameResultsPage = React.lazy(() => import('./pages/ExameResultsPage'));
+const MedicalReportsPage = React.lazy(() => import('./pages/MedicalReportsPage'));
+const BirthdayList = React.lazy(() => import("./pages/BirthdayList"));
+const MarketingPage = React.lazy(() => import("./pages/MarketingPage"));
+const MonitoringPage = React.lazy(() => import("./pages/MonitoringPage"));
 import { Loader2 } from 'lucide-react';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
@@ -66,7 +72,7 @@ const MENU_TO_PATH: Record<string, string> = {
   history: '/historico',
   inventory: '/estoque',
   cashregister: '/caixa',
-  diagnoses: '/diagnosticos',
+  diagnoses: '/diagnósticos',
   protocols: '/protocolos',
   // March 2026 — secondary pages (permission-controlled)
   'consent-terms': '/termos-consentimento',
@@ -74,6 +80,12 @@ const MENU_TO_PATH: Record<string, string> = {
   consultations: '/consultas',
   survey: '/pesquisa-enfermagem',
   'message-templates': '/modelos-mensagem',
+  'qa-dashboard': '/assistente-ia',
+  curadoria: '/curadoria',
+  teleconsulta: '/teleconsulta',
+  'exame-uploads': '/exames-enviados',
+  birthdays: '/aniversariantes',
+  laudos: '/laudos',
 };
 
 // Order of fallback routes
@@ -81,6 +93,7 @@ const MENU_ORDER = [
   'dashboard', 'nursing', 'patients', 'history',
   'inventory', 'cashregister', 'diagnoses', 'protocols',
   'consent-terms', 'doses-page', 'consultations', 'survey', 'message-templates',
+  'qa-dashboard', 'curadoria', 'teleconsulta', 'exame-uploads', 'laudos', 'birthdays',
 ];
 
 // Default redirect component - redirects to first accessible route
@@ -197,6 +210,16 @@ const AppContent: React.FC = () => {
         }
       />
       <Route
+        path="/pacientes/:patientId/exames"
+        element={
+          <ProtectedRouteWithPermission menuKey="patients">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <ExameResultsPage />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+      <Route
         path="/tratamento/:id"
         element={
           <ProtectedRouteWithPermission menuKey="patients">
@@ -207,7 +230,7 @@ const AppContent: React.FC = () => {
         }
       />
       <Route
-        path="/diagnosticos"
+        path="/diagnósticos"
         element={
           <ProtectedRouteWithPermission menuKey="diagnoses">
             <Layout user={layoutUser!} onLogout={handleLogout}>
@@ -268,7 +291,7 @@ const AppContent: React.FC = () => {
         }
       />
       <Route
-        path="/permissoes"
+        path="/permissões"
         element={
           <ProtectedRoute>
             {layoutUser?.role === UserRole.ADMIN ? (
@@ -306,7 +329,7 @@ const AppContent: React.FC = () => {
         }
       />
       <Route
-        path="/configuracoes"
+        path="/configurações"
         element={
           <ProtectedRoute>
             {layoutUser?.role === UserRole.ADMIN ? (
@@ -378,7 +401,7 @@ const AppContent: React.FC = () => {
           <ProtectedRoute>
             <ProtectedRouteWithPermission menuKey="qa-dashboard">
               <Layout user={layoutUser!} onLogout={handleLogout}>
-                <QADashboard />
+                <AssistenteIA />
               </Layout>
             </ProtectedRouteWithPermission>
           </ProtectedRoute>
@@ -402,25 +425,69 @@ const AppContent: React.FC = () => {
       <Route
         path="/teleconsulta"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="teleconsulta">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <TeleconsultaPage />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
 
       <Route
         path="/exames-enviados"
         element={
-          <ProtectedRoute>
+          <ProtectedRouteWithPermission menuKey="exame-uploads">
             <Layout user={layoutUser!} onLogout={handleLogout}>
               <ExameUploadsPage />
             </Layout>
-          </ProtectedRoute>
+          </ProtectedRouteWithPermission>
         }
       />
 
+      <Route
+        path="/laudos"
+        element={
+          <ProtectedRouteWithPermission menuKey="laudos">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <MedicalReportsPage />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+
+      <Route
+        path="/aniversariantes"
+        element={
+          <ProtectedRouteWithPermission menuKey="birthdays">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <BirthdayList />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+
+
+      <Route
+        path="/marketing"
+        element={
+          <ProtectedRouteWithPermission menuKey="marketing">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <MarketingPage />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
+
+      <Route
+        path="/monitoramento"
+        element={
+          <ProtectedRouteWithPermission menuKey="monitoring">
+            <Layout user={layoutUser!} onLogout={handleLogout}>
+              <MonitoringPage />
+            </Layout>
+          </ProtectedRouteWithPermission>
+        }
+      />
       {/* Catch all - redirect to first accessible route */}
       <Route path="*" element={<DefaultRedirect />} />
     </Routes>
