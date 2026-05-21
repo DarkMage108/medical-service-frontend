@@ -617,75 +617,43 @@ const Dashboard: React.FC = () => {
     };
   }, [doses, dismissedLogs]);
 
-  // Overdue Doses - based on SCHEDULED dates from protocol, not added dose dates
-  // A dose is overdue if its SCHEDULED date (startDate + frequencyDays * cycleNumber) is in the past
-  // and it hasn't been applied yet
+  // Overdue Doses - uses real scheduledDate from dose records (auto-created by backend)
   const overdueDoses = useMemo(() => {
-  const result: Dose[] = [];
-  const seenTreatments = new Set<string>();
+  const activeTreatmentIds = new Set(
+    treatments.filter(t => t.status === TreatmentStatus.ONGOING).map(t => t.id)
+  );
 
-  const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
-
-  activeTreatments.forEach(treatment => {
-    const protocol = protocols.find(p => p.id === treatment.protocolId);
-    // Note: protocol.category from backend is 'MEDICATION' or 'MONITORING' (not the display label)
-    const isMedication = protocol?.category === 'MEDICATION' || protocol?.category === ProtocolCategory.MEDICATION;
-    if (!protocol || !isMedication || treatment.plannedDosesBeforeConsult === 0) return;
-
-    const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
-    const startDate = addDays(treatment.startDate, 0); // Normalize date
-    const frequencyDays = protocol.frequencyDays || 28;
-
-    // Count applied doses (APPLIED_LATE counts as applied)
-    const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE).length;
-
-    // If all planned doses are applied, treatment is complete - no overdue
-    if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
-
-    // Check each planned dose based on SCHEDULED date
-    for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
-      const cycleNumber = i + 1;
-
-      // Calculate SCHEDULED date for this dose (based on protocol, not when dose was added)
-      // Dose 1 = startDate, Dose 2 = startDate + frequencyDays, etc.
-      let scheduledDate: Date;
-      if (i === 0) {
-        scheduledDate = startDate;
-      } else {
-        scheduledDate = addDays(startDate, frequencyDays * i);
-      }
-
-      const overdueDays = diffInDays(TODAY, scheduledDate);
-      const minOverdue = cycleNumber === 1 ? 20 : 1;
-
-      if (overdueDays >= minOverdue) {
-        const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
-        if (existingDose && existingDose.status !== DoseStatus.APPLIED && existingDose.status !== DoseStatus.APPLIED_LATE) {
-          result.push(existingDose);
-          seenTreatments.add(treatment.id);
-          break;
-        }
-      }
-    }
+  const result = doses.filter(d => {
+    if (!activeTreatmentIds.has(d.treatmentId)) return false;
+    if (d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE) return false;
+    const overdueDays = diffInDays(TODAY, d.scheduledDate);
+    const minOverdue = d.cycleNumber === 1 ? 10 : 1;
+    return overdueDays >= minOverdue;
   });
 
+  // One dose per treatment (earliest overdue)
+  const seen = new Set<string>();
+  const deduped = result
+    .sort((a, b) => a.cycleNumber - b.cycleNumber)
+    .filter(d => {
+      if (seen.has(d.treatmentId)) return false;
+      seen.add(d.treatmentId);
+      return true;
+    });
+
   const dismissedSet = new Set(dismissedLogs.map(d => d.contactId));
-  const filtered = result
+  const filtered = deduped
     .filter(d => (d as any).confirmationStatus !== 'SENT_2')
     .filter(d => !dismissedSet.has(`dose_${d.id}_late_dose`));
 
   return filtered.sort((a, b) => {
-    // Sort by the relevant date (applicationDate for PENDING, calculatedNextDate for APPLIED)
-    const dateA = (a.status === DoseStatus.PENDING || a.status === DoseStatus.SCHEDULED) ? addDays(a.applicationDate, 0) : addDays(a.calculatedNextDate, 0);
-    const dateB = (b.status === DoseStatus.PENDING || b.status === DoseStatus.SCHEDULED) ? addDays(b.applicationDate, 0) : addDays(b.calculatedNextDate, 0);
-    const diff = dateA.getTime() - dateB.getTime();
+    const diff = new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime();
     if (diff !== 0) return diff;
-    // Secondary sort by patient name when dates are equal
     const patientA = getPatientByTreatmentId(a.treatmentId)?.fullName || '';
     const patientB = getPatientByTreatmentId(b.treatmentId)?.fullName || '';
     return patientA.localeCompare(patientB);
   });
-  }, [doses, treatments, patients, protocols, TODAY, dismissedLogs]);
+  }, [doses, treatments, TODAY, dismissedLogs]);
 
   // Upcoming Scheduled Doses (future doses not yet applied)
   // IMPORTANT: Uses SCHEDULED dates from protocol (startDate + frequencyDays * cycleNumber)

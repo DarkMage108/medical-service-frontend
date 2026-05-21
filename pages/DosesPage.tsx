@@ -161,39 +161,29 @@ const DosesPage: React.FC = () => {
   }, []);
 
   const allOverdueDoses = useMemo(() => {
-    const result: Dose[] = [];
-    const activeTreatments = treatments.filter(t => t.status === TreatmentStatus.ONGOING);
+    const activeTreatmentIds = new Set(
+      treatments.filter(t => t.status === TreatmentStatus.ONGOING).map(t => t.id)
+    );
 
-    activeTreatments.forEach(treatment => {
-      const protocol = protocols.find(p => p.id === treatment.protocolId);
-      const isMedication = protocol?.category === 'MEDICATION' || protocol?.category === ProtocolCategory.MEDICATION;
-      if (!protocol || !isMedication || treatment.plannedDosesBeforeConsult === 0) return;
-
-      const treatmentDoses = doses.filter(d => d.treatmentId === treatment.id);
-      const startDate = addDays(treatment.startDate, 0);
-      const frequencyDays = protocol.frequencyDays || 28;
-
-      const appliedCount = treatmentDoses.filter(d => d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE).length;
-      if (appliedCount >= treatment.plannedDosesBeforeConsult) return;
-
-      for (let i = 0; i < treatment.plannedDosesBeforeConsult; i++) {
-        const cycleNumber = i + 1;
-        const scheduledDate = i === 0 ? startDate : addDays(startDate, frequencyDays * i);
-        const overdueDays = diffInDays(today, scheduledDate);
-        const minOverdue = cycleNumber === 1 ? 20 : 1;
-
-        if (overdueDays >= minOverdue) {
-          const existingDose = treatmentDoses.find(d => d.cycleNumber === cycleNumber);
-          if (existingDose && existingDose.status !== DoseStatus.APPLIED && existingDose.status !== DoseStatus.APPLIED_LATE) {
-            result.push(existingDose);
-            break;
-          }
-        }
-      }
+    const result = doses.filter(d => {
+      if (!activeTreatmentIds.has(d.treatmentId)) return false;
+      if (d.status === DoseStatus.APPLIED || d.status === DoseStatus.APPLIED_LATE) return false;
+      const overdueDays = diffInDays(today, d.scheduledDate);
+      const minOverdue = d.cycleNumber === 1 ? 10 : 1;
+      return overdueDays >= minOverdue;
     });
 
-    return result.sort((a, b) => new Date(a.applicationDate).getTime() - new Date(b.applicationDate).getTime());
-  }, [doses, treatments, protocols, today]);
+    const seen = new Set<string>();
+    const deduped = result
+      .sort((a, b) => a.cycleNumber - b.cycleNumber)
+      .filter(d => {
+        if (seen.has(d.treatmentId)) return false;
+        seen.add(d.treatmentId);
+        return true;
+      });
+
+    return deduped.sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime());
+  }, [doses, treatments, today]);
 
   const overdueDoses = useMemo(() => {
     return allOverdueDoses
@@ -356,7 +346,7 @@ const DosesPage: React.FC = () => {
                 const patient = getPatient(dose.treatmentId);
                 const protocol = getProtocol(dose.treatmentId);
                 const overdueDays = dose.status === DoseStatus.PENDING
-                  ? Math.max(0, diffInDays(today, dose.applicationDate))
+                  ? Math.max(0, diffInDays(today, dose.scheduledDate))
                   : 0;
                 const trigger = filter === 'overdue' || filter === 'unanswered'
                   ? MessageTemplateTrigger.LATE_DOSE
